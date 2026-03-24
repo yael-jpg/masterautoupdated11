@@ -23,6 +23,24 @@ Full-stack starter implementation for a premium MasterAuto management dashboard.
 4. Run backend:
    - `npm run dev`
 
+### Using Neon (Cloud Postgres)
+The backend supports a single `DATABASE_URL` connection string (recommended for Neon).
+
+1. In `backend/.env`, set:
+   - `DATABASE_URL=postgresql://USER@HOST/DB?sslmode=require`
+   - (Optional) `DB_SSL_REJECT_UNAUTHORIZED=false` if your environment fails SSL verification
+
+2. Restore the included backup to Neon (requires `pg_restore`):
+   - Install PostgreSQL client tools on Windows (so `pg_restore` is available). One option is installing PostgreSQL 16 via `winget` (interactive installer).
+   - Then run from the repo root:
+
+     - PowerShell:
+       - `$env:PGPASSWORD="<YOUR_NEON_PASSWORD>"`
+       - `pg_restore --no-owner --no-privileges --clean --if-exists --dbname "postgresql://<USER>@<HOST>/<DB>?sslmode=require" "backend/database/update 21.backup"`
+       - `Remove-Item Env:PGPASSWORD`
+
+If you prefer to keep your password out of shell history, you can also set up a `.pgpass` file instead of using `PGPASSWORD`.
+
 For production profile:
 - `backend/.env.production.example` → `backend/.env`
 - run with `npm start`
