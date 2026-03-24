@@ -2,7 +2,10 @@ const { Pool } = require('pg')
 const env = require('./env')
 
 const pool = env.dbUrl
-  ? new Pool({ connectionString: env.dbUrl })
+  ? new Pool({
+      connectionString: env.dbUrl,
+      ssl: { rejectUnauthorized: env.dbSslRejectUnauthorized },
+    })
   : new Pool({
       host: env.dbHost,
       port: env.dbPort,

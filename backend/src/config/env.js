@@ -31,6 +31,8 @@ const env = {
   port: Number(process.env.PORT || 5000),
   jwtSecret: process.env.JWT_SECRET || 'change-this-secret',
   dbUrl: process.env.DATABASE_URL || '',
+  dbSslRejectUnauthorized:
+    process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false',
   dbHost: process.env.DB_HOST || 'localhost',
   dbPort: Number(process.env.DB_PORT || 5432),
   dbUser: process.env.DB_USER || 'postgres',
