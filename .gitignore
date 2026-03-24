@@ -11,6 +11,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Build artifacts
+dist.zip
+
 # Environment (do not commit secrets)
 .env
 backend/.env

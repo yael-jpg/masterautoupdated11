@@ -4,7 +4,9 @@
  * Implements cascading dropdown logic: Make → Model → Variant
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+// Keep consistent with the rest of the frontend:
+// VITE_API_BASE_URL should include the /api prefix (e.g. https://<render-app>.onrender.com/api)
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
 
 class VehicleApi {
   /**
@@ -13,7 +15,7 @@ class VehicleApi {
    */
   static async getAllMakes() {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/vehicle-makes`)
+      const response = await fetch(`${API_BASE_URL}/vehicle-makes`)
       if (!response.ok) {
         throw new Error(`Failed to fetch makes: ${response.statusText}`)
       }
@@ -35,7 +37,7 @@ class VehicleApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/vehicle-makes/${makeId}/models`)
+      const response = await fetch(`${API_BASE_URL}/vehicle-makes/${makeId}/models`)
       if (!response.ok) {
         throw new Error(`Failed to fetch models: ${response.statusText}`)
       }
@@ -57,7 +59,7 @@ class VehicleApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/vehicle-makes/models/${modelId}/variants`)
+      const response = await fetch(`${API_BASE_URL}/vehicle-makes/models/${modelId}/variants`)
       if (!response.ok) {
         throw new Error(`Failed to fetch variants: ${response.statusText}`)
       }
@@ -79,7 +81,7 @@ class VehicleApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/vehicle-makes/variants/${variantId}/years`)
+      const response = await fetch(`${API_BASE_URL}/vehicle-makes/variants/${variantId}/years`)
       if (!response.ok) {
         throw new Error(`Failed to fetch years: ${response.statusText}`)
       }
@@ -101,7 +103,7 @@ class VehicleApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/vehicle-makes`, {
+      const response = await fetch(`${API_BASE_URL}/vehicle-makes`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -133,7 +135,7 @@ class VehicleApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/vehicles`, {
+      const response = await fetch(`${API_BASE_URL}/vehicles`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -165,7 +167,7 @@ class VehicleApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/vehicles/${vehicleId}`, {
+      const response = await fetch(`${API_BASE_URL}/vehicles/${vehicleId}`, {
         headers: {
            Authorization: `Bearer ${localStorage.getItem('masterauto_token')}`,
         },
@@ -193,7 +195,7 @@ class VehicleApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/vehicles/customer/${customerId}`, {
+      const response = await fetch(`${API_BASE_URL}/vehicles/customer/${customerId}`, {
         headers: {
            Authorization: `Bearer ${localStorage.getItem('masterauto_token')}`,
         },
@@ -222,7 +224,7 @@ class VehicleApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/vehicles/${vehicleId}`, {
+      const response = await fetch(`${API_BASE_URL}/vehicles/${vehicleId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -254,7 +256,7 @@ class VehicleApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/vehicles/${vehicleId}`, {
+      const response = await fetch(`${API_BASE_URL}/vehicles/${vehicleId}`, {
         method: 'DELETE',
         headers: {
            Authorization: `Bearer ${localStorage.getItem('masterauto_token')}`,
@@ -283,7 +285,7 @@ class VehicleApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/vehicles/check-plate`, {
+      const response = await fetch(`${API_BASE_URL}/vehicles/check-plate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -313,7 +315,7 @@ class VehicleApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/vehicles/search/plate?pattern=${encodeURIComponent(pattern)}`, {
+      const response = await fetch(`${API_BASE_URL}/vehicles/search/plate?pattern=${encodeURIComponent(pattern)}`, {
         headers: {
            Authorization: `Bearer ${localStorage.getItem('masterauto_token')}`,
         },
@@ -336,7 +338,7 @@ class VehicleApi {
    */
   static async getVehicleStats() {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/vehicles/stats`, {
+      const response = await fetch(`${API_BASE_URL}/vehicles/stats`, {
         headers: {
            Authorization: `Bearer ${localStorage.getItem('masterauto_token')}`,
         },
