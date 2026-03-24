@@ -1,0 +1,246 @@
+/* ── Modal shell ─────────────────────────────────────────────────────────── */
+.crm-modal { width: 100%; }
+.crm-modal-inner {
+  display: flex;
+  gap: 0;
+  min-height: 420px;
+}
+
+/* ── Left panel ──────────────────────────────────────────────────────────── */
+.crm-modal-left {
+  width: 260px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(91,124,247,0.06) 0%, rgba(255,255,255,0.01) 100%);
+  border-right: 1px solid rgba(255,255,255,0.06);
+  border-radius: 0;
+  padding: 24px 20px;
+  color: #e6eef6;
+}
+
+/* Section label (shared left + right) */
+.crm-section-label {
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #5b7cf7;
+  margin-bottom: 12px;
+}
+
+/* Contact rows – stacked label/value */
+.crm-contact-list { display: flex; flex-direction: column; gap: 14px; }
+.crm-contact-row  { display: flex; flex-direction: column; gap: 3px; }
+.crm-row-label {
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #6a7f96;
+}
+.crm-row-value {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #e6eef6;
+  word-break: break-word;
+}
+.crm-email  { color: #a0a8b8; }
+.crm-address { color: #94a3b8; font-weight: 400; font-size: 0.82rem; }
+
+/* Customer-type / status pills ─────────────────────────────── */
+.crm-type-badge {
+  display: inline-block;
+  font-size: 0.67rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  letter-spacing: 0.05em;
+}
+.crm-type-retail    { background: rgba(200,200,200,0.08); border: 1px solid rgba(200,200,200,0.22); color: #c0c4cc; }
+.crm-type-dealer    { background: rgba(160,160,160,0.1);  border: 1px solid rgba(160,160,160,0.25); color: #a0a0a0; }
+.crm-type-vip       { background: rgba(251,191,36,0.12);  border: 1px solid rgba(251,191,36,0.30);  color: #fbbf24; }
+.crm-type-corporate { background: rgba(16,185,129,0.12);  border: 1px solid rgba(16,185,129,0.30);  color: #34d399; }
+
+/* ── Right panel ─────────────────────────────────────────────────────────── */
+.crm-modal-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 0 0;
+  color: #dfe9f3;
+  overflow: hidden;
+  max-height: 560px;
+}
+.crm-services-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 8px 20px 12px;
+  scrollbar-width: none;
+}
+.crm-services-body::-webkit-scrollbar {
+  display: none;
+}
+
+.crm-section { margin-bottom: 18px; }
+
+/* Vehicles */
+.crm-vehicles-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.crm-vehicle-item  {
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 8px;
+}
+.crm-vehicle-item .plate { color: #fff; font-size: 0.88rem; }
+.vehicle-meta { color: #7a8fa3; font-size: 0.78rem; margin-top: 3px; }
+
+/* Cards (quotations / job orders) */
+.crm-card-list { display: flex; flex-direction: column; gap: 8px; }
+.crm-card {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.06);
+  padding: 12px 14px;
+  border-radius: 10px;
+  transition: border-color 0.15s;
+}
+.crm-card:hover { border-color: rgba(91,124,247,0.25); }
+
+.crm-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.crm-ref {
+  font-size: 0.88rem;
+  color: #e2e8f0;
+  letter-spacing: 0.02em;
+}
+.crm-amount {
+  color: #34d399;
+  font-weight: 700;
+  font-size: 0.88rem;
+  margin-left: auto;
+}
+
+/* Status badges */
+.crm-status-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.status-approved          { background: rgba(16,185,129,0.14);  border: 1px solid rgba(16,185,129,0.30);  color: #34d399; }
+.status-pending,
+.status-draft             { background: rgba(251,191,36,0.14);  border: 1px solid rgba(251,191,36,0.30);  color: #fbbf24; }
+.status-completed,
+.status-complete          { background: rgba(200,200,200,0.1);  border: 1px solid rgba(200,200,200,0.22); color: #c8c8c8; }
+.status-in-progress       { background: rgba(200,200,200,0.07); border: 1px solid rgba(200,200,200,0.18); color: #a8a8a8; }
+.status-released          { background: rgba(16,185,129,0.14);  border: 1px solid rgba(16,185,129,0.28);  color: #34d399; }
+.status-cancelled,
+.status-not-approved      { background: rgba(239,68,68,0.13);   border: 1px solid rgba(239,68,68,0.28);   color: #f87171; }
+
+/* Services list inside cards */
+.card-services { margin: 0; padding-left: 16px; color: #8da0b3; font-size: 0.82rem; }
+.card-services li { margin: 3px 0; }
+
+/* Empty / loading states */
+.crm-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 16px;
+  color: #4a5f74;
+  font-size: 0.84rem;
+  text-align: center;
+}
+.crm-empty-state p { margin: 0; }
+.crm-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 24px 8px;
+  color: #5b7080;
+  font-size: 0.84rem;
+}
+.crm-loading-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #5b7cf7;
+  animation: crmDotBlink 1.2s infinite;
+}
+.crm-loading-dot:nth-child(2) { animation-delay: 0.2s; }
+.crm-loading-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes crmDotBlink {
+  0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+  40%           { opacity: 1;   transform: scale(1);   }
+}
+
+/* Action buttons */
+.crm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+
+/* ── Payment History ───────────────────────────────────── */
+.crm-payment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.crm-payment-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  padding: 10px 14px;
+  transition: border-color 0.15s;
+}
+.crm-payment-row.pay-row-deposit { border-left-color: #fbbf24; }
+.crm-payment-row.pay-row-partial  { border-left-color: #fb923c; }
+.crm-payment-row.pay-row-full     { border-left-color: #34d399; }
+.crm-payment-row:hover { background: rgba(255,255,255,0.04); }
+
+.crm-pay-badge-col { display: flex; align-items: center; }
+.crm-pay-info-col  { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.crm-pay-meta-top  { display: flex; align-items: center; gap: 8px; }
+.crm-pay-amount-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.crm-pay-type {
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.crm-pay-type.pay-deposit { background: rgba(251,191,36,0.15); border: 1px solid rgba(251,191,36,0.35); color: #fbbf24; }
+.crm-pay-type.pay-partial { background: rgba(249,115,22,0.15); border: 1px solid rgba(249,115,22,0.35); color: #fb923c; }
+.crm-pay-type.pay-full    { background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.35); color: #34d399; }
+
+.crm-pay-ref    { font-size: 0.82rem; font-weight: 700; color: #d4e0ee; letter-spacing: 0.02em; }
+.crm-pay-method { font-size: 0.75rem; color: #5b7080; }
+.crm-pay-amount { font-size: 0.92rem; font-weight: 700; color: #e8f0fa; }
+.crm-pay-datetime {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+.crm-pay-date { font-size: 0.72rem; color: #5b7080; }
+.crm-pay-time { font-size: 0.68rem; color: #3d5060; }

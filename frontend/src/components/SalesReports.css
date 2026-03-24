@@ -1,0 +1,233 @@
+.sales-reports {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.reports-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.reports-toolbar input,
+.reports-toolbar select {
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  min-height: 40px;
+}
+
+.reports-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.report-card {
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.report-card:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.03) 100%);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  transform: translateY(-2px);
+}
+
+.report-card h4 {
+  margin: 0 0 12px 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #a0a8b8;
+  margin-bottom: 8px;
+}
+
+.stat-detail {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.report-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.report-section h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.report-table {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.01) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.table-header {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 16px;
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.08);
+  font-weight: 700;
+  font-size: 11px;
+  color: rgba(189, 200, 218, 0.9);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.table-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 0.9rem;
+  color: rgba(210, 220, 236, 0.86);
+  transition: all 0.2s ease;
+}
+
+.table-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.table-row:last-child {
+  border-bottom: none;
+}
+
+.col-service,
+.col-staff,
+.col-ref,
+.col-customer,
+.col-vehicle {
+  min-width: 140px;
+}
+
+.col-count,
+.col-days {
+  text-align: center;
+}
+
+.col-total,
+.col-avg,
+.col-outstanding {
+  text-align: right;
+  font-weight: 600;
+  color: #aaaaaa;
+}
+
+/* ─── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .reports-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .reports-toolbar input,
+  .reports-toolbar select {
+    width: 100%;
+  }
+
+  /* Hide header row — labels replace column names */
+  .report-table .table-header { display: none; }
+
+  /* Each row becomes a card */
+  .report-table .table-row {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0 !important;
+    padding: 14px 16px !important;
+    border-bottom: 1px solid rgba(255,255,255,0.06) !important;
+    position: relative;
+  }
+
+  /* By-type / by-staff rows (2-col: service/staff + count + total) */
+  .table-row .col-service,
+  .table-row .col-staff {
+    font-weight: 700;
+    font-size: 0.92rem;
+    color: #d6dfee;
+    margin-bottom: 6px;
+  }
+  .table-row .col-count::before { content: 'Sales: '; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(180,190,210,0.5); display: inline; }
+  .table-row .col-total { text-align: left !important; }
+  .table-row .col-total::before { content: 'Total: '; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(180,190,210,0.5); display: inline; }
+  .table-row .col-avg { text-align: left !important; }
+  .table-row .col-avg::before { content: 'Avg: '; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(180,190,210,0.5); display: inline; }
+
+  /* Outstanding rows */
+  .table-row .col-ref {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #e2e8f0;
+    margin-bottom: 2px;
+  }
+  .table-row .col-customer {
+    font-size: 0.85rem;
+    color: rgba(190,205,228,0.8);
+    margin-bottom: 2px;
+  }
+  .table-row .col-vehicle {
+    font-size: 0.78rem;
+    color: rgba(150,165,185,0.6);
+    margin-bottom: 10px;
+  }
+
+  /* Amount row — side by side */
+  .table-row .col-total,
+  .table-row .col-outstanding,
+  .table-row .col-days {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.82rem;
+    margin-right: 14px;
+  }
+  .table-row .col-outstanding::before { content: 'Outstanding: '; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(180,190,210,0.5); }
+  .table-row .col-days::before { content: '⏱ '; }
+
+  /* Days badge — position top-right */
+  .table-row .col-days {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    margin: 0;
+    font-weight: 700;
+    font-size: 0.8rem;
+  }
+  .table-row .col-days::before { content: none; }
+
+  .reports-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .report-card { padding: 14px 12px; }
+  .stat-value { font-size: 1.3rem; }
+}

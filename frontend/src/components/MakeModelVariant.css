@@ -1,0 +1,10 @@
+.mmv-wrap { border: 1px solid var(--muted); border-radius: 8px; padding: 12px; }
+.mmv-row { display: flex; gap: 12px; }
+.mmv-col { flex: 1; }
+.mmv-list { max-height: 180px; overflow: auto; margin-top: 8px; }
+.mmv-item { display: block; width: 100%; text-align: left; padding: 8px 10px; border: none; background: transparent; cursor: pointer; border-radius: 6px; }
+.mmv-item:hover { background: rgba(255,255,255,0.03); }
+.mmv-item--active { background: rgba(0,123,255,0.12); }
+.mmv-hint { color: var(--muted); padding: 8px; }
+.mmv-other-input { margin-top: 8px; }
+.mmv-other-note { margin-top: 6px; color: var(--muted); font-size: 13px; }

@@ -1,0 +1,10 @@
+.make-select { border: 1px solid var(--muted); border-radius: 8px; padding: 8px; background: var(--panel); }
+.make-select-search { margin-bottom: 8px; }
+.make-select-input { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--muted); }
+.make-select-list { max-height: 200px; overflow: auto; }
+.make-select-group { margin-bottom: 6px; }
+.make-select-group-title { font-size: 12px; color: var(--muted); padding: 6px 4px; }
+.make-select-item { display: block; width: 100%; text-align: left; padding: 8px 6px; border: none; background: transparent; cursor: pointer; border-radius: 6px; }
+.make-select-item:hover { background: rgba(255,255,255,0.03); }
+.make-select-name { font-weight: 500; }
+.make-select-other { margin-top: 10px; }

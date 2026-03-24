@@ -1,0 +1,38 @@
+# Node / builds
+**/node_modules/
+**/dist/
+**/dist-ssr/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment (do not commit secrets)
+.env
+backend/.env
+frontend/.env
+.env.local
+.env.*.local
+
+# Database backups (large binaries)
+backend/database/*.backup
+
+# Uploads / runtime data
+public/uploads/
+backend/public/uploads/
+
+# Editor / OS
+.vscode/
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

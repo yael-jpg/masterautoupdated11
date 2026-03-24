@@ -1,0 +1,245 @@
+/* Dark glass styling for Quotation detail modal */
+.qo-detail {
+  color: #e6eef8;
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+}
+
+.qo-detail-header {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  margin-bottom: 18px;
+}
+
+.qo-detail-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.qo-meta-label {
+  color: rgba(189,200,218,0.45);
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+}
+
+.qo-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.qo-info-block {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.03);
+  padding: 18px;
+  border-radius: 10px;
+}
+
+.qo-info-block h4 {
+  margin: 0 0 8px 0;
+  color: rgba(189,200,218,0.65);
+  font-size: 0.82rem;
+}
+
+.qo-info-name {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.qo-services-section {
+  margin-top: 18px;
+}
+
+.sle-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: transparent;
+}
+
+.sle-table thead th {
+  color: rgba(189,200,218,0.5);
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 12px 8px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+
+.sle-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.02);
+}
+
+.qo-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.qo-total-amount {
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  padding: 18px 22px;
+  color: #10b981; /* green total */
+  font-weight: 800;
+}
+
+.qo-notes {
+  margin-top: 18px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.03);
+  padding: 12px 16px;
+  border-radius: 8px;
+}
+
+.qo-detail-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* Approve — dark green pill */
+.btn-approve-large {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(160deg, #0d2f20 0%, #0a2218 100%);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: #ffffff;
+  padding: 13px 28px;
+  font-size: 1rem;
+  font-weight: 800;
+  border-radius: 16px;
+  min-width: 150px;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.1), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.btn-approve-large:hover {
+  background: linear-gradient(160deg, #0f3a27 0%, #0c2a1e 100%);
+  border-color: rgba(34, 197, 94, 0.45);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 28px rgba(16, 185, 129, 0.2), inset 0 1px 0 rgba(255,255,255,0.07);
+}
+
+.btn-approve-large:active {
+  transform: translateY(0) scale(0.99);
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.12);
+}
+
+.btn-approve-sm {
+  background: linear-gradient(180deg, rgba(16,185,129,0.14), rgba(5,150,105,0.08));
+  border: 1px solid rgba(16,185,129,0.3);
+  color: #34d399;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.btn-approve-sm:hover {
+  background: rgba(16,185,129,0.25);
+  border-color: #34d399;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(16,185,129,0.2);
+}
+
+.btn-reject-sm {
+  background: rgba(239,68,68,0.06);
+  border: 1px solid rgba(239,68,68,0.22);
+  color: #f87171;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.btn-reject-sm:hover {
+  background: rgba(239,68,68,0.14);
+  border-color: #f87171;
+  color: #fff;
+}
+
+/* Reject — dark red pill */
+.btn-reject-small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(160deg, #2d0e0e 0%, #220a0a 100%);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #f87171;
+  padding: 13px 28px;
+  font-size: 1rem;
+  font-weight: 700;
+  border-radius: 16px;
+  min-width: 130px;
+  align-self: center;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.08), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.btn-reject-small:hover {
+  background: linear-gradient(160deg, #3a1010 0%, #2c0d0d 100%);
+  border-color: rgba(239, 68, 68, 0.42);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 28px rgba(239, 68, 68, 0.16), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.btn-reject-small:active {
+  transform: translateY(0) scale(0.99);
+  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.1);
+}
+
+/* Create Schedule button (larger, prominent) */
+.create-schedule {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border-radius: 4px;
+  min-width: 76px;
+  height: 28px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+
+.create-schedule:hover {
+  transform: translateY(-0.2px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+
+/* small icon approve button in table rows */
+.action-approve {
+  color: #10b981;
+}
+
+.action-approve svg { color: #10b981 }
+
+.action-danger svg { color: #ef4444 }
+
+/* Make modal inner width feel roomy on wide screens */
+.modal-content.wide {
+  max-width: 1100px;
+}
+
+@media (max-width: 800px) {
+  .qo-detail-grid { grid-template-columns: 1fr; }
+  .qo-detail-header { flex-direction: column; align-items: flex-start; }
+}

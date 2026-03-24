@@ -1,0 +1,15 @@
+{
+  "Toyota": {
+    "Vios": ["XE CVT", "XLE CVT"],
+    "Fortuner": ["2.4 MT", "2.8 AT"],
+    "Innova": ["2.8 Diesel", "2.0 Gasoline"]
+  },
+  "Honda": {
+    "Civic": ["1.8 S MT", "1.5 RS Turbo"],
+    "City": ["1.5 MT", "1.5 V CVT"]
+  },
+  "Ford": {
+    "Ranger": ["2.2 XL", "3.2 Wildtrak"],
+    "Everest": ["2.0 Turbo", "3.0 Diesel"]
+  }
+}

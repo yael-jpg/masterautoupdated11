@@ -1,0 +1,5 @@
+const db = require('../src/config/db')
+const fs = require('fs')
+db.query(fs.readFileSync('./sql/migrations/053_appointments_booking_source.sql', 'utf8'))
+  .then(() => { console.log('Migration 053 applied OK'); process.exit() })
+  .catch(e => { console.error(e.message); process.exit(1) })

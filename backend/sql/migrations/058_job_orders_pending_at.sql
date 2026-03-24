@@ -1,0 +1,1 @@
+ALTER TABLE job_orders ADD COLUMN pending_at TIMESTAMP WITH TIME ZONE;
