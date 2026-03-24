@@ -18,12 +18,12 @@ frontend/.env
 .env.local
 .env.*.local
 
-# Database backups (large binaries)
-backend/database/*.backup
+# Database backups
+# (Unignored so they can be committed/pushed)
 
 # Uploads / runtime data
+# (Unignored so they can be committed/pushed)
 public/uploads/
-backend/public/uploads/
 
 # Editor / OS
 .vscode/
