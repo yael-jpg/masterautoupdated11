@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "db:schema": "node src/utils/runSql.js sql/schema.sql",
     "db:seed": "node src/utils/runSql.js sql/seed.sql",
+    "sync:services-catalog": "node scripts/syncServiceCatalog.js",
     "smoke": "node scripts/smoke.js",
     "backfill:portal-preferred-contact-email": "node scripts/backfillPortalPreferredContactEmail.js",
     "email:test-release": "node scripts/testReleaseEmail.js",
