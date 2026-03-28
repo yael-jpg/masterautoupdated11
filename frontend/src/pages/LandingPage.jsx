@@ -285,9 +285,6 @@ export function LandingPage() {
           </h1>
           <div className="lp-hero-btns">
             <button className="lp-btn-o" onClick={() => window.location.href = '/guest'}>Online Quotation</button>
-            <span className="lp-break" aria-hidden="true" />
-            <button className="lp-btn-ow" onClick={() => window.location.href = '/portal/login'}>Register</button>
-            <button className="lp-btn-ow" onClick={() => window.location.href = '/login'}>Staff Login</button>
           </div>
         </div>
 
@@ -459,7 +456,7 @@ export function LandingPage() {
             </div>
             <div className="lp-fcol">
               <h4>Access</h4>
-              <button onClick={() => { window.location.href = '/portal/login' }}>Register</button>
+              <button onClick={() => { window.location.href = '/portal/login' }}>Create Account</button>
               <a href="/login">Staff Login</a>
             </div>
           </div>

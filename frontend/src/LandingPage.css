@@ -326,12 +326,12 @@
   inset: -1px;
   background-size: cover;
   background-position: center;
-  transition: transform 0.70s cubic-bezier(0.22,1,0.36,1);
+  transition: transform 0.52s cubic-bezier(0.22,1,0.36,1);
   will-change: transform;
 }
 .lp-fan-panel:hover .lp-fan-bg,
 .lp-fan-panel.is-active .lp-fan-bg {
-  transform: scale(1.07);
+  transform: scale(1.04);
 }
 
 /* Gradient overlay */
@@ -935,12 +935,12 @@
   inset: 0;
   background-size: cover;
   background-position: center;
-  transition: transform 0.70s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.52s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
 .lp-hiw-panel:hover .lp-hiw-bg,
 .lp-hiw-panel.is-active .lp-hiw-bg {
-  transform: scale(1.07);
+  transform: scale(1.04);
 }
 
 /* Dark gradient overlay */
