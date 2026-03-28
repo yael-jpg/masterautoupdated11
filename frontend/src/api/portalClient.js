@@ -4,13 +4,14 @@
  * localStorage under "ma_portal_token".
  */
 
-const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
 
 // Normalize base URL so we always end up with ".../api/portal".
 // Supports env values like:
-// - http://localhost:5000
-// - http://localhost:5000/api
-// - http://localhost:5000/api/portal
+// - DEV: http://localhost:5000
+// - DEV: http://localhost:5000/api
+// - DEV: http://localhost:5000/api/portal
+// - PROD (Netlify drag-drop): /api (proxy via Netlify redirects)
 const PORTAL_BASE_URL = (() => {
   const trimmed = String(RAW_API_BASE || '').replace(/\/+$/, '')
   if (trimmed.endsWith('/api/portal')) return trimmed

@@ -1,7 +1,8 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import '../LandingPage.css'
 
-const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+const DEFAULT_API_BASE_URL = import.meta.env.DEV ? 'http://localhost:5000/api' : '/api'
+const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL
 const API_BASE = (() => {
   const trimmed = String(RAW_API_BASE || '').replace(/\/+$/, '')
   return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`

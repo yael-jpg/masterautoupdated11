@@ -1,2 +1,6 @@
-# Netlify SPA fallback: serve index.html for all routes
-/*    /index.html   200
+# Proxy API requests to the backend (Render)
+/api/*     https://masterautoupdated11.onrender.com/api/:splat      200
+/uploads/* https://masterautoupdated11.onrender.com/uploads/:splat  200
+
+# Netlify SPA fallback: serve index.html for all other routes
+/*         /index.html                                           200

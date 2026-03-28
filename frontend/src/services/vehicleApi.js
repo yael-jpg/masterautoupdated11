@@ -6,7 +6,7 @@
 
 // Keep consistent with the rest of the frontend:
 // VITE_API_BASE_URL should include the /api prefix (e.g. https://<render-app>.onrender.com/api)
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
 
 class VehicleApi {
   /**
