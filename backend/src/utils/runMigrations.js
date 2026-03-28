@@ -30,14 +30,49 @@ async function applyMigration(filename) {
   const fullPath = path.join(MIGRATIONS_DIR, filename)
   const sql = fs.readFileSync(fullPath, 'utf8')
 
-  await db.pool.query('BEGIN')
+  // Some legacy migrations include their own explicit transaction control
+  // statements (BEGIN/COMMIT/ROLLBACK). Since this runner also wraps each
+  // migration in a transaction, double-wrapping can cause failures.
+  //
+  // If the migration file contains transaction control statements, we execute
+  // it as-is and only record it in schema_migrations on success.
+  const hasExplicitTx = /(^|[\r\n])\s*(BEGIN|COMMIT|ROLLBACK)\s*;\s*($|[\r\n])/i.test(sql)
+
+  const client = await db.pool.connect()
   try {
-    await db.pool.query(sql)
-    await db.pool.query('INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT (filename) DO NOTHING', [filename])
-    await db.pool.query('COMMIT')
+    if (hasExplicitTx) {
+      await client.query(sql)
+      await client.query(
+        'INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT (filename) DO NOTHING',
+        [filename]
+      )
+      return
+    }
+
+    await client.query('BEGIN')
+    try {
+      await client.query(sql)
+      await client.query(
+        'INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT (filename) DO NOTHING',
+        [filename]
+      )
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    }
   } catch (error) {
-    await db.pool.query('ROLLBACK')
+    // If an explicit-transaction migration fails mid-transaction, the
+    // connection can remain in an aborted transaction state until rolled back.
+    try {
+      await client.query('ROLLBACK')
+    } catch (_) {
+      // ignore
+    }
+
     throw new Error(`Migration failed: ${filename}: ${error.message}`)
+  } finally {
+    client.release()
   }
 }
 

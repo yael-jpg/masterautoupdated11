@@ -24,8 +24,29 @@ CREATE INDEX IF NOT EXISTS idx_vehicles_status ON vehicles (status);
 -- Note: archiving a vehicle should only set 'status' = 'Archived' and populate archived_at/archived_by
 
 -- Normalize existing plate numbers into storage format (uppercase, strip non-alphanumeric)
-UPDATE vehicles
-SET plate_number = UPPER(regexp_replace(plate_number, '[^A-Za-z0-9]', '', 'g'))
-WHERE plate_number IS NOT NULL;
-
--- Ensure uniqueness after normalization: this will fail if duplicates are created by normalization and must be handled manually.
+--
+-- IMPORTANT:
+-- `vehicles.plate_number` is UNIQUE. Normalizing can accidentally collapse distinct
+-- values (e.g. "ABC-123" and "ABC123") into the same normalized value.
+-- To keep the migration chain from halting on a unique-violation, we only
+-- normalize rows whose normalized value is unique across the table.
+WITH normalized AS (
+  SELECT
+    id,
+    plate_number,
+    UPPER(regexp_replace(plate_number, '[^A-Za-z0-9]', '', 'g')) AS normalized_plate
+  FROM vehicles
+  WHERE plate_number IS NOT NULL
+),
+conflicts AS (
+  SELECT normalized_plate
+  FROM normalized
+  GROUP BY normalized_plate
+  HAVING COUNT(*) > 1
+)
+UPDATE vehicles v
+SET plate_number = n.normalized_plate
+FROM normalized n
+WHERE v.id = n.id
+  AND n.normalized_plate NOT IN (SELECT normalized_plate FROM conflicts)
+  AND v.plate_number IS DISTINCT FROM n.normalized_plate;

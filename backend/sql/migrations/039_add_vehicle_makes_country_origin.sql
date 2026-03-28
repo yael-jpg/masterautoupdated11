@@ -2,7 +2,9 @@
 -- Adds country_origin column (if missing) and upserts common vehicle makes
 
 ALTER TABLE vehicle_makes
-  ADD COLUMN IF NOT EXISTS country_origin VARCHAR(50) DEFAULT NULL;
+  ADD COLUMN IF NOT EXISTS country_origin VARCHAR(50) DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS logo_url TEXT,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
 
 -- Upsert requested brands with country_origin and activate them
 INSERT INTO vehicle_makes (name, category, country_origin, is_active, logo_url)
@@ -52,10 +54,10 @@ VALUES
 -- EV-focused
 ('Tesla', 'American', 'USA', TRUE, '/images/vehicle-logos/tesla.png'),
 ('GAC Aion', 'Chinese', 'China', TRUE, '/images/vehicle-logos/gac-aion.png')
-
-ON DUPLICATE KEY UPDATE
-  is_active = VALUES(is_active),
-  country_origin = COALESCE(VALUES(country_origin), vehicle_makes.country_origin),
-  category = COALESCE(VALUES(category), vehicle_makes.category),
-  logo_url = COALESCE(VALUES(logo_url), vehicle_makes.logo_url),
-  updated_at = CURRENT_TIMESTAMP;
+ON CONFLICT (name) DO UPDATE
+SET
+  is_active = EXCLUDED.is_active,
+  country_origin = COALESCE(EXCLUDED.country_origin, vehicle_makes.country_origin),
+  category = COALESCE(EXCLUDED.category, vehicle_makes.category),
+  logo_url = COALESCE(EXCLUDED.logo_url, vehicle_makes.logo_url),
+  updated_at = NOW();

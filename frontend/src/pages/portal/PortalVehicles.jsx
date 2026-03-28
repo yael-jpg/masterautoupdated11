@@ -305,12 +305,28 @@ function PortalVehicleRegisterModal({
       setVariants([])
       return
     }
-    const makeObj = localMakes.find((m) => m.name === form.make)
+    const makeName = String(form.make || '').trim()
+    const makeObj = localMakes.find((m) => String(m.name || '').trim().toLowerCase() === makeName.toLowerCase())
     if (!makeObj) { setModels([]); setVariants([]); return }
-    portalGet(`/vehicle-makes/${makeObj.id}/models`)
-      .then((data) => setModels(Array.isArray(data) ? data : []))
-      .catch(() => setModels([]))
+    let cancelled = false
+    const makeId = makeObj.id
+    portalGet(`/vehicle-makes/${makeId}/models`)
+      .then((data) => {
+        if (cancelled) return
+        const stillSelected = localMakes
+          .find((m) => String(m.name || '').trim().toLowerCase() === String(form.make || '').trim().toLowerCase())
+          ?.id === makeId
+        if (!stillSelected) return
+        setModels(Array.isArray(data) ? data : [])
+      })
+      .catch(() => {
+        if (cancelled) return
+        setModels([])
+      })
     setVariants([])
+    return () => {
+      cancelled = true
+    }
   }, [isOpen, form.make, localMakes])
 
   // Load variants when model changes
@@ -320,11 +336,31 @@ function PortalVehicleRegisterModal({
       setVariants([])
       return
     }
-    const modelObj = models.find((m) => m.name === form.model)
+    const modelNameNormalized = String(form.model || '').trim().toLowerCase()
+    const modelObj = models.find((m) => String(m.name || '').trim().toLowerCase() === modelNameNormalized)
     if (!modelObj) { setVariants([]); return }
-    portalGet(`/vehicle-makes/models/${modelObj.id}/variants`)
-      .then((data) => setVariants(Array.isArray(data) ? data : []))
-      .catch(() => setVariants([]))
+    let cancelled = false
+    const modelId = modelObj.id
+    const modelName = form.model
+    portalGet(`/vehicle-makes/models/${modelId}/variants`)
+      .then((data) => {
+        if (cancelled) return
+        const stillSelected =
+          String(form.model || '').trim().toLowerCase() === String(modelName || '').trim().toLowerCase() &&
+          models.some(
+            (m) => m.id === modelId && String(m.name || '').trim().toLowerCase() === String(modelName || '').trim().toLowerCase()
+          )
+        if (!stillSelected) return
+        setVariants(Array.isArray(data) ? data : [])
+      })
+      .catch(() => {
+        if (cancelled) return
+        setVariants([])
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [isOpen, form.model, form._customModel, models])
 
   const makeOptions = (() => {
@@ -469,7 +505,16 @@ function PortalVehicleRegisterModal({
             <SearchableSelect
               options={makeOptions}
               value={form.make}
-              onChange={(val) => setForm((prev) => ({ ...prev, make: val, model: '', customMake: '', variant: '', _customModel: false, _customVariant: false }))}
+              onChange={(val) =>
+                setForm((prev) => ({
+                  ...prev,
+                  make: String(val || '').trim(),
+                  model: '',
+                  customMake: '',
+                  variant: '',
+                  _customModel: false,
+                  _customVariant: false,
+                }))}
               placeholder="Search brand…"
               required
               grouped
@@ -496,7 +541,7 @@ function PortalVehicleRegisterModal({
                   if (val === '__custom__') {
                     setForm((prev) => ({ ...prev, model: '', _customModel: true, variant: '', _customVariant: false }))
                   } else {
-                    setForm((prev) => ({ ...prev, model: val, _customModel: false, variant: '', _customVariant: false }))
+                    setForm((prev) => ({ ...prev, model: String(val || '').trim(), _customModel: false, variant: '', _customVariant: false }))
                   }
                 }}
                 placeholder="Search model…"

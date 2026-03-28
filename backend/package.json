@@ -10,6 +10,7 @@
     "db:migrate": "node src/utils/runMigrations.js",
     "db:seed": "node src/utils/runSql.js sql/seed.sql",
     "db:bootstrap": "npm run db:schema && npm run db:migrate && npm run db:seed",
+    "db:purge-seed-customers": "node scripts/purgeSeedCustomers.js",
     "sync:services-catalog": "node scripts/syncServiceCatalog.js",
     "smoke": "node scripts/smoke.js",
     "backfill:portal-preferred-contact-email": "node scripts/backfillPortalPreferredContactEmail.js",

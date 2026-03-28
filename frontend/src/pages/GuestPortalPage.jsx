@@ -13,22 +13,53 @@ const API_BASE = (() => {
 })()
 const PUBLIC_BASE = `${API_BASE}/public`
 
-async function publicGet(path) {
-    const res = await fetch(`${PUBLIC_BASE}${path}`)
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(json.message || `Error ${res.status}`)
-    return json
+function withTimeout(timeoutMs = 15000) {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+    return {
+        signal: controller.signal,
+        clear: () => clearTimeout(timeoutId),
+    }
 }
 
-async function publicPost(path, body) {
-    const res = await fetch(`${PUBLIC_BASE}${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    })
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(json.message || `Error ${res.status}`)
-    return json
+async function publicGet(path, { timeoutMs = 15000 } = {}) {
+    const url = `${PUBLIC_BASE}${path}`
+    const { signal, clear } = withTimeout(timeoutMs)
+    try {
+        const res = await fetch(url, { signal })
+        // Handle empty responses safely
+        const text = await res.text().catch(() => '')
+        const json = text ? JSON.parse(text) : null
+        if (!res.ok) throw new Error(json?.message || `Error ${res.status}`)
+        return json
+    } catch (e) {
+        if (e?.name === 'AbortError') throw new Error('Request timed out')
+        throw e
+    } finally {
+        clear()
+    }
+}
+
+async function publicPost(path, body, { timeoutMs = 20000 } = {}) {
+    const url = `${PUBLIC_BASE}${path}`
+    const { signal, clear } = withTimeout(timeoutMs)
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal,
+        })
+        const text = await res.text().catch(() => '')
+        const json = text ? JSON.parse(text) : null
+        if (!res.ok) throw new Error(json?.message || `Error ${res.status}`)
+        return json
+    } catch (e) {
+        if (e?.name === 'AbortError') throw new Error('Request timed out')
+        throw e
+    } finally {
+        clear()
+    }
 }
 
 function fmt(price) {
@@ -525,6 +556,7 @@ function ServicesTab({ onRequestQuote }) {
     const [services, setServices] = useState([])
     const [priceOverrides, setPriceOverrides] = useState({})
     const [loading, setLoading] = useState(true)
+    const [loadError, setLoadError] = useState('')
     const [search, setSearch] = useState('')
     const [category, setCategory] = useState('All')
     const [vehicleSize, setVehicleSize] = useState('medium')
@@ -539,13 +571,39 @@ function ServicesTab({ onRequestQuote }) {
     }
 
     useEffect(() => {
+        let cancelled = false
+        setLoadError('')
+        setLoading(true)
+
+        let servicesFailed = false
+        let priceFailed = false
+
         Promise.all([
-            publicGet('/services').catch(() => []),
-            publicGet('/price-config').catch(() => ({})),
-        ]).then(([svcData, overrides]) => {
-            setServices(Array.isArray(svcData) ? svcData : [])
-            setPriceOverrides(overrides && typeof overrides === 'object' ? overrides : {})
-        }).finally(() => setLoading(false))
+            publicGet('/services', { timeoutMs: 15000 }).catch(() => {
+                servicesFailed = true
+                return []
+            }),
+            publicGet('/price-config', { timeoutMs: 15000 }).catch(() => {
+                priceFailed = true
+                return {}
+            }),
+        ])
+            .then(([svcData, overrides]) => {
+                if (cancelled) return
+                setServices(Array.isArray(svcData) ? svcData : [])
+                setPriceOverrides(overrides && typeof overrides === 'object' ? overrides : {})
+                if (servicesFailed && priceFailed) {
+                    setLoadError('Unable to load services right now. Please refresh and try again.')
+                }
+            })
+            .finally(() => {
+                if (cancelled) return
+                setLoading(false)
+            })
+
+        return () => {
+            cancelled = true
+        }
     }, [])
 
     const isBikeSize = vehicleSize === 'small-bike' || vehicleSize === 'big-bike'
@@ -612,6 +670,7 @@ function ServicesTab({ onRequestQuote }) {
     }, {})
 
     if (loading) return <div className="gp-loading">Loading services…</div>
+    if (loadError) return <div className="gp-loading">{loadError}</div>
 
     return (
         <div className="gp-tab-content">

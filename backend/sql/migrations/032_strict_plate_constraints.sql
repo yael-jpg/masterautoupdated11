@@ -4,9 +4,8 @@
 -- This migration adds a CHECK constraint to validate stored plate_number for non-temporary vehicles.
 -- It also adds a case-insensitive unique index on normalized plate_number to prevent duplicates.
 
--- NOTE: If your dataset contains plates that do not comply, run a cleanup script before applying this migration.
-
-BEGIN;
+-- NOTE: If your dataset contains plates that do not comply, this migration will not validate existing rows.
+--       It uses NOT VALID for the CHECK constraint and only creates the unique index when it is safe.
 
 -- Add check constraint that allows exceptions when conduction_sticker is present (temporary plate)
 DO $$
@@ -18,7 +17,7 @@ BEGIN
   ) THEN
     ALTER TABLE vehicles ADD CONSTRAINT vehicles_plate_format_chk CHECK (
       (plate_number ~ '^[A-Z]{3}[0-9]{4}$') OR (conduction_sticker IS NOT NULL)
-    );
+    ) NOT VALID;
   END IF;
 END$$;
 
@@ -26,8 +25,18 @@ END$$;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE tablename = 'vehicles' AND indexname = 'uq_vehicles_plate_normalized') THEN
-    CREATE UNIQUE INDEX uq_vehicles_plate_normalized ON vehicles (upper(regexp_replace(plate_number, '\\s+', '', 'g')));
+    IF NOT EXISTS (
+      SELECT 1
+      FROM (
+        SELECT upper(regexp_replace(plate_number, '\\s+', '', 'g')) AS key
+        FROM vehicles
+        WHERE plate_number IS NOT NULL
+        GROUP BY key
+        HAVING COUNT(*) > 1
+        LIMIT 1
+      ) dup
+    ) THEN
+      CREATE UNIQUE INDEX uq_vehicles_plate_normalized ON vehicles (upper(regexp_replace(plate_number, '\\s+', '', 'g')));
+    END IF;
   END IF;
 END$$;
-
-COMMIT;

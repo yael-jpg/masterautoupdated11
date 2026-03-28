@@ -1,6 +1,10 @@
 -- Migration 038: Populate Vehicle Makes master data
 -- Inserts commonly available car brands (Philippines-focused).
--- Idempotent: uses ON DUPLICATE KEY UPDATE to avoid duplicates and to re-activate existing rows.
+-- Idempotent: uses ON CONFLICT (PostgreSQL) to avoid duplicates and to re-activate existing rows.
+
+ALTER TABLE vehicle_makes
+  ADD COLUMN IF NOT EXISTS logo_url TEXT,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
 
 INSERT INTO vehicle_makes (name, category, is_active, logo_url) VALUES
 -- Japanese Brands
@@ -51,9 +55,9 @@ INSERT INTO vehicle_makes (name, category, is_active, logo_url) VALUES
 -- EV / Special
 ('Tesla', 'American', TRUE, '/images/vehicle-logos/tesla.png'),
 ('GAC Aion', 'Chinese', TRUE, '/images/vehicle-logos/gac-aion.png')
-
-ON DUPLICATE KEY UPDATE
-  is_active = VALUES(is_active),
-  category = VALUES(category),
-  logo_url = COALESCE(VALUES(logo_url), vehicle_makes.logo_url),
-  updated_at = CURRENT_TIMESTAMP;
+ON CONFLICT (name) DO UPDATE
+SET
+  is_active = EXCLUDED.is_active,
+  category = EXCLUDED.category,
+  logo_url = COALESCE(EXCLUDED.logo_url, vehicle_makes.logo_url),
+  updated_at = NOW();
