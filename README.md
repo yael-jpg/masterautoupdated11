@@ -85,7 +85,7 @@ Additional query params:
 
 ## Frontend Setup
 1. Copy environment file:
-   - `frontend/.env.example` → `frontend/.env`
+   - Dev/local: `frontend/.env.example` → `frontend/.env.development` (or set `VITE_API_BASE_URL` in your shell)
 2. Install dependencies:
    - `cd frontend`
    - `npm install`
@@ -93,8 +93,13 @@ Additional query params:
    - `npm run dev`
 
 For production profile:
-- `frontend/.env.production.example` → `frontend/.env`
+- Create `frontend/.env.production` (or set a build-time env var in your host, e.g. Netlify)
+  - `VITE_API_BASE_URL=https://<your-backend-host>/api`
 - `npm run build` then `npm run preview`
+
+Netlify note:
+- If the site loads but Online Quotation shows “No services found”, the build most likely used `VITE_API_BASE_URL=http://localhost:5000/api`.
+  Set `VITE_API_BASE_URL` in Netlify (Site settings → Environment variables) and redeploy, or rebuild locally with the correct value and upload `frontend/dist`.
 
 Frontend default URL: `http://localhost:5173`
 
