@@ -190,7 +190,6 @@ export function PortalLoginPage({ onLogin }) {
                         shape="rectangular"
                         size="large"
                         text="continue_with"
-                        width="320"
                       />
                     </div>
 
@@ -303,7 +302,6 @@ export function PortalLoginPage({ onLogin }) {
                         shape="rectangular"
                         size="large"
                         text="continue_with"
-                        width="320"
                       />
                     </div>
                   </form>
