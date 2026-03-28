@@ -1,0 +1,7 @@
+# Prevent leaking local secrets/credentials into the Docker image
+.env
+
+# Usual ignores
+node_modules
+npm-debug.log
+.DS_Store

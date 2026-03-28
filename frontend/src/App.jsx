@@ -60,7 +60,21 @@ function App() {
   // The Notification Center is currently frontend-only. To notify admins/staff
   // when a portal booking happens, we poll for newly created portal appointments.
   const portalWatchRef = useRef(createPortalBookingWatchState())
-  const onlineQuotationWatchRef = useRef({ initialized: false, seenIds: new Set() })
+  const onlineQuotationWatchRef = useRef({ initialized: false, lastSeenIso: null, seenIds: new Set() })
+
+  // Keep staff login URL clean:
+  // - Logged out → always show /login (even if user opens /admin)
+  // - Logged in  → show /admin (if user is on /login)
+  useEffect(() => {
+    const pathname = window.location.pathname
+
+    if (!session.token) {
+      if (pathname !== '/login') window.history.replaceState({}, '', '/login')
+      return
+    }
+
+    if (pathname === '/login') window.history.replaceState({}, '', '/admin')
+  }, [session.token])
 
   useEffect(() => {
     if (!session.token) return
@@ -70,7 +84,7 @@ function App() {
 
     // Reset per-login session state
     portalWatchRef.current = createPortalBookingWatchState()
-    onlineQuotationWatchRef.current = { initialized: false, seenIds: new Set() }
+    onlineQuotationWatchRef.current = { initialized: false, lastSeenIso: null, seenIds: new Set() }
 
     const addOnlineBookingRequestNotification = (quotation) => {
       const customerText = quotation?.customer_name || 'Customer'
@@ -298,18 +312,66 @@ function App() {
 
           const watch = onlineQuotationWatchRef.current
 
+          const toIso = (value) => {
+            if (!value) return null
+            const d = new Date(value)
+            if (Number.isNaN(d.getTime())) return null
+            return d.toISOString()
+          }
+
+          const withIso = leadRows
+            .map((r) => ({ row: r, createdIso: toIso(r?.created_at) }))
+            .filter((x) => x.createdIso)
+
+          const latestIso = withIso[0]?.createdIso || new Date().toISOString()
+
           // First run: establish baseline without notifying
           if (!watch.initialized) {
-            leadRows.forEach((r) => { if (r?.id != null) watch.seenIds.add(r.id) })
+            // Like portal quotation notifications, surface very recent leads so
+            // admins/staff don't miss a request created just before login/refresh.
+            const graceMs = 2 * 60 * 1000
+            const graceCutoffIso = new Date(Date.now() - graceMs).toISOString()
+            const recentRows = withIso
+              .filter((x) => x.createdIso >= graceCutoffIso)
+              .sort((a, b) => new Date(a.createdIso) - new Date(b.createdIso))
+              .map((x) => x.row)
+
+            // Establish baseline
+            watch.seenIds = new Set(leadRows.map((r) => r?.id).filter((id) => id !== undefined && id !== null))
+            watch.lastSeenIso = latestIso
             watch.initialized = true
-          } else {
-            const newRows = leadRows.filter((r) => r?.id != null && !watch.seenIds.has(r.id))
-            if (newRows.length > 0) {
-              newRows.forEach((r) => {
-                watch.seenIds.add(r.id)
+
+            if (recentRows.length > 0) {
+              recentRows.forEach((r) => {
+                if (r?.id != null) watch.seenIds.add(r.id)
                 addOnlineQuotationLeadNotification(r)
                 window.dispatchEvent(new CustomEvent('ma:online-quotation-requests-updated', { detail: { source: 'public', requestId: r.id } }))
               })
+            }
+          } else {
+            const lastSeenIso = watch.lastSeenIso || new Date().toISOString()
+            const seenIds = watch.seenIds instanceof Set ? watch.seenIds : new Set()
+
+            const newRows = withIso
+              .filter(({ row, createdIso }) => {
+                if (createdIso > lastSeenIso) return true
+                if (createdIso === lastSeenIso && row?.id != null && !seenIds.has(row.id)) return true
+                return false
+              })
+              .sort((a, b) => new Date(a.createdIso) - new Date(b.createdIso))
+              .map((x) => x.row)
+
+            if (newRows.length > 0) {
+              newRows.forEach((r) => {
+                if (r?.id != null) seenIds.add(r.id)
+                addOnlineQuotationLeadNotification(r)
+                window.dispatchEvent(new CustomEvent('ma:online-quotation-requests-updated', { detail: { source: 'public', requestId: r.id } }))
+              })
+              watch.seenIds = seenIds
+              watch.lastSeenIso = toIso(newRows[newRows.length - 1]?.created_at) || lastSeenIso
+            } else {
+              watch.seenIds = seenIds
+              watch.lastSeenIso = lastSeenIso
             }
           }
         } catch (_) {
@@ -650,6 +712,7 @@ function App() {
       localStorage.setItem('masterauto_token', result.token)
       localStorage.setItem('masterauto_user', JSON.stringify(result.user))
       setSession({ token: result.token, user: result.user })
+      window.history.replaceState({}, '', '/admin')
     } catch (error) {
       setAuthError(error.message)
       pushToast('error', error.message)
@@ -662,6 +725,7 @@ function App() {
     localStorage.removeItem('masterauto_token')
     localStorage.removeItem('masterauto_user')
     setSession({ token: '', user: null })
+    window.history.replaceState({}, '', '/login')
   }
 
   const handleExport = async () => {

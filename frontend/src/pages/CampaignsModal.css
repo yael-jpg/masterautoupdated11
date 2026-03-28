@@ -19,7 +19,9 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   width: min(1200px, 100%);
-  max-height: 92vh;
+  /* Ensure the shell never exceeds the visible area, accounting for backdrop padding */
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
   box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6);
   display: flex;
   flex-direction: column;
@@ -42,6 +44,20 @@
   background: rgba(255, 255, 255, 0.01);
 }
 
+.campaign-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.campaign-modal-logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  opacity: 0.92;
+}
+
 .campaign-modal-header h3 {
   margin: 0;
   font-size: 20px;
@@ -55,6 +71,49 @@
   padding: 28px;
   overflow-y: auto;
   flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+  min-height: 0;
+}
+
+/* In editor mode, the editor owns scrolling so the footer stays clean */
+.campaign-modal-body.editor-mode {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.campaign-modal-body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.campaign-modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.campaign-modal-body::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+.campaign-modal-body::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(148, 163, 184, 0.55);
+}
+
+.email-template-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+.email-template-logo img {
+  width: 140px;
+  height: auto;
+  object-fit: contain;
+  display: block;
 }
 
 .campaigns-table-container {
@@ -113,8 +172,40 @@
 .campaign-editor {
   display: flex;
   flex-direction: column;
-  gap: 20px;
   max-width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.campaign-editor-scroll {
+  padding: 28px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.28) transparent;
+}
+
+.campaign-editor-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.campaign-editor-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.campaign-editor-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+.campaign-editor-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(148, 163, 184, 0.48);
 }
 
 .campaign-editor-layout {
@@ -225,6 +316,28 @@
   resize: vertical;
   min-height: 120px;
   line-height: 1.5;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+
+.campaign-textarea::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.campaign-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.campaign-textarea::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+.campaign-textarea::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(148, 163, 184, 0.55);
 }
 
 /* Promo Box (Reuse from inline) but styled better */
@@ -265,15 +378,16 @@
 
 /* Footer Actions */
 .editor-footer {
-  position: sticky;
-  bottom: 0;
-  padding: 20px 28px;
-  background: #0f1115;
+  flex: 0 0 auto;
+  padding: 16px 28px;
+  background: rgba(15, 17, 21, 0.92);
+  backdrop-filter: blur(10px);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 -18px 40px rgba(0, 0, 0, 0.55);
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  margin: 0 -28px -28px;
+  margin: 0;
 }
 
 .btn-secondary, .btn-primary, .btn-outline {

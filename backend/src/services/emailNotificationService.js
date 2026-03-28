@@ -39,6 +39,23 @@ async function _alreadySent(eventType, entityId) {
   return rows.length > 0
 }
 
+function _round2(n) {
+  return Math.round(Number(n || 0) * 100) / 100
+}
+
+function _computeSubtotalFromServices(services) {
+  const list = Array.isArray(services) ? services : []
+  return list.reduce((sum, s) => {
+    const qty = Number(s?.qty ?? 1)
+    const unitPrice = Number(s?.unitPrice ?? s?.unit_price ?? 0)
+    const lineTotal = Number(s?.total ?? s?.lineTotal ?? s?.amount ?? s?.price ?? 0)
+    const resolved = Number.isFinite(lineTotal) && lineTotal > 0
+      ? lineTotal
+      : (Number.isFinite(unitPrice) ? unitPrice * (Number.isFinite(qty) ? qty : 1) : 0)
+    return sum + Number(resolved || 0)
+  }, 0)
+}
+
 /**
  * Persists the email attempt result.
  * ON CONFLICT DO NOTHING — if a concurrent request already inserted, we skip silently.
@@ -611,6 +628,9 @@ async function notifyJobCompleted(jobOrderId, actorUserId) {
 
   const services = Array.isArray(jo.services) ? jo.services : []
 
+  const subtotal  = _round2(_computeSubtotalFromServices(services))
+  const vatAmount = _round2(Number(jo.total_amount || 0) - subtotal)
+
   // ── 4. Send ───────────────────────────────────────────────────────────────────────
   let sendResult
   try {
@@ -626,6 +646,8 @@ async function notifyJobCompleted(jobOrderId, actorUserId) {
       color:          jo.color,
       services,
       totalAmount:    jo.total_amount,
+      subtotal,
+      vatAmount,
       technicianNames,
       completedAt:    jo.completed_at || new Date(),
       customerMobile: jo.customer_mobile,
@@ -742,6 +764,9 @@ async function notifyJobReleased(jobOrderId, actorUserId) {
 
   const services = Array.isArray(jo.services) ? jo.services : []
 
+  const subtotal  = _round2(_computeSubtotalFromServices(services))
+  const vatAmount = _round2(Number(jo.total_amount || 0) - subtotal)
+
   // ── 4. Send ──────────────────────────────────────────────────────────────────────────────
   const displayJobOrderNo = _formatDisplayJobOrderNo(jo.job_order_no, jo.customer_bay)
 
@@ -759,6 +784,8 @@ async function notifyJobReleased(jobOrderId, actorUserId) {
       color:          jo.color,
       services,
       totalAmount:    jo.total_amount,
+      subtotal,
+      vatAmount,
       technicianNames,
       releasedAt:     jo.released_at || new Date(),
     })
@@ -801,9 +828,20 @@ async function notifyJobReleased(jobOrderId, actorUserId) {
  * @param {number} paymentId
  * @param {number|null} actorUserId
  */
-async function notifyPaymentReceived(paymentId, actorUserId) {
+async function notifyPaymentReceived(paymentId, actorUserId, { resend = false } = {}) {
   const EVENT_TYPE  = 'payment_received'
   const ENTITY_TYPE = 'payment'
+
+  // ── 1. Deduplication guard ────────────────────────────────────────────────
+  if (resend) {
+    await db.query(
+      `DELETE FROM email_notifications WHERE event_type = $1 AND entity_id = $2`,
+      [EVENT_TYPE, paymentId],
+    ).catch(() => {})
+  } else if (await _alreadySent(EVENT_TYPE, paymentId)) {
+    console.info(`[EmailNotification] Skipped duplicate: ${EVENT_TYPE} #${paymentId}`)
+    return
+  }
 
   // Fetch payment + quotation + customer + vehicle
   const { rows } = await db.query(
@@ -814,6 +852,7 @@ async function notifyPaymentReceived(paymentId, actorUserId) {
             p.created_at AS payment_date,
             q.id AS quotation_id,
             q.quotation_no,
+            q.services,
             q.total_amount,
             qps.total_paid,
             qps.outstanding_balance,
@@ -842,8 +881,29 @@ async function notifyPaymentReceived(paymentId, actorUserId) {
 
   if (!data.customer_email) {
     console.info(`[EmailNotification] ${EVENT_TYPE} #${paymentId}: customer has no email — skipping`)
+    await _logNotification({
+      eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: paymentId,
+      recipientEmail: '(no email)', status: 'skipped',
+      errorMessage: 'Customer has no email address', triggeredBy: actorUserId,
+    })
     return
   }
+
+  // Optional config gate (if settings exist)
+  const cfgEnabled = await ConfigurationService.get('payment_email', 'enabled').catch(() => null)
+  if (String(cfgEnabled) === 'false') {
+    console.info(`[EmailNotification] ${EVENT_TYPE} #${paymentId}: disabled by configuration — skipping`)
+    await _logNotification({
+      eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: paymentId,
+      recipientEmail: data.customer_email, status: 'skipped',
+      errorMessage: 'Disabled by configuration', triggeredBy: actorUserId,
+    })
+    return
+  }
+
+  const services = Array.isArray(data.services) ? data.services : []
+  const subtotal  = _round2(_computeSubtotalFromServices(services))
+  const vatAmount = _round2(Number(data.total_amount || 0) - subtotal)
 
   let sendResult
   try {
@@ -854,6 +914,8 @@ async function notifyPaymentReceived(paymentId, actorUserId) {
       paymentAmount: data.payment_amount,
       totalPaid: data.total_paid,
       totalAmount: data.total_amount,
+      subtotal,
+      vatAmount,
       outstandingBalance: data.outstanding_balance,
       paymentMethod: data.payment_type,
       paymentReference: data.payment_reference,
@@ -865,9 +927,25 @@ async function notifyPaymentReceived(paymentId, actorUserId) {
       color: data.color,
     })
   } catch (err) {
+    await _logNotification({
+      eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: paymentId,
+      recipientEmail: data.customer_email, status: 'failed',
+      errorMessage: err.message, triggeredBy: actorUserId,
+    })
+    await writeAuditLog({
+      userId: actorUserId, action: 'EMAIL_FAILED', entity: ENTITY_TYPE, entityId: paymentId,
+      meta: { event: EVENT_TYPE, to: data.customer_email, error: err.message },
+    }).catch(() => {})
     console.error(`[EmailNotification] ${EVENT_TYPE} #${paymentId} FAILED:`, err.message)
     return
   }
+
+  const status = sendResult?.skipped ? 'skipped' : 'sent'
+  await _logNotification({
+    eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: paymentId,
+    recipientEmail: data.customer_email, status,
+    triggeredBy: actorUserId,
+  })
 
   if (!sendResult?.skipped) {
     await writeAuditLog({

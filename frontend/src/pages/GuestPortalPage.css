@@ -310,9 +310,17 @@
 }
 
 /* ─── Search ─── */
+.gp-services-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
 .gp-search-wrap {
   position: relative;
-  margin-bottom: 14px;
+  margin-bottom: 0;
+  flex: 1;
 }
 
 .gp-search-icon {
@@ -346,6 +354,31 @@
 
 .gp-search::placeholder {
   color: rgba(192, 196, 204, 0.30);
+}
+
+.gp-size-select-inline {
+  width: 220px;
+  max-width: 100%;
+  flex-shrink: 0;
+}
+
+.gp-size-select-inline .gp-sel-trigger {
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  background: rgba(22, 22, 22, 0.82);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+@media (max-width: 640px) {
+  .gp-services-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .gp-size-select-inline {
+    width: 100%;
+  }
 }
 
 /* ─── Category Pills ─── */
@@ -444,8 +477,20 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  cursor: pointer;
   transition: border-color 0.18s, background 0.18s, transform 0.15s;
+}
+
+.gp-svc-card-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.gp-svc-card-summary:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.18);
+  outline-offset: 3px;
+  border-radius: 10px;
 }
 
 .gp-svc-card:hover {
@@ -459,6 +504,29 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+}
+
+.gp-svc-card-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.gp-svc-card-chevron {
+  width: 16px;
+  height: 16px;
+  color: rgba(192, 196, 204, 0.70);
+  transition: transform 0.18s, opacity 0.18s;
+  opacity: 0.85;
+}
+
+.gp-svc-card:hover .gp-svc-card-chevron {
+  opacity: 1;
+}
+
+.gp-svc-card-chevron.up {
+  transform: rotate(180deg);
 }
 
 .gp-svc-card-name {
@@ -492,6 +560,62 @@
   margin-top: 2px;
 }
 
+/* Service card actions (View Details / Request Quote) */
+.gp-svc-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.gp-svc-card-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(244, 244, 244, 0.92);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s;
+}
+
+.gp-svc-card-action:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.gp-svc-card-action svg {
+  width: 13px;
+  height: 13px;
+}
+
+.gp-svc-card-action-secondary {
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(192, 196, 204, 0.90);
+}
+
+.gp-svc-card-action-primary {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.gp-svc-card-action-icon {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.18s;
+}
+
+.gp-svc-card-action-icon.up {
+  transform: rotate(180deg);
+}
+
 .gp-svc-card-cta {
   font-size: 10.5px;
   font-weight: 700;
@@ -511,6 +635,89 @@
 .gp-svc-card.expanded {
   grid-column: 1 / -1;
   border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* Per-service details panel */
+.gp-svc-details {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  animation: gp-fade-in 0.20s ease;
+}
+
+.gp-svc-details-section {
+  background: rgba(0, 0, 0, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  padding: 12px 12px;
+}
+
+.gp-svc-details-kicker {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(192, 196, 204, 0.55);
+  margin-bottom: 6px;
+}
+
+.gp-svc-details-sub {
+  font-size: 12px;
+  color: rgba(192, 196, 204, 0.62);
+  line-height: 1.55;
+  margin-bottom: 8px;
+}
+
+.gp-svc-details-sub strong {
+  color: rgba(244, 244, 244, 0.95);
+}
+
+.gp-svc-details-notes {
+  font-size: 12px;
+  color: rgba(192, 196, 204, 0.62);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.gp-svc-generic-process {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .gp-svc-generic-process {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .gp-svc-generic-process {
+    grid-template-columns: 1fr;
+  }
+}
+
+.gp-svc-generic-step {
+  padding: 12px 12px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.gp-svc-generic-step-t {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #f4f4f4;
+  margin-bottom: 6px;
+}
+
+.gp-svc-generic-step-d {
+  font-size: 12px;
+  color: rgba(192, 196, 204, 0.62);
+  line-height: 1.55;
 }
 
 @keyframes gp-fade-in {

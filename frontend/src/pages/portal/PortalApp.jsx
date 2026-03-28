@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './Portal.css'
 import '../../App.css'
 import { clearPortalSession, getPortalCustomer, getPortalToken } from '../../api/portalClient'
+import { PortalLoginPage } from './PortalLoginPage'
 import { PortalDashboard } from './PortalDashboard'
 import { PortalBooking } from './PortalBooking'
 import { PortalJobStatus } from './PortalJobStatus'
@@ -129,19 +130,31 @@ export function PortalApp() {
     setToken(t)
     setCustomer(c)
     setActivePage('dashboard')
+    window.history.replaceState({}, '', '/portal')
   }
 
   const handleLogout = () => {
     clearPortalSession()
     setToken('')
     setCustomer(null)
-    window.location.href = '/'
+    window.history.replaceState({}, '', '/portal/login')
   }
 
-  if (!token || !customer) {
-    window.location.replace('/')
-    return null
-  }
+  // Keep portal URLs clean:
+  // - Logged out → always show /portal/login
+  // - Logged in  → show /portal (if user is on /portal/login)
+  useEffect(() => {
+    const pathname = window.location.pathname
+
+    if (!token || !customer) {
+      if (pathname !== '/portal/login') window.history.replaceState({}, '', '/portal/login')
+      return
+    }
+
+    if (pathname === '/portal/login') window.history.replaceState({}, '', '/portal')
+  }, [token, customer])
+
+  if (!token || !customer) return <PortalLoginPage onLogin={handleLogin} />
 
   const initials = customer.name
     ? customer.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()

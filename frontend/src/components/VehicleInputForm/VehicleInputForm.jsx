@@ -321,7 +321,7 @@ const VehicleInputForm = ({ onSubmit, initialData = {}, customerId }) => {
               type="text"
               value={registration.plateNumber}
               onChange={(e) => {
-                let value = e.target.value.toUpperCase().replace(/[^A-Z0-9\s\-]/g, '')
+                let value = e.target.value.toUpperCase().replace(/[^A-Z0-9\s-]/g, '')
                 registration.setPlateNumber(value)
               }}
               placeholder="XX1234XXX (e.g., AB1234ABC)"

@@ -6,7 +6,22 @@ const { writeAuditLog } = require('../utils/auditLog')
 const { validateRequest } = require('../middleware/validateRequest')
 const { requireRole } = require('../middleware/auth')
 
+const bcrypt = require('bcryptjs')
+const crypto = require('crypto')
+
 const router = express.Router()
+
+function generateTemporaryPortalPassword() {
+  // Avoid ambiguous characters (0/O, 1/I/l)
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  const length = 10
+  const bytes = crypto.randomBytes(length)
+  let out = ''
+  for (let i = 0; i < length; i += 1) {
+    out += alphabet[bytes[i] % alphabet.length]
+  }
+  return out
+}
 
 // Simple Email Blast endpoint (frontend expects this route when triggering an email blast)
 router.post(
@@ -184,8 +199,7 @@ router.post(
     try {
       const env = require('../config/env')
       const mailer = require('../services/mailer')
-      const smtpConfigured = Boolean(env.smtpHost && env.smtpUser && env.smtpPass && env.smtpFrom)
-      if (smtpConfigured) {
+      if (mailer.isEmailConfigured && mailer.isEmailConfigured()) {
         // run in background without blocking response
         ;(async () => {
           try {
@@ -399,9 +413,13 @@ router.post(
   '/',
   body('fullName').isString().notEmpty().withMessage('fullName is required'),
   body('mobile').isString().notEmpty().withMessage('mobile is required'),
+  body('email').optional({ checkFalsy: true }).isEmail().withMessage('email must be a valid email address'),
   body('customerType').isString().notEmpty().withMessage('customerType is required'),
   validateRequest,
   asyncHandler(async (req, res) => {
+    const env = require('../config/env')
+    const mailer = require('../services/mailer')
+
     const {
       fullName,
       mobile,
@@ -421,8 +439,69 @@ router.post(
       [fullName, mobile, email, address, preferredContactMethod, customerType, leadSource, bay || null],
     )
 
+    // Walk-in: auto-provision portal access and email a temporary password
+    const createdCustomer = rows[0]
+    const normalizedEmail = String(email || '').trim()
+
+    // Admin/Staff-created customer: auto-provision portal access when an email is provided.
+    // Do not overwrite existing portal accounts.
+    const shouldProvisionPortal = Boolean(req.user?.id) && Boolean(normalizedEmail)
+
+    if (shouldProvisionPortal) {
+      const temporaryPassword = generateTemporaryPortalPassword()
+      const passwordHash = await bcrypt.hash(temporaryPassword, 10)
+
+      // Only set if not already provisioned (do not overwrite existing portal accounts)
+      const upd = await db.query(
+        `UPDATE customers
+         SET portal_password_hash = $1
+         WHERE id = $2 AND portal_password_hash IS NULL
+         RETURNING id`,
+        [passwordHash, createdCustomer.id],
+      )
+
+      if (upd.rows && upd.rows.length) {
+        try {
+          const sendRes = await mailer.sendPortalAccessEmail({
+            to: normalizedEmail,
+            customerName: createdCustomer.full_name,
+            loginEmail: normalizedEmail,
+            loginMobile: createdCustomer.mobile,
+            temporaryPassword,
+            portalUrl: env.portalUrl,
+          })
+
+          if (sendRes && sendRes.skipped) {
+            throw new Error('Portal access email skipped (email not configured)')
+          }
+
+          await writeAuditLog({
+            userId: req.user?.id,
+            action: 'PORTAL_ACCESS_PROVISIONED',
+            entity: 'customers',
+            entityId: createdCustomer.id,
+            meta: { email: normalizedEmail },
+          })
+        } catch (err) {
+          // If we fail to send the password, clear the portal access so the customer can self-register later.
+          await db.query(
+            `UPDATE customers SET portal_password_hash = NULL WHERE id = $1 AND portal_password_hash = $2`,
+            [createdCustomer.id, passwordHash],
+          )
+
+          await writeAuditLog({
+            userId: req.user?.id,
+            action: 'PORTAL_ACCESS_EMAIL_FAILED',
+            entity: 'customers',
+            entityId: createdCustomer.id,
+            meta: { email: normalizedEmail, error: String(err.message || err) },
+          })
+        }
+      }
+    }
+
     await writeAuditLog({
-      userId: req.user.id,
+      userId: req.user?.id,
       action: 'CREATE_CUSTOMER',
       entity: 'customers',
       entityId: rows[0].id,
@@ -438,6 +517,7 @@ router.patch(
   param('id').isInt({ min: 1 }).withMessage('Invalid customer id'),
   body('fullName').isString().notEmpty().withMessage('fullName is required'),
   body('mobile').isString().notEmpty().withMessage('mobile is required'),
+  body('email').optional({ checkFalsy: true }).isEmail().withMessage('email must be a valid email address'),
   body('customerType').isString().notEmpty().withMessage('customerType is required'),
   validateRequest,
   requireRole('SuperAdmin'),
@@ -492,20 +572,67 @@ router.delete(
   requireRole('SuperAdmin'),
   asyncHandler(async (req, res) => {
     const { id } = req.params
-    const { rowCount } = await db.query('DELETE FROM customers WHERE id = $1', [id])
 
-    if (!rowCount) {
-      return res.status(404).json({ message: 'Customer not found' })
+    // Delete customer and dependent records in a transaction.
+    // Rationale: Many tables reference customers without ON DELETE CASCADE (e.g. quotations/job_orders),
+    // so a plain DELETE fails with FK violations and the UI appears to "do nothing".
+    const customerId = Number(id)
+
+    const safeDeleteByCustomerId = async (table) => {
+      try {
+        const del = await db.query(`DELETE FROM ${table} WHERE customer_id = $1`, [customerId])
+        return del.rowCount
+      } catch (err) {
+        // table does not exist in this schema/environment
+        if (String(err?.code) === '42P01') return null
+        throw err
+      }
     }
 
-    await writeAuditLog({
-      userId: req.user.id,
-      action: 'DELETE_CUSTOMER',
-      entity: 'customers',
-      entityId: Number(id),
-    })
+    const safeNullifyCustomerId = async (table) => {
+      try {
+        const upd = await db.query(`UPDATE ${table} SET customer_id = NULL WHERE customer_id = $1`, [customerId])
+        return upd.rowCount
+      } catch (err) {
+        if (String(err?.code) === '42P01') return null
+        throw err
+      }
+    }
 
-    return res.status(204).send()
+    await db.query('BEGIN')
+    try {
+      // Keep logs but unlink from the deleted customer where the relationship is optional.
+      await safeNullifyCustomerId('campaign_recipients')
+
+      // Hard deletes (ordered to satisfy common FKs)
+      await safeDeleteByCustomerId('job_orders')
+      await safeDeleteByCustomerId('quotations')
+      await safeDeleteByCustomerId('appointments')
+      await safeDeleteByCustomerId('sales')
+      await safeDeleteByCustomerId('vehicles')
+      await safeDeleteByCustomerId('customer_notes')
+      await safeDeleteByCustomerId('customer_documents')
+
+      const { rowCount } = await db.query('DELETE FROM customers WHERE id = $1', [customerId])
+
+      if (!rowCount) {
+        await db.query('ROLLBACK')
+        return res.status(404).json({ message: 'Customer not found' })
+      }
+
+      await writeAuditLog({
+        userId: req.user.id,
+        action: 'DELETE_CUSTOMER',
+        entity: 'customers',
+        entityId: customerId,
+      })
+
+      await db.query('COMMIT')
+      return res.status(204).send()
+    } catch (err) {
+      await db.query('ROLLBACK')
+      throw err
+    }
   }),
 )
 

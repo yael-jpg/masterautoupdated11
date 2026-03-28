@@ -25,7 +25,7 @@ export const validatePlateNumber = (plateNumber) => {
   // Normalize: remove spaces, dashes, convert to uppercase
   const normalized = plateNumber
     .toUpperCase()
-    .replace(/[\s\-]/g, '')
+    .replace(/[\s-]/g, '')
     .trim();
 
   // Philippine format: 2 letters + 2 numbers + 4 letters
@@ -52,7 +52,7 @@ export const validatePlateNumber = (plateNumber) => {
 export const normalizePlateNumber = (plateNumber) => {
   return plateNumber
     .toUpperCase()
-    .replace(/[\s\-]/g, '')
+    .replace(/[\s-]/g, '')
     .trim();
 };
 

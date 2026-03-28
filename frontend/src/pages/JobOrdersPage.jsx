@@ -9,6 +9,21 @@ import { WorkflowStatusBadge } from '../components/WorkflowStatusBadge'
 import { WorkflowStepper } from '../components/WorkflowStepper'
 import { PaymentStatusBadge } from '../components/PaymentStatusBadge'
 
+function normalizeServiceCode(code) {
+  const raw = String(code || '').trim()
+  if (!raw) return ''
+  return raw.replace(/^CAT-/i, '').toLowerCase()
+}
+
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 // ── Workflow constants (mirrors workflowEngine.js) ───────────────────────────
 
 const JO_STATUS_ORDER = ['Pending JO Approval', 'Pending', 'In Progress', 'For QA', 'Completed', 'Released', 'Complete']
@@ -230,6 +245,27 @@ export function JobOrdersPage({ token, user, fromQuotation, onFromQuotationConsu
   const [loading, setLoading] = useState(false)
   const [workerPresets, setWorkerPresets] = useState([])
   const [preparedByPresets, setPreparedByPresets] = useState([])
+
+  // Materials notes lookup from DB services (keyed by normalized code)
+  const [materialsNotesByCode, setMaterialsNotesByCode] = useState({})
+  useEffect(() => {
+    if (!token) return
+    apiGet('/services', token)
+      .then((rows) => {
+        const list = Array.isArray(rows) ? rows : []
+        const next = {}
+        for (const svc of list) {
+          const key = normalizeServiceCode(svc?.code)
+          if (!key) continue
+          const notes = String(svc?.materials_notes || '').trim()
+          if (notes) next[key] = notes
+        }
+        setMaterialsNotesByCode(next)
+      })
+      .catch(() => {
+        // non-blocking
+      })
+  }, [token])
 
   // Create JO form
   const [showCreate, setShowCreate] = useState(false)
@@ -570,14 +606,19 @@ export function JobOrdersPage({ token, user, fromQuotation, onFromQuotationConsu
       return [];
     };
 
-    const serviceRows = (jo.services || []).map((s) => `
+    const serviceRows = (jo.services || []).map((s) => {
+      const notes = materialsNotesByCode[normalizeServiceCode(s?.code)]
+      const clean = String(notes || '').trim()
+      return `
       <tr>
         <td>
-          <span class="svc-name">${s.name}</span>
-          ${s.group ? `<span class="svc-group">${s.group}</span>` : ''}
+          <span class="svc-name">${escapeHtml(s.name)}</span>
+          ${s.group ? `<span class="svc-group">${escapeHtml(s.group)}</span>` : ''}
+          ${clean ? `<span class="svc-group">Materials: ${escapeHtml(clean)}</span>` : ''}
         </td>
         <td style="text-align:right;font-weight:600;color:#111">${s.qty}</td>
-      </tr>`).join('')
+      </tr>`
+    }).join('')
 
     const installers = getPrintArray(jo, ['assigned_installers', 'assignedInstallers', 'installers']);
     const installerList = installers.length
@@ -624,7 +665,7 @@ export function JobOrdersPage({ token, user, fromQuotation, onFromQuotationConsu
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Job Order — ${formatJoNumber(jo)}</title>
+  <title>Job Order — ${escapeHtml(formatJoNumber(jo))}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; font-size: 13px; color: #1a1a2e; background: #fff; padding: 36px 40px; max-width: 780px; margin: 0 auto; }
@@ -1069,6 +1110,24 @@ export function JobOrdersPage({ token, user, fromQuotation, onFromQuotationConsu
                       <span key={i} className="installer-tag-sm">{s.name}</span>
                     ))}
                   </div>
+                  {(() => {
+                    const lines = quotationPreview.services
+                      .map((s) => {
+                        const notes = materialsNotesByCode[normalizeServiceCode(s?.code)]
+                        const clean = String(notes || '').trim()
+                        if (!clean) return null
+                        return `${s.name}: ${clean}`
+                      })
+                      .filter(Boolean)
+
+                    if (lines.length === 0) return null
+                    return (
+                      <div style={{ marginTop: 8, fontSize: '0.78rem', color: 'rgba(189,200,218,0.75)', whiteSpace: 'pre-wrap' }}>
+                        <div style={{ fontWeight: 700, color: 'rgba(189,200,218,0.85)', marginBottom: 4 }}>Materials Notes (client-visible)</div>
+                        {lines.join('\n')}
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
             </div>
@@ -1244,6 +1303,11 @@ export function JobOrdersPage({ token, user, fromQuotation, onFromQuotationConsu
                       <td>
                         <span style={{ fontWeight: 500 }}>{s.name}</span>
                         {s.group && <span className="sle-service-group">{s.group}</span>}
+                        {(() => {
+                          const notes = materialsNotesByCode[normalizeServiceCode(s?.code)]
+                          const clean = String(notes || '').trim()
+                          return clean ? <span className="sle-service-group">Materials: {clean}</span> : null
+                        })()}
                       </td>
                       <td className="qo-svc-center">{s.qty}</td>
                       <td className="qo-svc-center">{formatCurrency(s.unitPrice)}</td>

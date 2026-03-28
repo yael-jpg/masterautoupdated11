@@ -298,6 +298,7 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
       setError('Odometer reading is required.')
       return
     }
+    let result
     try {
       const payload = {
         ...form,
@@ -307,7 +308,6 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
       }
       delete payload._customModel   // internal UI state, don't send
       delete payload._customVariant  // internal UI state, don't send
-      let result
       if (editingId) {
         result = await apiPatch(`/vehicles/${editingId}`, token, payload)
       } else {
@@ -348,6 +348,7 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
                 forceCreate: true,
               }
               delete forcePayload._customModel
+              delete forcePayload._customVariant
               if (editingId) {
                 result = await apiPatch(`/vehicles/${editingId}`, token, forcePayload)
               } else {

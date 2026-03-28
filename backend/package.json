@@ -11,6 +11,7 @@
     "smoke": "node scripts/smoke.js",
     "backfill:portal-preferred-contact-email": "node scripts/backfillPortalPreferredContactEmail.js",
     "email:test-release": "node scripts/testReleaseEmail.js",
+    "mail:dev": "maildev --smtp 1025 --web 8025 --ip 127.0.0.1",
     "test": "echo \"No automated tests configured yet\""
   },
   "keywords": [],
@@ -33,9 +34,11 @@
     "nodemailer": "^8.0.1",
     "pdfkit": "^0.17.2",
     "pg": "^8.18.0",
+    "resend": "^6.9.4",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "maildev": "^2.2.1",
     "nodemon": "^3.1.11"
   }
 }

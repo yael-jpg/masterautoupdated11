@@ -1,5 +1,14 @@
 ﻿import { useEffect, useState } from 'react'
 import { portalGet } from '../../api/portalClient'
+import {
+  CoatingProcess,
+  DetailingProcess,
+  GenericServiceProcess,
+  PPFProcess,
+  isCoating,
+  isDetailing,
+  isPPF,
+} from '../../components/ServiceProcess'
 
 export function PortalServiceHistory() {
   const [records, setRecords] = useState([])
@@ -167,6 +176,57 @@ export function PortalServiceHistory() {
                       </div>
                     ))}
 
+                    {(() => {
+                      const configuredProcess = r.coating_process || r.process
+                      const primaryServiceName =
+                        (Array.isArray(r.items) && r.items[0]?.name) ||
+                        r.service_description ||
+                        ''
+
+                      const showTimeline = !configuredProcess
+                      const isPpf = isPPF(primaryServiceName)
+                      const isCoat = isCoating(primaryServiceName)
+                      const isDet = isDetailing(primaryServiceName)
+
+                      if (!configuredProcess && !showTimeline) return null
+
+                      return (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'rgba(200,200,200,0.45)', marginBottom: 8 }}>
+                            Process
+                          </div>
+
+                          {configuredProcess && (
+                            <div style={{
+                              padding: '10px 12px',
+                              background: 'rgba(255,255,255,0.025)',
+                              borderRadius: 8,
+                              color: 'rgba(226,232,242,0.88)',
+                              fontSize: 13,
+                              lineHeight: 1.5,
+                              whiteSpace: 'pre-wrap',
+                            }}>
+                              {configuredProcess}
+                            </div>
+                          )}
+
+                          {!configuredProcess && (
+                            <div style={{ marginTop: 2 }}>
+                              {isPpf ? (
+                                <PPFProcess />
+                              ) : isCoat ? (
+                                <CoatingProcess />
+                              ) : isDet ? (
+                                <DetailingProcess />
+                              ) : (
+                                <GenericServiceProcess serviceName={primaryServiceName} />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+
                     {/* Line items */}
                     {Array.isArray(r.items) && r.items.length > 0 && (
                       <div style={{ marginTop: 4 }}>
@@ -179,7 +239,9 @@ export function PortalServiceHistory() {
                             padding: '8px 12px', background: 'rgba(255,255,255,0.025)',
                             borderRadius: 8, marginBottom: 5, gap: 12,
                           }}>
-                            <span style={{ fontSize: 13, color: 'rgba(226,232,242,0.85)', flex: 1 }}>{item.name}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, color: 'rgba(226,232,242,0.85)' }}>{item.name}</div>
+                            </div>
                             {item.qty && item.qty > 1 && (
                               <span style={{ fontSize: 11, color: 'rgba(189,200,218,0.45)', flexShrink: 0 }}>×{item.qty}</span>
                             )}
@@ -190,6 +252,25 @@ export function PortalServiceHistory() {
                             )}
                           </div>
                         ))}
+                      </div>
+                    )}
+
+                    {r.materials_notes && String(r.materials_notes).trim() && (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'rgba(200,200,200,0.45)', marginBottom: 8 }}>
+                          Materials Notes
+                        </div>
+                        <div style={{
+                          padding: '10px 12px',
+                          background: 'rgba(255,255,255,0.025)',
+                          borderRadius: 8,
+                          color: 'rgba(226,232,242,0.82)',
+                          fontSize: 13,
+                          lineHeight: 1.55,
+                          whiteSpace: 'pre-wrap',
+                        }}>
+                          {String(r.materials_notes).trim()}
+                        </div>
                       </div>
                     )}
 

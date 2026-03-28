@@ -3,6 +3,7 @@ const { body, param } = require('express-validator')
 const db = require('../config/db')
 const { asyncHandler } = require('../utils/asyncHandler')
 const { validateRequest } = require('../middleware/validateRequest')
+const emailNotificationService = require('../services/emailNotificationService')
 const { writeAuditLog } = require('../utils/auditLog')
 const { requireAuth, requireRole } = require('../middleware/auth')
 const { sendReadyForReleaseEmail, sendReceiptEmail, sendCompletionEmail, sendCancellationEmail, sendBookingConfirmationEmail, sendQuotationApprovedScheduledEmail } = require('../services/mailer')
@@ -48,12 +49,16 @@ router.get(
       cancelledAt: 'a.cancelled_at',
       cancelRequestedAt: 'a.cancel_requested_at',
     }
-    const sortBy = sortByMap[sortByInput] || sortByMap.scheduleStart
 
-    // For nullable timestamp sorts, ensure NULLs don't hide meaningful newest rows.
-    const nullsClause = (sortByInput === 'completedAt' || sortByInput === 'cancelledAt' || sortByInput === 'cancelRequestedAt')
-      ? (sortDir === 'DESC' ? 'NULLS LAST' : 'NULLS FIRST')
-      : ''
+    const computeSort = (sortByKey) => {
+      const sortBy = sortByMap[sortByKey] || sortByMap.scheduleStart
+      const nullsClause = (sortByKey === 'completedAt' || sortByKey === 'cancelledAt' || sortByKey === 'cancelRequestedAt')
+        ? (sortDir === 'DESC' ? 'NULLS LAST' : 'NULLS FIRST')
+        : ''
+      return { sortBy, nullsClause }
+    }
+
+    let { sortBy, nullsClause } = computeSort(sortByInput)
 
     const conditions = []
     const values = []
@@ -108,7 +113,7 @@ router.get(
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
 
-    const { rows } = await db.query(
+    const buildListSql = () => (
       `SELECT a.*,
               c.full_name AS customer_name,
               v.plate_number,
@@ -145,9 +150,25 @@ router.get(
                 q.total_amount, q.status
       ORDER BY ${sortBy} ${sortDir} ${nullsClause}, a.id DESC
        LIMIT $${index}
-       OFFSET $${index + 1}`,
-      [...values, limit, offset],
+       OFFSET $${index + 1}`
     )
+
+    let rows
+    try {
+      const resList = await db.query(buildListSql(), [...values, limit, offset])
+      rows = resList.rows
+    } catch (err) {
+      // If schema migrations haven't been applied yet, the portal cancellation columns may not exist.
+      // Instead of crashing the UI, fall back to a safe sort.
+      const msg = String(err?.message || '')
+      if (String(err?.code) === '42703' && sortByInput === 'cancelRequestedAt' && msg.includes('cancel_requested_at')) {
+        ;({ sortBy, nullsClause } = computeSort('createdAt'))
+        const resList = await db.query(buildListSql(), [...values, limit, offset])
+        rows = resList.rows
+      } else {
+        throw err
+      }
+    }
 
     const count = await db.query(
       `SELECT COUNT(*)::int AS total
@@ -1547,6 +1568,25 @@ router.post(
                `Auto-synced from appointment #${id} → ${nextStatus}`],
             ).catch(() => {})
             jobOrderSynced = { id: jo.id, from: jo.status, to: joTarget }
+
+            // Fire Job Order customer email notifications when the JO is advanced
+            // via appointment workflow sync (since this bypasses /job-orders/:id/transition).
+            // Non-blocking by design.
+            if (joTarget === 'In Progress') {
+              emailNotificationService.safeFireAndForget('JO Work Started (appt sync)', () =>
+                emailNotificationService.notifyJobStarted(jo.id, req.user?.id)
+              )
+            }
+            if (joTarget === 'Completed') {
+              emailNotificationService.safeFireAndForget('JO Completed (appt sync)', () =>
+                emailNotificationService.notifyJobCompleted(jo.id, req.user?.id)
+              )
+            }
+            if (joTarget === 'Released') {
+              emailNotificationService.safeFireAndForget('JO Released (appt sync)', () =>
+                emailNotificationService.notifyJobReleased(jo.id, req.user?.id)
+              )
+            }
           }
         }
       } catch (syncErr) {

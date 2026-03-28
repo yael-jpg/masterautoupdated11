@@ -2,6 +2,12 @@ import { useEffect, useState } from 'react'
 import { portalGet } from '../../api/portalClient'
 import { getServiceProcess } from '../../components/ServiceProcess'
 
+function normalizeServiceCode(code) {
+  const raw = String(code || '').trim()
+  if (!raw) return ''
+  return raw.replace(/^CAT-/i, '').toLowerCase()
+}
+
 // ── Job Order pipeline (driven by jo.status) ────────────────
 const JO_STEPS = [
   { key: 'Pending',      label: 'Pending' },
@@ -92,7 +98,7 @@ function JOStepper({ status }) {
 }
 
 // ── Job Order card ───────────────────────────────────────────
-function JobOrderCard({ job }) {
+function JobOrderCard({ job, materialsNotesByCode = {} }) {
   const [open, setOpen] = useState(false)
   const joStatus = job.workflow_status || 'Pending'
   const badgeClass = JO_STATUS_CLASS[joStatus] || 'badge badge-neutral'
@@ -190,7 +196,16 @@ function JobOrderCard({ job }) {
                   <tbody>
                     {job.items.map((item, i) => (
                       <tr key={i}>
-                        <td>{item.name}</td>
+                        <td>
+                          <div>{item.name}</div>
+                          {(() => {
+                            const notes = materialsNotesByCode[normalizeServiceCode(item?.code)]
+                            const clean = String(notes || '').trim()
+                            return clean
+                              ? <div className="portal-record-meta portal-record-meta--dim" style={{ marginTop: 2 }}>Materials: {clean}</div>
+                              : null
+                          })()}
+                        </td>
                         <td>{item.qty}</td>
                         <td>₱{Number(item.price).toLocaleString()}</td>
                         <td>₱{(Number(item.price) * Number(item.qty)).toLocaleString()}</td>
@@ -214,7 +229,7 @@ function JobOrderCard({ job }) {
 }
 
 // ── Quotation card ───────────────────────────────────────────
-function QuotationCard({ job }) {
+function QuotationCard({ job, materialsNotesByCode = {} }) {
   const [open, setOpen] = useState(false)
   const qStatus = job.quotation_approval_status || 'Pending'
   const badgeClass = Q_STATUS_CLASS[qStatus] || 'badge badge-neutral'
@@ -318,7 +333,16 @@ function QuotationCard({ job }) {
                   <tbody>
                     {job.items.map((item, i) => (
                       <tr key={i}>
-                        <td>{item.name}</td>
+                        <td>
+                          <div>{item.name}</div>
+                          {(() => {
+                            const notes = materialsNotesByCode[normalizeServiceCode(item?.code)]
+                            const clean = String(notes || '').trim()
+                            return clean
+                              ? <div className="portal-record-meta portal-record-meta--dim" style={{ marginTop: 2 }}>Materials: {clean}</div>
+                              : null
+                          })()}
+                        </td>
                         <td>{item.qty}</td>
                         <td>₱{Number(item.price).toLocaleString()}</td>
                         <td>₱{(Number(item.price) * Number(item.qty)).toLocaleString()}</td>
@@ -347,6 +371,27 @@ export function PortalJobStatus() {
   const [loading, setLoading] = useState(true)
   const [section, setSection] = useState('jobs')   // 'jobs' | 'quotations'
   const [joTab, setJoTab]     = useState('all')    // 'all' | 'active' | 'done'
+
+  const [materialsNotesByCode, setMaterialsNotesByCode] = useState({})
+
+  useEffect(() => {
+    let stopped = false
+    portalGet('/services')
+      .then((rows) => {
+        if (stopped) return
+        const list = Array.isArray(rows) ? rows : []
+        const next = {}
+        for (const svc of list) {
+          const key = normalizeServiceCode(svc?.code)
+          if (!key) continue
+          const notes = String(svc?.materials_notes || '').trim()
+          if (notes) next[key] = notes
+        }
+        setMaterialsNotesByCode(next)
+      })
+      .catch(() => { /* non-blocking */ })
+    return () => { stopped = true }
+  }, [])
 
   useEffect(() => {
     let stopped = false
@@ -496,7 +541,7 @@ export function PortalJobStatus() {
               <p>No job orders in this category</p>
             </div>
           ) : (
-            joVisible.map((job) => <JobOrderCard key={job.id} job={job} />)
+            joVisible.map((job) => <JobOrderCard key={job.id} job={job} materialsNotesByCode={materialsNotesByCode} />)
           )}
         </>
       )}
@@ -516,7 +561,7 @@ export function PortalJobStatus() {
               </p>
             </div>
           ) : (
-            quotations.map((job) => <QuotationCard key={job.id} job={job} />)
+            quotations.map((job) => <QuotationCard key={job.id} job={job} materialsNotesByCode={materialsNotesByCode} />)
           )}
         </>
       )}

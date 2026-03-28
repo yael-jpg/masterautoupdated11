@@ -82,28 +82,19 @@ router.post(
     const { email, name, sub: googleSub } = payload
     if (!email) return res.status(400).json({ message: 'Google account has no email.' })
 
-    // Find existing customer by email or google_sub, or create one
-    let r = await db.query(
-      'SELECT id, full_name, mobile, email FROM customers WHERE email = $1',
+    // Google is used as a sign-in helper for existing portal users.
+    // If the customer does not yet have portal access, direct them to create an account first.
+    const r = await db.query(
+      'SELECT id, full_name, email, portal_password_hash FROM customers WHERE email = $1 LIMIT 1',
       [email],
     )
 
-    let customerId
-    let fullName
-    if (r.rows.length > 0) {
-      customerId = r.rows[0].id
-      fullName = r.rows[0].full_name
-    } else {
-      // Create new customer record for Google user (mobile set to email prefix as placeholder)
-      const ins = await db.query(
-        `INSERT INTO customers (full_name, email, mobile, customer_type, created_at)
-         VALUES ($1, $2, $3, 'Walk-in', NOW())
-         RETURNING id, full_name`,
-        [name || email.split('@')[0], email, googleSub.slice(-11)],
-      )
-      customerId = ins.rows[0].id
-      fullName = ins.rows[0].full_name
+    if (r.rows.length === 0 || !r.rows[0].portal_password_hash) {
+      return res.status(404).json({ message: 'No portal account found. Please create an account.' })
     }
+
+    const customerId = r.rows[0].id
+    const fullName = r.rows[0].full_name
 
     const token = jwt.sign({ customerId }, env.jwtSecret, { expiresIn: '30d' })
     return res.json({
@@ -1106,12 +1097,14 @@ router.get(
       [req.customerId],
     )
 
-    // Normalize JSONB services → items [{name, price, qty}]
+    // Normalize JSONB services → items [{name, code, group, price, qty}]
     const normalize = (rows) =>
       rows.map((r) => {
         const svcs = Array.isArray(r.services_json) ? r.services_json : []
         const items = svcs.map((s) => ({
           name:  s.name || s.service_name || '—',
+          code:  s.code || null,
+          group: s.group || s.category || null,
           price: Number(s.unitPrice || s.unit_price || s.price || s.total || 0),
           qty:   Number(s.qty || 1),
         }))
@@ -1163,34 +1156,131 @@ router.get(
 router.get(
   '/service-history',
   asyncHandler(async (req, res) => {
-    const r = await db.query(
-      `SELECT
-         jo.id,
-         jo.job_order_no              AS reference_no,
-         'Job Order'                  AS doc_type,
-         jo.status                    AS workflow_status,
-         jo.created_at                AS service_date,
-         jo.created_at,
-         q.quotation_no,
-         q.total_amount,
-         q.services                   AS services_json,
-         v.id                         AS vehicle_id,
-         v.make, v.model, v.plate_number, v.year
-       FROM job_orders jo
-       JOIN quotations q ON q.id = jo.quotation_id
-       JOIN vehicles   v ON v.id = jo.vehicle_id
-       WHERE jo.customer_id = $1
-         AND jo.status != 'Deleted'
-       ORDER BY jo.created_at DESC`,
-      [req.customerId],
+    let r
+    try {
+      r = await db.query(
+        `SELECT
+           jo.id,
+           jo.job_order_no              AS reference_no,
+           'Job Order'                  AS doc_type,
+           jo.status                    AS workflow_status,
+           jo.created_at                AS service_date,
+           jo.created_at,
+           q.quotation_no,
+           q.coating_process,
+           q.total_amount,
+           q.services                   AS services_json,
+           v.id                         AS vehicle_id,
+           v.make, v.model, v.plate_number, v.year
+         FROM job_orders jo
+         JOIN quotations q ON q.id = jo.quotation_id
+         JOIN vehicles   v ON v.id = jo.vehicle_id
+         WHERE jo.customer_id = $1
+           AND jo.status != 'Deleted'
+         ORDER BY jo.created_at DESC`,
+        [req.customerId],
+      )
+    } catch (e) {
+      const msg = String(e && e.message ? e.message : '')
+      const isMissing = e && e.code === '42703' && msg.includes('coating_process')
+      if (!isMissing) throw e
+      r = await db.query(
+        `SELECT
+           jo.id,
+           jo.job_order_no              AS reference_no,
+           'Job Order'                  AS doc_type,
+           jo.status                    AS workflow_status,
+           jo.created_at                AS service_date,
+           jo.created_at,
+           q.quotation_no,
+           NULL                         AS coating_process,
+           q.total_amount,
+           q.services                   AS services_json,
+           v.id                         AS vehicle_id,
+           v.make, v.model, v.plate_number, v.year
+         FROM job_orders jo
+         JOIN quotations q ON q.id = jo.quotation_id
+         JOIN vehicles   v ON v.id = jo.vehicle_id
+         WHERE jo.customer_id = $1
+           AND jo.status != 'Deleted'
+         ORDER BY jo.created_at DESC`,
+        [req.customerId],
+      )
+    }
+
+    const allServicesFlat = r.rows.flatMap((row) => (Array.isArray(row.services_json) ? row.services_json : []))
+    const allCodes = Array.from(
+      new Set(
+        allServicesFlat
+          .map((svc) => (svc && typeof svc === 'object' ? svc.code : null))
+          .filter(Boolean),
+      ),
     )
+    const allNames = Array.from(
+      new Set(
+        allServicesFlat
+          .map((svc) => (svc && typeof svc === 'object' ? svc.name : null))
+          .filter(Boolean)
+          .map((n) => String(n).trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    )
+
+    const materialsNotesByCode = new Map()
+    const materialsNotesByName = new Map()
+    if (allCodes.length > 0) {
+      const svcRes = await db.query(
+        `SELECT code, materials_notes
+         FROM services
+         WHERE code = ANY($1::text[])`,
+        [allCodes],
+      )
+      for (const row of svcRes.rows) {
+        materialsNotesByCode.set(row.code, row.materials_notes || null)
+      }
+    }
+
+    if (allNames.length > 0) {
+      const svcRes = await db.query(
+        `SELECT name, materials_notes
+         FROM services
+         WHERE lower(name) = ANY($1::text[])`,
+        [allNames],
+      )
+      for (const row of svcRes.rows) {
+        const key = String(row.name || '').trim().toLowerCase()
+        if (!key) continue
+        if (!materialsNotesByName.has(key)) {
+          materialsNotesByName.set(key, row.materials_notes || null)
+        }
+      }
+    }
 
     const records = r.rows.map((row) => {
       const svcs = Array.isArray(row.services_json) ? row.services_json : []
       const service_description = svcs.map((s) => s.name).filter(Boolean).join(', ') || 'Service'
-      const items = svcs.map((s) => ({ name: s.name || '—', price: Number(s.unitPrice || s.total || 0), qty: Number(s.qty || 1) }))
+      const items = svcs.map((s) => ({
+        name: s.name || '—',
+        code: s.code || null,
+        group: s.group || s.category || null,
+        price: Number(s.unitPrice || s.total || 0),
+        qty: Number(s.qty || 1),
+        materials_notes:
+          (s.materials_notes ?? s.materialsNotes ?? null) ||
+          (s.code ? (materialsNotesByCode.get(s.code) || null) : null) ||
+          (s.name ? (materialsNotesByName.get(String(s.name).trim().toLowerCase()) || null) : null),
+      }))
+
+      const materials_notes = Array.from(
+        new Set(
+          items
+            .map((it) => (it && it.materials_notes ? String(it.materials_notes).trim() : ''))
+            .filter(Boolean),
+        ),
+      ).join('\n') || null
+
       const { services_json, ...rest } = row
-      return { ...rest, service_description, items }
+      return { ...rest, service_description, items, materials_notes }
     })
     return res.json(records)
   }),

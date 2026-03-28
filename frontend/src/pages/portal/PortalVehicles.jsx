@@ -15,6 +15,24 @@ const TYPE_COLOR  = {
   general: { bg: 'rgba(255,255,255,0.07)', text: '#e2e2e2' },
 }
 
+function OwnerSelect({ me }) {
+  const label = me?.full_name || me?.fullName || 'My Account'
+  const description = [me?.mobile, me?.email].filter(Boolean).join(' · ')
+  return (
+    <div className="form-group full-width">
+      <label className="vf-label">Customer <span className="vf-required">*</span></label>
+      <SearchableSelect
+        placeholder="Customer"
+        value={String(me?.id ?? 'me')}
+        onChange={() => {}}
+        required
+        options={[{ value: String(me?.id ?? 'me'), label, description }]}
+        disabled
+      />
+    </div>
+  )
+}
+
 function LightboxModal({ photo, onClose }) {
   useEffect(() => {
     const handler = (e) => e.key === 'Escape' && onClose()
@@ -373,24 +391,6 @@ function PortalVehicleRegisterModal({
     }
   }
 
-  function OwnerSelect() {
-    const label = me?.full_name || me?.fullName || 'My Account'
-    const description = [me?.mobile, me?.email].filter(Boolean).join(' · ')
-    return (
-      <div className="form-group full-width">
-        <label className="vf-label">Customer <span className="vf-required">*</span></label>
-        <SearchableSelect
-          placeholder="Customer"
-          value={String(me?.id ?? 'me')}
-          onChange={() => {}}
-          required
-          options={[{ value: String(me?.id ?? 'me'), label, description }]}
-          disabled
-        />
-      </div>
-    )
-  }
-
   if (!isOpen) return null
 
   return (
@@ -408,7 +408,7 @@ function PortalVehicleRegisterModal({
             <span className="vf-section-line" />
           </div>
 
-          <OwnerSelect />
+            <OwnerSelect me={me} />
 
           {/* ── Identification ────────────────────────────── */}
           <div className="vf-section-divider full-width">
@@ -696,7 +696,7 @@ export function PortalVehicles({ onBook }) {
       } catch (_) {
         // Silent
       }
-    }
+    } 
 
     loadInitial()
 

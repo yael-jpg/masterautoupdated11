@@ -17,7 +17,7 @@ function PaymentStatusBadge({ paidTotal, totalAmount }) {
           background: `${color}18`, border: `1px solid ${color}40`, color,
           letterSpacing: '0.04em', whiteSpace: 'nowrap',
         }}>
-          {isFull ? '● FULLY PAID' : '◐ PARTIAL PAID'}
+          {isFull ? '● FULLY PAID' : '◐ PARTIAL / DOWNPAYMENT'}
         </span>
         <span className="portal-paystatus-pct">
           {pct}%
@@ -37,6 +37,36 @@ export function PortalReceipts() {
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [me, setMe] = useState(null)
+
+  const derivedById = (() => {
+    const byId = new Map()
+    const byInvoice = new Map()
+
+    for (const p of payments) {
+      const key = p?.sale_reference_no || '—'
+      const arr = byInvoice.get(key) || []
+      arr.push(p)
+      byInvoice.set(key, arr)
+    }
+
+    for (const [, invoicePayments] of byInvoice) {
+      const sorted = invoicePayments
+        .slice()
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+
+      let cumulativePaid = 0
+      const invoiceTotal = sorted.reduce((mx, p) => Math.max(mx, Number(p?.total_amount) || 0), 0)
+      for (const p of sorted) {
+        cumulativePaid += Number(p?.amount) || 0
+        if (p?.id != null) {
+          byId.set(p.id, { cumulativePaid, invoiceTotal })
+        }
+      }
+    }
+
+    return byId
+  })()
 
   useEffect(() => {
     let stopped = false
@@ -44,9 +74,13 @@ export function PortalReceipts() {
     const load = async (isInitial = false) => {
       if (isInitial) setLoading(true)
       try {
-        const rows = await portalGet('/payments')
+        const [rows, meData] = await Promise.all([
+          portalGet('/payments'),
+          portalGet('/me').catch(() => null),
+        ])
         if (stopped) return
         setPayments(Array.isArray(rows) ? rows : [])
+        if (meData) setMe(meData)
       } catch (_) {
         // Silent
       } finally {
@@ -80,47 +114,129 @@ export function PortalReceipts() {
   const fmtDate = (d) => new Date(d).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
   const fmtTime = (d) => new Date(d).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true })
 
+  const escapeHtml = (value) => {
+    const s = String(value ?? '')
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  }
+
+  const formatMoney = (amount) => {
+    const n = Number(amount) || 0
+    return `₱${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
+
   const handlePrint = (payment) => {
+    const invoiceRef = payment?.sale_reference_no || '—'
+    const invoicePayments = payments
+      .filter((p) => (p?.sale_reference_no || '—') === invoiceRef)
+      .slice()
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+
+    const invoiceTotal = Number(payment?.total_amount) || 0
+    const totalPaid = Number(payment?.paid_total) || 0
+    const isFullySettled = invoiceTotal > 0 && totalPaid >= invoiceTotal
+    const printedAt = new Date()
+
+    const displayCustomer =
+      me?.full_name ||
+      me?.fullName ||
+      payment?.customer_name ||
+      '—'
+
     const win = window.open('', '_blank', 'width=600,height=700')
     win.document.write(`
       <html>
         <head>
-          <title>Receipt — ${payment.sale_reference}</title>
+          <title>Receipt — ${escapeHtml(invoiceRef)}</title>
           <style>
-            body { font-family: Arial, sans-serif; padding: 40px; color: #111; }
-            h1 { font-size: 20px; margin-bottom: 4px; }
-            .sub { color: #555; font-size: 13px; margin-bottom: 32px; }
-            table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-            th { text-align: left; padding: 8px; border-bottom: 2px solid #111; font-size: 12px; text-transform: uppercase; }
-            td { padding: 10px 8px; border-bottom: 1px solid #eee; font-size: 13px; }
-            .total { text-align: right; font-weight: bold; font-size: 16px; margin-top: 16px; }
-            .footer { margin-top: 40px; font-size: 11px; color: #888; }
-            .tag { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:700; }
-            .tag-dep { background:#fef9e7; color:#92400e; }
-            .tag-set { background:#f0fdf4; color:#16a34a; }
+            @page { margin: 14mm; }
+            body {
+              font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+              padding: 0;
+              margin: 0;
+              color: #111;
+              background: #fff;
+            }
+            .wrap { max-width: 520px; margin: 0 auto; padding: 24px 18px; }
+            .title { text-align: center; font-weight: 800; letter-spacing: 0.08em; font-size: 20px; }
+            .subtitle { text-align: center; margin-top: 6px; color: #444; font-size: 12px; }
+            .rule { border: 0; border-top: 1px dashed #cfcfcf; margin: 18px 0; }
+
+            .kv { display: grid; grid-template-columns: 120px 1fr; row-gap: 6px; column-gap: 10px; font-size: 13px; }
+            .k { color: #111; }
+            .v { text-align: right; }
+            .v strong { font-weight: 800; }
+
+            .section-title { margin-top: 18px; font-weight: 800; font-size: 13px; }
+            .lines { margin-top: 10px; font-size: 13px; }
+            .line { display: grid; grid-template-columns: 22px 1fr 120px; column-gap: 8px; align-items: baseline; padding: 8px 0; }
+            .line-amount { text-align: right; }
+            .line-ref { grid-column: 2 / 4; color: #777; font-size: 11px; margin-top: 2px; }
+
+            .total-row { display: grid; grid-template-columns: 1fr 160px; margin-top: 8px; font-size: 14px; font-weight: 800; }
+            .total-row .amt { text-align: right; }
+            .settled { margin-top: 10px; text-align: center; font-size: 12.5px; font-weight: 800; color: #16a34a; }
+            .thanks { margin-top: 18px; text-align: center; font-size: 12px; color: #333; }
+            .printed { margin-top: 6px; text-align: center; font-size: 11px; color: #777; }
           </style>
         </head>
         <body>
-          <h1>MasterAuto Receipt</h1>
-          <div class="sub">Reference: ${payment.sale_reference_no || '—'}</div>
-          <table>
-            <thead><tr><th>Description</th><th>Type</th><th>Ref#</th><th>Tag</th><th>Amount</th></tr></thead>
-            <tbody>
-              <tr>
-                <td>${payment.service_package || '—'}</td>
-                <td>${payment.payment_type}</td>
-                <td>${payment.reference_no || '—'}</td>
-                <td><span class="tag ${payment.is_deposit ? 'tag-dep' : 'tag-set'}">${payment.is_deposit ? 'Deposit' : 'Settled'}</span></td>
-                <td>₱${Number(payment.amount).toLocaleString()}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div class="total">This Payment: ₱${Number(payment.amount).toLocaleString()}</div>
-          <div class="total" style="color:#555;font-size:13px;font-weight:400">Total Paid on Invoice: ₱${Number(payment.paid_total||0).toLocaleString()} / ₱${Number(payment.total_amount||0).toLocaleString()}</div>
-          <div class="footer">
-            <p>Vehicle: ${payment.plate_number || '—'} · ${payment.make || ''} ${payment.model || ''}</p>
-            <p>Date: ${new Date(payment.created_at).toLocaleString('en-PH')}</p>
-            <p>Thank you for trusting MasterAuto!</p>
+          <div class="wrap">
+            <div class="title">ACKNOWLEDGEMENT RECEIPT</div>
+            <div class="subtitle">MasterAuto Service</div>
+
+            <hr class="rule" />
+
+            <div class="kv">
+              <div class="k">Date:</div>
+              <div class="v">${escapeHtml(new Date(payment.created_at).toLocaleDateString('en-PH'))}</div>
+
+              <div class="k">Invoice:</div>
+              <div class="v">${escapeHtml(invoiceRef)}</div>
+
+              <div class="k">Customer:</div>
+              <div class="v">${escapeHtml(displayCustomer)}</div>
+
+              <div class="k">Invoice Total:</div>
+              <div class="v"><strong>${escapeHtml(formatMoney(invoiceTotal))}</strong></div>
+            </div>
+
+            <hr class="rule" />
+
+            <div class="section-title">Payment Breakdown (${invoicePayments.length} line${invoicePayments.length === 1 ? '' : 's'})</div>
+            <div class="lines">
+              ${invoicePayments.map((p, idx) => {
+                const type = p?.payment_type || '—'
+                const ref = p?.reference_no ? `Ref: ${p.reference_no}` : ''
+                return `
+                  <div>
+                    <div class="line">
+                      <div>${idx + 1}.</div>
+                      <div>${escapeHtml(type)}</div>
+                      <div class="line-amount">${escapeHtml(formatMoney(p?.amount))}</div>
+                      ${ref ? `<div class="line-ref">${escapeHtml(ref)}</div>` : ''}
+                    </div>
+                  </div>
+                `
+              }).join('')}
+            </div>
+
+            <hr class="rule" />
+
+            <div class="total-row">
+              <div>TOTAL PAID:</div>
+              <div class="amt">${escapeHtml(formatMoney(totalPaid))}</div>
+            </div>
+            ${isFullySettled ? `<div class="settled">✓ Fully Settled</div>` : ''}
+
+            <hr class="rule" />
+
+            <div class="thanks">Thank you for your payment!</div>
+            <div class="printed">Printed: ${escapeHtml(printedAt.toLocaleString('en-PH'))}</div>
           </div>
           <script>window.onload = () => { window.print(); }</script>
         </body>
@@ -167,9 +283,9 @@ export function PortalReceipts() {
             const isDeposit = p.is_deposit
             const typeColor = isDeposit ? '#f59e0b' : '#4ade80'
             const typeLabel = isDeposit ? 'Deposit' : 'Settled'
-            const paidTotal = Number(p.paid_total) || 0
-            const saleTotal = Number(p.total_amount) || 0
-            const isFullyPaid = saleTotal > 0 && paidTotal >= saleTotal
+            const derived = p?.id != null ? derivedById.get(p.id) : null
+            const paidTotal = derived ? derived.cumulativePaid : (Number(p.paid_total) || 0)
+            const saleTotal = derived ? derived.invoiceTotal : (Number(p.total_amount) || 0)
 
             return (
               <div key={p.id} className="portal-receipt-card">

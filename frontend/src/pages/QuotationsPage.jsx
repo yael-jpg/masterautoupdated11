@@ -7,9 +7,25 @@ import { PaginationBar } from '../components/PaginationBar'
 import { SERVICE_CATALOG, VEHICLE_SIZE_OPTIONS, formatCurrency, getCatalogGroups, getEffectivePrice } from '../data/serviceCatalog'
 import { SearchableSelect } from '../components/SearchableSelect'
 import { CustomerAutocomplete } from '../components/CustomerAutocomplete'
+import { normalizeEmailClient } from '../utils/validationClient'
 
 import './QuotationsPage.css'
 import './CrmPage.css'
+
+function normalizeServiceCode(code) {
+  const raw = String(code || '').trim()
+  if (!raw) return ''
+  return raw.replace(/^CAT-/i, '').toLowerCase()
+}
+
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -47,7 +63,7 @@ function StatusBadge({ status }) {
   return <span className={`status-badge ${meta.cls}`}>{meta.label}</span>
 }
 
-function ServiceLineEditor({ items, onItemsChange, vehicleSize, priceOverrides = {}, customCatalog = [] }) {
+function ServiceLineEditor({ items, onItemsChange, vehicleSize, priceOverrides = {}, customCatalog = [], materialsNotesByCode = {} }) {
   const fullCatalog = [...SERVICE_CATALOG, ...customCatalog.filter((s) => s.enabled !== false)]
   const [addCode, setAddCode] = useState('')
 
@@ -86,6 +102,9 @@ function ServiceLineEditor({ items, onItemsChange, vehicleSize, priceOverrides =
   const selectedDef = fullCatalog.find((s) => s.code === addCode)
   const isBikeSize = vehicleSize === 'small-bike' || vehicleSize === 'big-bike'
   const selectedUnavailableForBike = isBikeSize && selectedDef && !selectedDef.sizePrices[vehicleSize]
+  const selectedMaterialsNotes = selectedDef
+    ? (materialsNotesByCode[normalizeServiceCode(selectedDef.code)] || '')
+    : ''
   // Build options for SearchableSelect: hide already-added and unavailable-for-bike services
   const badgeFor = (s) => {
     const m = s.name.match(/(\d+)\s*Years?/i)
@@ -132,6 +151,15 @@ function ServiceLineEditor({ items, onItemsChange, vehicleSize, priceOverrides =
         </div>
       )}
 
+      {!!selectedMaterialsNotes && !selectedUnavailableForBike && (
+        <div style={{ marginTop: 8 }}>
+          <div className="sle-service-group">Materials Notes (client-visible)</div>
+          <div className="sle-service-name" style={{ fontSize: '0.9rem', fontWeight: 500, marginTop: 4, whiteSpace: 'pre-wrap' }}>
+            {selectedMaterialsNotes}
+          </div>
+        </div>
+      )}
+
       {items.length > 0 && (
         <table className="sle-table">
           <thead>
@@ -149,6 +177,11 @@ function ServiceLineEditor({ items, onItemsChange, vehicleSize, priceOverrides =
                 <td>
                   <span className="sle-service-name">{item.name}</span>
                   <span className="sle-service-group">{item.group}</span>
+                  {(() => {
+                    const notes = materialsNotesByCode[normalizeServiceCode(item.code)]
+                    const clean = String(notes || '').trim()
+                    return clean ? <span className="sle-service-group">Materials: {clean}</span> : null
+                  })()}
                 </td>
                 <td>
                   <input
@@ -224,6 +257,27 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
   const [servicesLoading, setServicesLoading] = useState(false)
   const [servicesError, setServicesError] = useState('')
 
+  // Materials notes lookup from DB services (keyed by normalized code)
+  const [materialsNotesByCode, setMaterialsNotesByCode] = useState({})
+  useEffect(() => {
+    if (!token) return
+    apiGet('/services', token)
+      .then((rows) => {
+        const list = Array.isArray(rows) ? rows : []
+        const next = {}
+        for (const svc of list) {
+          const key = normalizeServiceCode(svc?.code)
+          if (!key) continue
+          const notes = String(svc?.materials_notes || '').trim()
+          if (notes) next[key] = notes
+        }
+        setMaterialsNotesByCode(next)
+      })
+      .catch(() => {
+        // non-blocking: quotation can still be created without notes
+      })
+  }, [token])
+
   // Branch locations from configuration
   const [branchLocations, setBranchLocations] = useState(['Cubao', 'Manila'])
   useEffect(() => {
@@ -271,6 +325,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
   const [activeSizes, setActiveSizes] = useState(VEHICLE_SIZE_OPTIONS)
   const [customServices, setCustomServices] = useState([])
   const [leadPreview, setLeadPreview] = useState(null)
+  const leadSourceRef = useRef(null)
   const [leadScheduleHintsByQuotationId, setLeadScheduleHintsByQuotationId] = useState({})
   const processingLeadRef = useRef(null)
   useEffect(() => {
@@ -356,6 +411,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
 
       if (preselectedQuotation.isFromLead) {
         setLeadPreview(preselectedQuotation)
+        leadSourceRef.current = preselectedQuotation
         
         // Initial blank form
         const baseForm = {
@@ -418,7 +474,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
                 const nc = await apiPost('/customers', token, {
                   fullName: preselectedQuotation.customerName,
                   mobile: preselectedQuotation.customerMobile,
-                  email: preselectedQuotation.customerEmail,
+                  email: normalizeEmailClient(preselectedQuotation.customerEmail),
                   customerType: 'Retail',
                   bay: preselectedQuotation.branch || ''
                 })
@@ -431,28 +487,41 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
             let vId = preselectedQuotation.vehicleId || null
             const vRes = await apiGet(`/vehicles/customer/${cId}`, token)
             const list = Array.isArray(vRes) ? vRes : (vRes.data || [])
+            let selectedVehicle = null
 
             if (vId) {
               const exists = list.find(v => String(v.id) === String(vId))
-              if (!exists) vId = null 
+              if (!exists) vId = null
+              else selectedVehicle = exists
             }
 
             if (!vId) {
               const lpPlate = (preselectedQuotation.vehiclePlate || '').replace(/\s+/g, '').toUpperCase()
               const foundVeh = lpPlate ? list.find(v => (v.plate_number || v.plate_no || '').replace(/\s+/g, '').toUpperCase() === lpPlate) : null
 
-            if (foundVeh) {
-              vId = foundVeh.id
-            } else if (lpPlate) {
-              const nv = await apiPost('/vehicles', token, {
-                customerId: cId,
-                make: preselectedQuotation.vehicleMake,
-                model: preselectedQuotation.vehicleModel,
-                plateNumber: preselectedQuotation.vehiclePlate,
-              })
-              vId = nv.id
+              if (foundVeh) {
+                vId = foundVeh.id
+                selectedVehicle = foundVeh
+              } else if (lpPlate) {
+                const nv = await apiPost('/vehicles', token, {
+                  customerId: cId,
+                  make: preselectedQuotation.vehicleMake,
+                  model: preselectedQuotation.vehicleModel,
+                  plateNumber: preselectedQuotation.vehiclePlate,
+                })
+                vId = nv.id
+                selectedVehicle = nv
+              }
             }
-          }
+
+            // Keep the local vehicle cache in sync so the dropdown is immediately populated.
+            if (selectedVehicle && selectedVehicle.id) {
+              setVehicles((prev) => {
+                const idStr = String(selectedVehicle.id)
+                const next = Array.isArray(prev) ? prev.filter((v) => String(v.id) !== idStr) : []
+                return [selectedVehicle, ...next]
+              })
+            }
 
           setCustomerPreview(cPrev)
           setForm(prev => ({ ...prev, customerId: String(cId), vehicleId: vId ? String(vId) : '' }))
@@ -467,6 +536,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
     } else {
       setForm((p) => ({ ...p, customerId: String(preselectedQuotation.customerId || ''), vehicleId: preselectedQuotation.vehicleId ? String(preselectedQuotation.vehicleId) : '' }))
       setLeadPreview(null)
+      leadSourceRef.current = null
     }
     setEditingId(null)
     setFormError('')
@@ -550,6 +620,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
     setOverrideBalance(false)
     setPromoInfo(null)
     setPromoError('')
+    leadSourceRef.current = null
   }
 
   const handleEdit = async (quotation) => {
@@ -625,20 +696,32 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
         // Open updated quotation in the detail modal
         setViewItem(updated)
       } else {
+        const leadSource = leadSourceRef.current
         const created = await apiPost('/quotations', token, payload)
         closeForm()
         await load(1, search, filterStatus)
         // Fetch the full joined record so customer/vehicle names appear in the detail modal
         const full = await apiGet(`/quotations/${created.id}`, token)
         // Keep schedule hints from online lead in-memory so Create Schedule can prefill start/end.
-        if (leadPreview?.isFromLead && (leadPreview.preferredDate || leadPreview.endDate)) {
+        if (leadSource?.isFromLead && (leadSource.preferredDate || leadSource.endDate)) {
           setLeadScheduleHintsByQuotationId((prev) => ({
             ...prev,
             [created.id]: {
-              preferredDate: leadPreview.preferredDate || null,
-              endDate: leadPreview.endDate || null,
+              preferredDate: leadSource.preferredDate || null,
+              endDate: leadSource.endDate || null,
             },
           }))
+        }
+
+        // If this quotation was created from an online quotation request, move that request to history.
+        if (leadSource?.isFromLead && leadSource?.id) {
+          try {
+            await apiPatch(`/online-quotation-requests/${leadSource.id}/status`, token, { status: 'Archived' })
+            window.dispatchEvent(new CustomEvent('ma:online-quotation-requests-updated'))
+          } catch (err) {
+            // Non-blocking: the quotation is already saved.
+            pushToast('warning', `Quotation saved, but failed to archive lead: ${err.message}`)
+          }
         }
         setViewItem(full)
         pushToast('success', 'Quotation saved')
@@ -787,22 +870,27 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
     }
     const st = statusColors[(q.status || '').toLowerCase()] || { bg: '#f3f4f6', color: '#374151', dot: '#9ca3af' }
 
-    const serviceRows = (q.services || []).map((s) => `
+    const serviceRows = (q.services || []).map((s) => {
+      const notes = materialsNotesByCode[normalizeServiceCode(s?.code)]
+      const clean = String(notes || '').trim()
+      return `
       <tr>
         <td>
-          <span class="svc-name">${s.name || ''}</span>
-          ${s.group ? `<span class="svc-group">${s.group}</span>` : ''}
+          <span class="svc-name">${escapeHtml(s.name || '')}</span>
+          ${s.group ? `<span class="svc-group">${escapeHtml(s.group)}</span>` : ''}
+          ${clean ? `<span class="svc-group">Materials: ${escapeHtml(clean)}</span>` : ''}
         </td>
         <td style="text-align:right;font-weight:600;color:#111">${s.qty}</td>
         <td style="text-align:right;font-weight:600;color:#111">&#8369;${Number(s.unitPrice || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
         <td style="text-align:right;font-weight:700;color:#111">&#8369;${Number(s.total || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
-      </tr>`).join('')
+      </tr>`
+    }).join('')
 
     const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Quotation — ${q.quotation_no}</title>
+  <title>Quotation — ${escapeHtml(q.quotation_no)}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; font-size: 13px; color: #1a1a2e; background: #fff; padding: 36px 40px; max-width: 780px; margin: 0 auto; }
@@ -862,7 +950,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
     </div>
     <div class="doc-right">
       <div class="doc-label">Quotation</div>
-      <div class="doc-number">${q.quotation_no}</div>
+      <div class="doc-number">${escapeHtml(q.quotation_no)}</div>
     </div>
   </div>
 
@@ -883,17 +971,17 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
   <div class="grid">
     <div class="info-block">
       <div class="info-label">Customer</div>
-      <div class="info-name">${q.customer_name || '—'}</div>
-      ${q.customer_mobile ? `<div class="info-line">${q.customer_mobile}</div>` : ''}
-      ${q.customer_email ? `<div class="info-line">${q.customer_email}</div>` : ''}
-      ${q.customer_address ? `<div class="info-line">${q.customer_address}</div>` : ''}
+      <div class="info-name">${escapeHtml(q.customer_name || '—')}</div>
+      ${q.customer_mobile ? `<div class="info-line">${escapeHtml(q.customer_mobile)}</div>` : ''}
+      ${q.customer_email ? `<div class="info-line">${escapeHtml(q.customer_email)}</div>` : ''}
+      ${q.customer_address ? `<div class="info-line">${escapeHtml(q.customer_address)}</div>` : ''}
     </div>
     <div class="info-block">
       <div class="info-label">Vehicle</div>
-      <div class="info-name">${q.plate_number || '—'}</div>
-      <div class="info-line">${[q.make, q.model, q.vehicle_year].filter(Boolean).join(' ')}</div>
-      ${q.color ? `<div class="info-line">Color: ${q.color}</div>` : ''}
-      ${q.variant ? `<div class="info-line">Variant: ${q.variant}</div>` : ''}
+      <div class="info-name">${escapeHtml(q.plate_number || '—')}</div>
+      <div class="info-line">${escapeHtml([q.make, q.model, q.vehicle_year].filter(Boolean).join(' '))}</div>
+      ${q.color ? `<div class="info-line">Color: ${escapeHtml(q.color)}</div>` : ''}
+      ${q.variant ? `<div class="info-line">Variant: ${escapeHtml(q.variant)}</div>` : ''}
     </div>
   </div>
 
@@ -910,7 +998,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
     </div>
   </div>
 
-  ${q.notes ? `<div class="section-title">Notes</div><div class="notes-box">${q.notes}</div>` : ''}
+  ${q.notes ? `<div class="section-title">Notes</div><div class="notes-box">${escapeHtml(q.notes)}</div>` : ''}
 
 </body>
 </html>`
@@ -1333,6 +1421,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
                 priceOverrides={priceOverrides}
                 customCatalog={customServices}
                 onItemsChange={(items) => setForm((p) => ({ ...p, items }))}
+                materialsNotesByCode={materialsNotesByCode}
               />
             </div>
           </div>
@@ -1740,6 +1829,11 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
                       <td>
                         <span className="sle-service-name">{s.name}</span>
                         {s.group && <span className="sle-service-group">{s.group}</span>}
+                        {(() => {
+                          const notes = materialsNotesByCode[normalizeServiceCode(s?.code)]
+                          const clean = String(notes || '').trim()
+                          return clean ? <span className="sle-service-group">Materials: {clean}</span> : null
+                        })()}
                       </td>
                       <td className="qo-svc-center">{s.qty}</td>
                       <td>{formatCurrency(s.unitPrice)}</td>

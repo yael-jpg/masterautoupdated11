@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { apiGet, apiPost } from '../api/client'
+import { normalizeEmailClient } from '../utils/validationClient'
 import './CustomerAutocomplete.css'
 
 const MIN_CHARS = 2
@@ -240,7 +241,7 @@ export function CustomerAutocomplete({
             type="email"
             placeholder="Email (optional)"
             value={newCust.email}
-            onChange={(e) => setNewCust((p) => ({ ...p, email: e.target.value }))}
+            onChange={(e) => setNewCust((p) => ({ ...p, email: normalizeEmailClient(e.target.value) }))}
           />
           <div className="cac-add-actions">
             <button

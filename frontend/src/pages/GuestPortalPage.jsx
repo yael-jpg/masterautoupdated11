@@ -3,7 +3,7 @@ import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import './GuestPortalPage.css'
 import { SERVICE_CATALOG, VEHICLE_SIZE_OPTIONS, getEffectivePrice } from '../data/serviceCatalog'
-import { isCoating, isDetailing, isPPF } from '../components/ServiceProcess'
+import { GenericServiceProcess, getServiceProcess, isCoating, isDetailing, isPPF } from '../components/ServiceProcess'
 
 const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
 const API_BASE = (() => {
@@ -354,14 +354,31 @@ function tierColor(_name) {
     return { text: '#c0c0c0', bg: 'rgba(255,255,255,0.06)', border: 'rgba(255,255,255,0.16)' }
 }
 
-function ServiceCard({ baseName, variants, description, materialsNotes, onRequestQuote, priceOverrides }) {
+function ServiceCard({ baseName, variants, description, materialsNotes, onRequestQuote, priceOverrides, vehicleSize }) {
     const [expanded, setExpanded] = useState(false)
     const sorted = [...variants].sort((a, b) => SIZE_ORDER.indexOf(a.size ?? '') - SIZE_ORDER.indexOf(b.size ?? ''))
     const representative = sorted[0] // use first variant's code for catalog lookup
 
+    const chosenSizeKey = vehicleSize || 'medium'
+    const chosenSizeLabel = VEHICLE_SIZE_OPTIONS.find(s => s.key === chosenSizeKey)?.label || null
+    const representativeCatalog = getCatalogEntry(representative?.code)
+
     // Use catalog per-size prices if available, else fall back to DB base_price
     const catalogSizes = catalogSizePrices(representative?.code, priceOverrides)
     const displayPriceFromCatalog = catalogDisplayPrice(representative?.code, priceOverrides)
+
+    const chosenCatalogPrice = (() => {
+        if (!representativeCatalog) return null
+        const p = getEffectivePrice(representativeCatalog.code, chosenSizeKey, priceOverrides)
+        return p > 0 ? p : null
+    })()
+
+    const chosenDbPrice = (() => {
+        if (!chosenSizeLabel) return null
+        const match = sorted.find(v => v.size === chosenSizeLabel)
+        const p = match ? Number(match.base_price) : null
+        return p && p > 0 ? p : null
+    })()
 
     // Determine whether to show size tiles
     const hasCatalogSizes = catalogSizes && catalogSizes.length > 1
@@ -369,21 +386,30 @@ function ServiceCard({ baseName, variants, description, materialsNotes, onReques
     const hasSizes = hasCatalogSizes || hasDbSizes
 
     // Headline price label on card
-    const priceStr = displayPriceFromCatalog
-        ? displayPriceFromCatalog
-        : (() => {
+    const priceStr = chosenCatalogPrice != null
+        ? fmt(chosenCatalogPrice)
+        : chosenDbPrice != null
+            ? fmt(chosenDbPrice)
+            : displayPriceFromCatalog
+                ? displayPriceFromCatalog
+                : (() => {
             const prices = sorted.map(v => Number(v.base_price)).filter(Boolean)
             if (!prices.length) return 'Contact for price'
             const max = Math.max(...prices)
             return fmt(max)
-        })()
+                })()
 
-    const handleCardClick = () => {
-        if (hasSizes) {
-            setExpanded(o => !o)
-        } else {
-            const price = catalogSizes?.[0]?.price || sorted[0]?.base_price
-            onRequestQuote({ name: baseName, price })
+    const toggleDetails = () => setExpanded(o => !o)
+
+    const requestQuoteForBase = () => {
+        const price = chosenCatalogPrice ?? chosenDbPrice ?? catalogSizes?.[0]?.price ?? sorted[0]?.base_price
+        onRequestQuote({ name: baseName, price })
+    }
+
+    const onSummaryKeyDown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            toggleDetails()
         }
     }
 
@@ -403,45 +429,91 @@ function ServiceCard({ baseName, variants, description, materialsNotes, onReques
         }))
 
     return (
-        <div className={`gp-svc-card${expanded ? ' expanded' : ''}`} onClick={handleCardClick}>
-            <div className="gp-svc-card-top">
-                <div className="gp-svc-card-name">{baseName}</div>
-                <div className="gp-svc-card-price">{priceStr}</div>
+        <div className={`gp-svc-card${expanded ? ' expanded' : ''}`}>
+            <div
+                className="gp-svc-card-summary"
+                role="button"
+                tabIndex={0}
+                aria-expanded={expanded}
+                onClick={toggleDetails}
+                onKeyDown={onSummaryKeyDown}
+            >
+                <div className="gp-svc-card-top">
+                    <div className="gp-svc-card-name">{baseName}</div>
+                    <div className="gp-svc-card-right">
+                        <div className="gp-svc-card-price">{priceStr}</div>
+                        <svg className={`gp-svc-card-chevron${expanded ? ' up' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                    </div>
+                </div>
+                {description && <div className="gp-svc-card-desc">{description}</div>}
             </div>
-            {description && <div className="gp-svc-card-desc">{description}</div>}
-            {materialsNotes && (expanded || !hasSizes) && (
-                <div className="gp-svc-card-desc" style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
-                    <strong style={{ fontSize: 11, letterSpacing: '0.04em', opacity: 0.8 }}>MATERIALS / PRODUCTS USED</strong>
-                    <div style={{ marginTop: 6 }}>{materialsNotes}</div>
-                </div>
-            )}
-            {expanded && hasSizes ? (
-                <div className="gp-svc-sizes-wrap" onClick={e => e.stopPropagation()}>
-                    {sizeTiles.map(t => (
-                        <div key={t.key} className="gp-svc-size-tile"
-                            onClick={() => onRequestQuote({ name: t.svcName, price: t.price })}
-                        >
-                            <div className="gp-svc-size-name">{t.label}</div>
-                            <div className="gp-svc-size-price">{fmt(t.price)}</div>
+
+            {expanded && (
+                <div className="gp-svc-details" onClick={e => e.stopPropagation()}>
+                    <div className="gp-svc-details-section">
+                        <div className="gp-svc-details-kicker">Installation / Service Process</div>
+                        <div className="gp-svc-details-sub">Process overview for: <strong>{baseName}</strong></div>
+
+                        {getServiceProcess(baseName) || <GenericServiceProcess serviceName={baseName} />}
+                    </div>
+
+                    {!hasSizes && (
+                        <div className="gp-svc-details-section">
+                            <div className="gp-svc-details-kicker">Quote Request</div>
+                            <button
+                                type="button"
+                                className="gp-svc-quote-btn"
+                                onClick={requestQuoteForBase}
+                            >
+                                Request Quote for This Service
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                    <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+                                </svg>
+                            </button>
                         </div>
-                    ))}
-                    <button className="gp-svc-quote-btn" style={{ gridColumn: '1 / -1' }}
-                        onClick={e => { e.stopPropagation(); onRequestQuote({ name: baseName, price: sizeTiles[0]?.price }) }}
-                    >
-                        Request Quote for This Service
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
-                        </svg>
-                    </button>
-                </div>
-            ) : (
-                <div className="gp-svc-card-foot">
-                    <span className="gp-svc-card-cta">
-                        {hasSizes ? 'View sizes' : 'Get Quote'}
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
-                        </svg>
-                    </span>
+                    )}
+
+                    {materialsNotes && (
+                        <div className="gp-svc-details-section">
+                            <div className="gp-svc-details-kicker">Materials / Products Used</div>
+                            <div className="gp-svc-details-notes">{materialsNotes}</div>
+                        </div>
+                    )}
+
+                    {hasSizes && (
+                        <div className="gp-svc-details-section">
+                            <div className="gp-svc-details-kicker">Sizes & Pricing</div>
+                            <div className="gp-svc-sizes-wrap">
+                                {sizeTiles.map(t => (
+                                    <div
+                                        key={t.key}
+                                        className="gp-svc-size-tile"
+                                        onClick={() => onRequestQuote({ name: t.svcName, price: t.price })}
+                                        role="button"
+                                        tabIndex={0}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') onRequestQuote({ name: t.svcName, price: t.price })
+                                        }}
+                                    >
+                                        <div className="gp-svc-size-name">{t.label}</div>
+                                        <div className="gp-svc-size-price">{fmt(t.price)}</div>
+                                    </div>
+                                ))}
+                                <button
+                                    type="button"
+                                    className="gp-svc-quote-btn"
+                                    onClick={() => onRequestQuote({ name: baseName, price: sizeTiles[0]?.price })}
+                                >
+                                    Request Quote for This Service
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                        <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
@@ -454,6 +526,16 @@ function ServicesTab({ onRequestQuote }) {
     const [loading, setLoading] = useState(true)
     const [search, setSearch] = useState('')
     const [category, setCategory] = useState('All')
+    const [vehicleSize, setVehicleSize] = useState('medium')
+
+    const normalizeCategoryName = (raw) => {
+        const c = String(raw || '').trim()
+        if (!c) return c
+        if (/^ppf$/i.test(c)) return 'PPF Services'
+        if (/^ceramic\s*coating$/i.test(c)) return 'Coating Services'
+        if (/^detailing$/i.test(c)) return 'Detailing Services'
+        return c
+    }
 
     useEffect(() => {
         Promise.all([
@@ -465,24 +547,65 @@ function ServicesTab({ onRequestQuote }) {
         }).finally(() => setLoading(false))
     }, [])
 
-    const categories = ['All', ...new Set(services.map(s => s.category).filter(Boolean))]
+    const isBikeSize = vehicleSize === 'small-bike' || vehicleSize === 'big-bike'
+    const sizeLabelForFilter = VEHICLE_SIZE_OPTIONS.find(s => s.key === vehicleSize)?.label || null
 
-    const filtered = services.filter(s => {
-        const matchCat = category === 'All' || s.category === category
+    const serviceSupportsSize = (svc) => {
+        const entry = getCatalogEntry(svc?.code)
+        if (entry) {
+            const p = getEffectivePrice(entry.code, vehicleSize || 'medium', priceOverrides)
+            if (p > 0) return true
+        }
+        const parsed = parseName(svc?.name || '')
+        if (parsed?.size && sizeLabelForFilter && parsed.size === sizeLabelForFilter) return true
+        return false
+    }
+
+    const servicesForSize = isBikeSize ? services.filter(serviceSupportsSize) : services
+    const categories = ['All', ...new Set(servicesForSize.map(s => normalizeCategoryName(s.category)).filter(Boolean))]
+
+    const availableVehicleSizes = useMemo(() => {
+        const used = new Set()
+        const byLabel = new Map(VEHICLE_SIZE_OPTIONS.map(s => [s.label, s.key]))
+
+        services.forEach(svc => {
+            const entry = getCatalogEntry(svc?.code)
+            if (entry) {
+                VEHICLE_SIZE_OPTIONS.forEach(opt => {
+                    const p = getEffectivePrice(entry.code, opt.key, priceOverrides)
+                    if (p > 0) used.add(opt.key)
+                })
+            }
+
+            const parsed = parseName(svc?.name || '')
+            if (parsed?.size) {
+                const k = byLabel.get(parsed.size)
+                if (k) used.add(k)
+            }
+        })
+
+        const opts = VEHICLE_SIZE_OPTIONS.filter(o => used.has(o.key))
+        return opts.length ? opts : VEHICLE_SIZE_OPTIONS
+    }, [services, priceOverrides])
+
+    const filtered = servicesForSize.filter(s => {
+        const cat = normalizeCategoryName(s.category)
+        const matchCat = category === 'All' || cat === category
         const q = search.toLowerCase()
-        return matchCat && (!q || s.name.toLowerCase().includes(q) || (s.category || '').toLowerCase().includes(q))
+        return matchCat && (!q || s.name.toLowerCase().includes(q) || (cat || '').toLowerCase().includes(q))
     })
 
     const structure = filtered.reduce((acc, svc) => {
+        const normalizedCategory = normalizeCategoryName(svc.category)
         const { base, size } = parseName(svc.name)
-        if (!acc[svc.category]) acc[svc.category] = {}
-        if (!acc[svc.category][base]) acc[svc.category][base] = { variants: [], description: null, materialsNotes: null }
-        acc[svc.category][base].variants.push({ ...svc, size })
-        if (svc.description && !acc[svc.category][base].description) {
-            acc[svc.category][base].description = svc.description
+        if (!acc[normalizedCategory]) acc[normalizedCategory] = {}
+        if (!acc[normalizedCategory][base]) acc[normalizedCategory][base] = { variants: [], description: null, materialsNotes: null }
+        acc[normalizedCategory][base].variants.push({ ...svc, size })
+        if (svc.description && !acc[normalizedCategory][base].description) {
+            acc[normalizedCategory][base].description = svc.description
         }
-        if (svc.materials_notes && !acc[svc.category][base].materialsNotes) {
-            acc[svc.category][base].materialsNotes = svc.materials_notes
+        if (svc.materials_notes && !acc[normalizedCategory][base].materialsNotes) {
+            acc[normalizedCategory][base].materialsNotes = svc.materials_notes
         }
         return acc
     }, {})
@@ -491,42 +614,27 @@ function ServicesTab({ onRequestQuote }) {
 
     return (
         <div className="gp-tab-content">
-            <div className="gp-process">
-                <div className="gp-process-head">
-                    <div className="gp-process-kicker">What to Expect</div>
-                    <div className="gp-process-title">Installation Process</div>
-                    <div className="gp-process-sub">
-                        Typical steps for tint, PPF, ceramic coating, and detailing services.
-                    </div>
+            <div className="gp-services-top">
+                <div className="gp-search-wrap">
+                    <svg className="gp-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <input
+                        className="gp-search"
+                        type="text"
+                        placeholder="Search services — e.g. ceramic, tint, detailing…"
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                    />
                 </div>
-                <div className="gp-process-grid">
-                    {[
-                        { n: '01', t: 'Inspection', d: 'We confirm the vehicle condition and service scope before work begins.' },
-                        { n: '02', t: 'Preparation', d: 'Surface prep, cleaning, and masking to ensure proper fit and finish.' },
-                        { n: '03', t: 'Installation', d: 'Application and fitment performed by trained technicians using quality materials.' },
-                        { n: '04', t: 'Finishing', d: 'Edge work, heat curing (where applicable), and final detailing.' },
-                        { n: '05', t: 'Quality Check', d: 'Final inspection and aftercare guidance before release.' },
-                    ].map(s => (
-                        <div key={s.n} className="gp-process-step">
-                            <div className="gp-process-step-n">{s.n}</div>
-                            <div className="gp-process-step-t">{s.t}</div>
-                            <div className="gp-process-step-d">{s.d}</div>
-                        </div>
-                    ))}
-                </div>
-            </div>
 
-            <div className="gp-search-wrap">
-                <svg className="gp-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
-                <input
-                    className="gp-search"
-                    type="text"
-                    placeholder="Search services — e.g. ceramic, tint, detailing…"
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                />
+                <div className="gp-size-select-inline">
+                    <GpSelect
+                        value={vehicleSize}
+                        onChange={v => setVehicleSize(v)}
+                        options={availableVehicleSizes.map(s => ({ value: s.key, label: s.label }))}
+                    />
+                </div>
             </div>
 
             <div className="gp-cat-pills">
@@ -561,6 +669,7 @@ function ServicesTab({ onRequestQuote }) {
                                     materialsNotes={materialsNotes}
                                     onRequestQuote={onRequestQuote}
                                     priceOverrides={priceOverrides}
+                                    vehicleSize={vehicleSize}
                                 />
                             ))}
                         </div>
@@ -1245,7 +1354,7 @@ export function GuestPortalPage() {
 
             {/* Footer nudge */}
             <div className="gp-footer-nudge">
-                <p>Want to book appointments, track your vehicle, and pay online?</p>
+                <p>Want a smoother experience? Book, track, and pay online with your portal account.</p>
                 <div className="gp-footer-btns">
                     <a href="/portal" className="gp-footer-btn-secondary">Sign In</a>
                     <button className="gp-footer-btn-primary" onClick={() => window.location.href = '/portal'}>

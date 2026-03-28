@@ -30,6 +30,11 @@ router.get(
       WHERE 1=1`
     const params = []
 
+    // Default behavior: treat Archived as history and hide it unless explicitly requested.
+    if (!status) {
+      query += " AND COALESCE(LOWER(oqr.status), '') <> 'archived'"
+    }
+
     if (status) {
       params.push(status)
       query += ` AND oqr.status = $${params.length}`
@@ -48,6 +53,10 @@ router.get(
     // Count total
     let countQuery = 'SELECT COUNT(*) FROM online_quotation_requests WHERE 1=1'
     const countParams = []
+
+    if (!status) {
+      countQuery += " AND COALESCE(LOWER(status), '') <> 'archived'"
+    }
     if (status) {
       countParams.push(status)
       countQuery += ' AND status = $1'

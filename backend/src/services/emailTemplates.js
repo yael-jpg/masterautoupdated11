@@ -593,7 +593,7 @@ function buildTechnicianAssignedEmail({
 
 function buildJobCompletedEmail({
   customerName, jobOrderNo, quotationNo, plateNumber, make, model, vehicleYear,
-  color, services = [], totalAmount, technicianNames, completedAt, customerMobile,
+  color, services = [], totalAmount, subtotal, vatAmount, technicianNames, completedAt, customerMobile,
 }) {
   const vehicleLabel = buildVehicleLabel({ make, model, year: vehicleYear, color })
   const techList = Array.isArray(technicianNames)
@@ -631,6 +631,15 @@ function buildJobCompletedEmail({
         <thead><tr><th>Service Performed</th><th style="text-align:center">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead>
         <tbody>
           ${serviceRows}
+          ${(Number(vatAmount) > 0) ? `
+          <tr style="border-top:1px solid #e2e8f0;">
+            <td colspan="3" style="color:#475569;">Subtotal</td>
+            <td class="price" style="color:#475569;">${formatCurrency(subtotal)}</td>
+          </tr>
+          <tr>
+            <td colspan="3" style="color:#475569;">VAT</td>
+            <td class="price" style="color:#475569;">+ ${formatCurrency(vatAmount)}</td>
+          </tr>` : ''}
           <tr class="total-row"><td colspan="3"><strong>GRAND TOTAL</strong></td><td class="price"><strong>${formatCurrency(totalAmount)}</strong></td></tr>
         </tbody>
       </table>` : ''}
@@ -652,6 +661,8 @@ function buildJobCompletedEmail({
     `Completed By: ${techList}`, `Completed On: ${formatDateTime(completedAt)}`,
     services.length > 0 ? 'SERVICES PERFORMED:' : null,
     ...services.map((s) => `  - ${s.name || 'Service'} x${s.qty || 1}: ${formatCurrency(s.total || 0)}`),
+    (Number(vatAmount) > 0) ? `SUBTOTAL: ${formatCurrency(subtotal)}` : null,
+    (Number(vatAmount) > 0) ? `VAT: +${formatCurrency(vatAmount)}` : null,
     totalAmount ? `TOTAL: ${formatCurrency(totalAmount)}` : null,
     'Your vehicle is ready for pick-up. Please settle any remaining balance.',
     `Contact: ${SUPPORT_EMAIL}`, `— The ${BRAND_NAME} Team`,
@@ -676,6 +687,8 @@ function buildJobReleasedEmail({
   color,
   services = [],
   totalAmount = 0,
+  subtotal,
+  vatAmount,
   technicianNames = [],
   releasedAt,
 }) {
@@ -713,6 +726,15 @@ function buildJobReleasedEmail({
         <thead><tr><th>Service Performed</th><th style="text-align:center">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead>
         <tbody>
           ${serviceRows}
+          ${(Number(vatAmount) > 0) ? `
+          <tr style="border-top:1px solid #e2e8f0;">
+            <td colspan="3" style="color:#475569;">Subtotal</td>
+            <td class="price" style="color:#475569;">${formatCurrency(subtotal)}</td>
+          </tr>
+          <tr>
+            <td colspan="3" style="color:#475569;">VAT</td>
+            <td class="price" style="color:#475569;">+ ${formatCurrency(vatAmount)}</td>
+          </tr>` : ''}
           <tr class="total-row"><td colspan="3"><strong>TOTAL AMOUNT PAID</strong></td><td class="price"><strong>${formatCurrency(totalAmount)}</strong></td></tr>
         </tbody>
       </table>` : ''}
@@ -733,6 +755,8 @@ function buildJobReleasedEmail({
     `Serviced By: ${techList}`, `Released On: ${formatDateTime(releasedAt)}`,
     services.length > 0 ? 'SERVICES PERFORMED:' : null,
     ...services.map((s) => `  - ${s.name || 'Service'} x${s.qty || 1}: ${formatCurrency(s.total || 0)}`),
+    (Number(vatAmount) > 0) ? `SUBTOTAL: ${formatCurrency(subtotal)}` : null,
+    (Number(vatAmount) > 0) ? `VAT: +${formatCurrency(vatAmount)}` : null,
     totalAmount ? `TOTAL PAID: ${formatCurrency(totalAmount)}` : null,
     `Thank you for choosing ${BRAND_NAME}! Drive safe.`,
     `Contact: ${SUPPORT_EMAIL}`, `— The ${BRAND_NAME} Team`,
@@ -814,6 +838,102 @@ function buildCancellationEmail({
     subject: `Booking Cancelled${referenceNo ? ` — ${referenceNo}` : ''} | ${BRAND_NAME}`,
     html,
     text,
+  }
+}
+
+// ── Portal Access Created (staff walk-in registration) ─────────────────────
+
+function buildPortalAccessEmail({
+  customerName,
+  loginEmail,
+  loginMobile,
+  temporaryPassword,
+  portalUrl,
+}) {
+  const safeName = customerName || 'Customer'
+  const loginParts = []
+  if (loginEmail) loginParts.push(`Email: ${loginEmail}`)
+  if (loginMobile) loginParts.push(`Mobile: ${loginMobile}`)
+  const loginText = loginParts.length
+    ? loginParts.join(' | ')
+    : 'Use your registered email or mobile number'
+
+  const safePortalUrl = portalUrl ? String(portalUrl) : ''
+  const portalHref = safePortalUrl ? escapeHtml(safePortalUrl) : ''
+  const portalDisplay = portalHref
+
+  const html = wrapLayout(`
+    <div class="header">
+      <img class="header-logo" src="cid:masterauto_logo" alt="${BRAND_NAME}" />
+      <h1>Client Portal Access</h1>
+      <p>Your portal login has been created.</p>
+    </div>
+    <div class="body">
+      <p>Hi <strong>${safeName}</strong>,</p>
+      <p>
+        We created your <strong>${BRAND_NAME}</strong> Client Portal access so you can view your service updates and manage your account.
+      </p>
+
+      ${safePortalUrl ? `
+        <div style="margin:18px 0 10px;">
+          <a href="${portalHref}" style="display:block;background:${BRAND_COLOR};color:#ffffff;text-align:center;padding:12px 14px;border-radius:10px;font-weight:800;">
+            Open Client Portal
+          </a>
+        </div>
+        <div style="font-size:13px;color:#475569;line-height:1.5;margin:0 0 16px;">
+          Portal link: <a href="${portalHref}" style="color:${BRAND_COLOR};font-weight:700;word-break:break-all;">${portalDisplay}</a>
+        </div>
+      ` : `
+        <p style="margin: 18px 0;">Please open the <strong>${BRAND_NAME}</strong> Client Portal and log in.</p>
+      `}
+
+      <table class="info-table" style="margin-top:6px;">
+        <thead>
+          <tr><th colspan="2">Login Details</th></tr>
+        </thead>
+        <tbody>
+          ${loginEmail ? `<tr><td><strong>Email</strong></td><td>${escapeHtml(loginEmail)}</td></tr>` : ''}
+          ${loginMobile ? `<tr><td><strong>Mobile</strong></td><td>${escapeHtml(loginMobile)}</td></tr>` : ''}
+          ${!loginEmail && !loginMobile ? `<tr><td><strong>Login</strong></td><td>${escapeHtml(loginText)}</td></tr>` : ''}
+          <tr>
+            <td><strong>Temporary Password</strong></td>
+            <td>
+              <span style="display:inline-block;padding:8px 10px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;font-size:15px;font-weight:800;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;letter-spacing:0.2px;">
+                ${escapeHtml(temporaryPassword || '')}
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p style="margin-top: 14px;">After you log in, please change your password in the portal for security.</p>
+
+      <hr class="divider" />
+      <p style="font-size:14px;color:#475569;">
+        If you did not request this, please ignore this message or contact our staff.
+      </p>
+      <p style="margin-top:20px;"><em>— The ${BRAND_NAME} Team</em></p>
+    </div>
+  `)
+
+  const textLines = [
+    `${BRAND_NAME} Client Portal Access`,
+    '',
+    `Hi ${safeName},`,
+    '',
+    `We created your Client Portal access.`,
+    portalUrl ? `Portal login: ${portalUrl}` : `Portal login: (open the ${BRAND_NAME} Client Portal)`,
+    '',
+    `Login: ${loginText}`,
+    `Temporary Password: ${temporaryPassword || ''}`,
+    '',
+    `After you log in, please change your password in the portal.`,
+  ]
+
+  return {
+    subject: `Your Client Portal Access | ${BRAND_NAME}`,
+    html,
+    text: textLines.join('\n'),
   }
 }
 
@@ -1315,6 +1435,8 @@ function buildPaymentReceiptEmail({
   paymentAmount,
   totalPaid,
   totalAmount,
+  subtotal,
+  vatAmount,
   outstandingBalance,
   paymentMethod,
   paymentReference,
@@ -1353,6 +1475,10 @@ function buildPaymentReceiptEmail({
           <tr><td><strong>Vehicle</strong></td><td>${vehicleLabel || '—'}</td></tr>
           ${plateNumber ? `<tr><td><strong>Plate No.</strong></td><td>${plateNumber}</td></tr>` : ''}
           <tr class="divider"><td colspan="2" style="padding:0;height:1px;background:#e2e8f0;"></td></tr>
+          ${(Number(vatAmount) > 0) ? `
+          <tr><td style="color:#475569;"><strong>Subtotal</strong></td><td style="color:#475569;">${formatCurrency(subtotal)}</td></tr>
+          <tr><td style="color:#475569;"><strong>VAT</strong></td><td style="color:#475569;">+ ${formatCurrency(vatAmount)}</td></tr>
+          ` : ''}
           <tr><td><strong>Quotation Total</strong></td><td>${formatCurrency(totalAmount)}</td></tr>
           <tr><td><strong>Total Paid to Date</strong></td><td>${formatCurrency(totalPaid)}</td></tr>
           <tr style="background:#fefce8;"><td style="font-weight:700;">Outstanding Balance</td><td><strong style="color:${BRAND_COLOR};">${formatCurrency(outstandingBalance)}</strong></td></tr>
@@ -1385,6 +1511,9 @@ function buildPaymentReceiptEmail({
     `Method:          ${paymentMethod || '—'}`,
     `Ref No:          ${paymentReference || '—'}`,
     '',
+    (Number(vatAmount) > 0) ? `Subtotal:       ${formatCurrency(subtotal)}` : null,
+    (Number(vatAmount) > 0) ? `VAT:            +${formatCurrency(vatAmount)}` : null,
+    `Quotation Total: ${formatCurrency(totalAmount)}`,
     `Total Paid:      ${formatCurrency(totalPaid)}`,
     `Outstanding:     ${formatCurrency(outstandingBalance)}`,
     '',
@@ -1456,6 +1585,7 @@ module.exports = {
   buildBookingConfirmationEmail,
   buildPortalBookingRequestEmail,
   buildQuotationApprovedScheduledEmail,
+  buildPortalAccessEmail,
   buildPaymentReceiptEmail,
   buildQuotationRequestReceivedEmail,
   buildQuotationRequestStaffEmail,

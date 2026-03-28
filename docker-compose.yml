@@ -11,6 +11,12 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
 
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - '1025:1025'
+      - '8025:8025'
+
   backend:
     build:
       context: ./backend
@@ -23,10 +29,18 @@ services:
       DB_PASSWORD: postgres
       DB_NAME: masterauto
       JWT_SECRET: super-secret-key-change-me
+      EMAIL_PROVIDER: smtp
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      SMTP_SECURE: 'false'
+      SMTP_TLS_REJECT_UNAUTHORIZED: 'false'
+      SMTP_FROM: 'MasterAuto <no-reply@masterauto.local>'
+      SMTP_REPLY_TO: 'support@masterauto.local'
     ports:
       - '5000:5000'
     depends_on:
       - postgres
+      - mailhog
 
   frontend:
     build:

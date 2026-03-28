@@ -157,14 +157,16 @@ export function CampaignsModal({ token, onClose, customerIds = [] }) {
     <div className="campaign-modal-backdrop">
       <div className="campaign-modal-shell">
         <div className="campaign-modal-header">
-          <h3>Email Campaigns</h3>
+          <div className="campaign-modal-title">
+            <h3>Email Campaigns</h3>
+          </div>
           <div style={{ display: 'flex', gap: 12 }}>
             <button className="btn-secondary" onClick={onClose}>Close</button>
             <button className="btn-primary" onClick={openNew}>New Campaign</button>
           </div>
         </div>
 
-        <div className="campaign-modal-body">
+        <div className={`campaign-modal-body${showEditor ? ' editor-mode' : ''}`}>
           {blastResult && (
             <div style={{
               background: blastResult.failed > 0 ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
@@ -323,6 +325,15 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
   
   const [lastRef, setLastRef] = useState('intro') // 'intro' | 'reminders' | 'closing'
 
+  const normalizeTokenSpacing = useCallback((value) => {
+    if (!value) return ''
+    const token = '(?:customer_name|vehicle|promo_code|discount_value)'
+    let out = String(value)
+    out = out.replace(new RegExp(`([^\\s>\\(\\{\\[\\n])(\\{\\{\\s*${token}\\s*\\}\\})`, 'gi'), '$1 $2')
+    out = out.replace(new RegExp(`(\\{\\{\\s*${token}\\s*\\}\\})([^\\s<\\)\\}\\],.!?:;\\n])`, 'gi'), '$1 $2')
+    return out
+  }, [])
+
   useEffect(() => {
     async function loadDefaults() {
       try {
@@ -431,13 +442,25 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
     if (!target) return
     const start = target.selectionStart
     const end   = target.selectionEnd
-    const next = (current || '').slice(0, start) + v + (current || '').slice(end)
+
+    const before = (current || '').slice(0, start)
+    const after = (current || '').slice(end)
+    const prevCh = before.length ? before[before.length - 1] : ''
+    const nextCh = after.length ? after[0] : ''
+
+    const boundaryBefore = new Set(['>', '(', '{', '[', '\n'])
+    const boundaryAfter = new Set(['<', ')', '}', ']', ',', '.', '!', '?', ':', ';', '\n'])
+    const needsLeadingSpace = prevCh && !/\s/.test(prevCh) && !boundaryBefore.has(prevCh)
+    const needsTrailingSpace = nextCh && !/\s/.test(nextCh) && !boundaryAfter.has(nextCh)
+    const insertText = `${needsLeadingSpace ? ' ' : ''}${v}${needsTrailingSpace ? ' ' : ''}`
+
+    const next = before + insertText + after
     
     setVal(next)
     
     setTimeout(() => {
       target.focus()
-      target.selectionStart = target.selectionEnd = start + v.length
+      target.selectionStart = target.selectionEnd = start + insertText.length
     }, 0)
   }
 
@@ -487,7 +510,7 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
     if (!model.subject) return pushToast('error', 'Subject is required')
     if (!model.content) return pushToast('error', 'Content is required')
     
-    const toSave = { ...model }
+    const toSave = { ...model, content: normalizeTokenSpacing(model.content || '') }
     if (!toSave.name) toSave.name = `Campaign - ${new Date().toLocaleString()}`
 
     if (usePromo && promoCode.trim()) {
@@ -503,10 +526,10 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
   }
 
   const renderPreview = () => {
-    let html = (model.content || '')
+    let html = normalizeTokenSpacing(model.content || '')
       .replace(/\{\{customer_name\}\}/gi, '<strong>Valued Client</strong>')
       .replace(/\{\{vehicle\}\}/gi, '<strong>Your Vehicle</strong>')
-      .replace(/\{\{discount_value\}\}/gi, `<strong>${promoDiscVal}${promoDiscType === 'percent' ? '%' : '₱'}</strong>`)
+      .replace(/\{\{discount_value\}\}/gi, `<strong>${promoDiscType === 'percent' ? `${promoDiscVal}%` : `₱${promoDiscVal}`}</strong>`)
 
     const promoHtml = `<span style="background:#fefce8; padding:2px 6px; border:1px dashed #facc15; border-radius:4px; font-weight:700;">${usePromo ? promoCode : 'PROMO2026'}</span>`
     html = html.replace(/\{\{promo_code\}\}/gi, promoHtml)
@@ -516,6 +539,7 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
 
   return (
     <div className="campaign-editor">
+      <div className="campaign-editor-scroll">
       {/* ── Mode Toggle & Templates ── */}
       <div className="editor-section" style={{ background: '#1c2230', border: '1px solid #2d3748' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -708,8 +732,15 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
           </div>
 
           <div className="email-preview-container">
-            <div style={{ background: '#1a56db', padding: '24px 30px' }}>
-              <div style={{ color: '#fff', fontSize: 18, fontWeight: 700 }}>MasterAuto Special Update</div>
+            <div style={{ background: '#1a56db', padding: '22px 30px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <img
+                  src="/images/logo.png"
+                  alt="MasterAuto"
+                  style={{ width: 40, height: 40, objectFit: 'contain', display: 'block', filter: 'brightness(0) invert(1)', opacity: 0.95 }}
+                />
+                <div style={{ color: '#fff', fontSize: 18, fontWeight: 800, letterSpacing: '-0.2px' }}>MasterAuto Special Update</div>
+              </div>
               <div style={{ color: '#bfdbfe', fontSize: 12, marginTop: 4 }}>{model.subject || 'A message from our team'}</div>
             </div>
             <div style={{ background: '#fff', color: '#1e293b', padding: '32px 30px', fontSize: 15, lineHeight: 1.6 }}>
@@ -743,6 +774,8 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
             </div>
           </div>
         </div>
+      </div>
+
       </div>
 
       <div className="editor-footer">

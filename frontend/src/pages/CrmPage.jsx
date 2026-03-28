@@ -6,6 +6,7 @@ import { SectionCard } from '../components/SectionCard'
 import { Modal } from '../components/Modal'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { CampaignsModal } from './CampaignsModal'
+import { normalizeEmailClient } from '../utils/validationClient'
 import './CrmPage.css'
 
 const EMPTY_FORM = {
@@ -770,7 +771,7 @@ export function CRMPage({ token, user, onAfterSave, onNewQuotation, onRegisterVe
                   type="email"
                   placeholder="customer@email.com"
                   value={form.email}
-                  onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                  onChange={(e) => setForm((p) => ({ ...p, email: normalizeEmailClient(e.target.value) }))}
                 />
               </div>
             </div>

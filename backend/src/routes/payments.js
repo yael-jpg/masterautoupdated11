@@ -315,7 +315,7 @@ router.patch(
 
     // ── Resend Payment Receipt Email on update ──────────────────────────────
     EmailService.safeFireAndForget('Payment Receipt Update', () => 
-      EmailService.notifyPaymentReceived(updatedPayment.id, req.user.id)
+      EmailService.notifyPaymentReceived(updatedPayment.id, req.user.id, { resend: true })
     )
 
     return res.json(rows[0])

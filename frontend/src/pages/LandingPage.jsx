@@ -246,12 +246,6 @@ function FanPanel({ svc, index, isActive, hasActive, onActivate }) {
   )
 }
 
-function goToAdmin() {
-  localStorage.removeItem('masterauto_token')
-  localStorage.removeItem('masterauto_user')
-  window.location.href = '/admin'
-}
-
 export function LandingPage() {
   const [modal, setModal] = useState(null)
   const [fanActive, setFanActive] = useState(null)
@@ -291,12 +285,15 @@ export function LandingPage() {
           </h1>
           <div className="lp-hero-btns">
             <button className="lp-btn-o" onClick={() => window.location.href = '/guest'}>Online Quotation</button>
+            <span className="lp-break" aria-hidden="true" />
+            <button className="lp-btn-ow" onClick={() => window.location.href = '/portal/login'}>Register</button>
+            <button className="lp-btn-ow" onClick={() => window.location.href = '/login'}>Staff Login</button>
           </div>
         </div>
 
         {/* Bottom nav bar */}
         <div className="lp-hero-nav">
-          <button className="lp-hnav-link staff" onClick={goToAdmin}>Login / Sign In</button>
+          {/* Login/Sign In entry removed */}
         </div>
       </section>
 
@@ -462,8 +459,8 @@ export function LandingPage() {
             </div>
             <div className="lp-fcol">
               <h4>Access</h4>
-              <button onClick={() => setModal({})}>Register</button>
-              <a href="/admin">Staff Login</a>
+              <button onClick={() => { window.location.href = '/portal/login' }}>Register</button>
+              <a href="/login">Staff Login</a>
             </div>
           </div>
         </div>

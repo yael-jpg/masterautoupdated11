@@ -169,7 +169,7 @@ export default function useVehicleRegistration(initialData = {}) {
     if (!plate) return { valid: true }
 
     // Philippine plate format: XX1234XXXX (with optional dashes/spaces)
-    const normalized = plate.replace(/[\s\-]/g, '').trim().toUpperCase()
+    const normalized = plate.replace(/[\s-]/g, '').trim().toUpperCase()
     const plateRegex = /^[A-Z]{2}[0-9]{4}[A-Z]{3}$/
 
     if (!plateRegex.test(normalized)) {
@@ -224,7 +224,7 @@ export default function useVehicleRegistration(initialData = {}) {
       variantId: selectedVariantId || null,
       customMake: selectedMakeId ? null : customMake,
       customModel: selectedModelId ? null : customModel,
-      plateNumber: plateNumber.replace(/[\s\-]/g, '').toUpperCase(),
+      plateNumber: plateNumber.replace(/[\s-]/g, '').toUpperCase(),
       year: year ? parseInt(year) : null,
       color: color || null,
       bodyType: bodyType || null,

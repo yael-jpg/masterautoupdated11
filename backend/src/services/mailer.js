@@ -16,13 +16,62 @@ const {
   buildPaymentReceiptEmail,
 } = require('./emailTemplates')
 
-const isSmtpConfigured =
-  Boolean(env.smtpHost) &&
-  Boolean(env.smtpUser) &&
-  Boolean(env.smtpPass) &&
-  Boolean(env.smtpFrom)
+function isLocalSmtpHost(host) {
+  const h = String(host || '').trim().toLowerCase()
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === 'mailhog' || h === 'mailpit'
+}
+
+const isSmtpAuthProvided = Boolean(env.smtpUser) && Boolean(env.smtpPass)
+
+const isSmtpTransportDefined = Boolean(env.smtpHost) && Boolean(env.smtpFrom)
+
+const isSmtpSendable =
+  isSmtpTransportDefined &&
+  (isLocalSmtpHost(env.smtpHost) ? true : isSmtpAuthProvided)
+
+const isResendConfigured =
+  Boolean(env.resendApiKey) &&
+  Boolean(env.resendFrom || env.smtpFrom)
+
+function getEmailProvider() {
+  const provider = (env.emailProvider || '').trim().toLowerCase()
+  if (provider === 'resend' || provider === 'smtp') return provider
+  // Auto-detect: always default to SMTP.
+  // Resend must be explicitly selected via EMAIL_PROVIDER=resend.
+  // This prevents a RESEND_API_KEY from accidentally taking over when SMTP is partially configured.
+  return 'smtp'
+}
+
+function isEmailConfigured() {
+  const provider = getEmailProvider()
+  // "Configured" here means: the app is set up enough that it will attempt sending.
+  // For non-local SMTP hosts, actual sendability also requires credentials; sendEmail()
+  // will raise a clear error if they're missing.
+  return provider === 'resend' ? isResendConfigured : isSmtpTransportDefined
+}
 
 let transporter
+
+let resendClientPromise
+
+function getResendClient() {
+  if (!resendClientPromise) {
+    resendClientPromise = Promise.resolve()
+      .then(async () => {
+        // The SDK may be ESM depending on version; support both.
+        try {
+          // eslint-disable-next-line global-require
+          const mod = require('resend')
+          return mod.Resend ? new mod.Resend(env.resendApiKey) : new mod.default.Resend(env.resendApiKey)
+        } catch (_) {
+          const mod = await import('resend')
+          const Resend = mod.Resend || (mod.default && mod.default.Resend)
+          return new Resend(env.resendApiKey)
+        }
+      })
+  }
+  return resendClientPromise
+}
 
 // Default MasterAuto logo attachment (CID). Used by emailTemplates wrapLayout.
 let DEFAULT_LOGO_ATTACHMENT = null
@@ -50,6 +99,7 @@ function withDefaultAttachments(extra) {
 
 function getTransporter() {
   if (!transporter) {
+    const auth = env.smtpUser && env.smtpPass ? { user: env.smtpUser, pass: env.smtpPass } : undefined
     transporter = nodemailer.createTransport({
       host: env.smtpHost,
       port: env.smtpPort,
@@ -57,14 +107,106 @@ function getTransporter() {
       tls: {
         rejectUnauthorized: env.smtpTlsRejectUnauthorized,
       },
-      auth: {
-        user: env.smtpUser,
-        pass: env.smtpPass,
-      },
+      ...(auth ? { auth } : {}),
     })
   }
 
   return transporter
+}
+
+const attachmentContentCache = new Map()
+
+function readAttachmentContent(filePath) {
+  if (!filePath) return null
+  if (attachmentContentCache.has(filePath)) return attachmentContentCache.get(filePath)
+  const buf = fs.readFileSync(filePath)
+  attachmentContentCache.set(filePath, buf)
+  return buf
+}
+
+function convertAttachmentsForResend(nodemailerAttachments) {
+  if (!Array.isArray(nodemailerAttachments) || !nodemailerAttachments.length) return undefined
+
+  const out = []
+  for (const a of nodemailerAttachments) {
+    if (!a) continue
+
+    // We primarily support the attachment style used in this repo: { filename, path, cid }
+    const filename = a.filename || (a.path ? path.basename(a.path) : undefined)
+    let content = a.content
+
+    if (!content && a.path && fs.existsSync(a.path)) {
+      content = readAttachmentContent(a.path)
+    }
+
+    if (!filename || !content) continue
+
+    const ra = {
+      filename,
+      content,
+    }
+
+    if (a.cid) {
+      ra.contentId = a.cid
+    }
+
+    out.push(ra)
+  }
+
+  return out.length ? out : undefined
+}
+
+async function sendEmail({ from, to, replyTo, subject, html, text, attachments }) {
+  const provider = getEmailProvider()
+
+  if (!to) return { skipped: true }
+
+  if (provider === 'smtp' && !isSmtpSendable) {
+    if (env.smtpHost && !isLocalSmtpHost(env.smtpHost)) {
+      throw new Error(
+        `SMTP is selected but not configured. Set SMTP_USER and SMTP_PASS for host ${env.smtpHost}. ` +
+          'For Gmail, use an App Password (not your normal password).',
+      )
+    }
+    return { skipped: true }
+  }
+
+  if (provider === 'resend' && !isResendConfigured) {
+    return { skipped: true }
+  }
+
+  if (provider === 'smtp') {
+    await getTransporter().sendMail({
+      from: from || env.smtpFrom,
+      to,
+      replyTo: replyTo || env.smtpReplyTo || undefined,
+      subject,
+      html,
+      text,
+      ...(attachments ? { attachments } : {}),
+    })
+    return { skipped: false }
+  }
+
+  const resend = await getResendClient()
+  const resendAttachments = convertAttachmentsForResend(attachments)
+  const payload = {
+    from: from || env.resendFrom || env.smtpFrom,
+    to,
+    subject,
+    html,
+    text,
+    replyTo: replyTo || env.resendReplyTo || env.smtpReplyTo || undefined,
+    ...(resendAttachments ? { attachments: resendAttachments } : {}),
+  }
+
+  const { data, error } = await resend.emails.send(payload)
+  if (error) {
+    const message = error.message || (typeof error === 'string' ? error : JSON.stringify(error))
+    throw new Error(message)
+  }
+
+  return { skipped: false, id: data && data.id }
 }
 
 function buildVehicleLabel({ make, model, year }) {
@@ -80,9 +222,7 @@ async function sendReadyForReleaseEmail({
   year,
   referenceNo,
 }) {
-  if (!to || !isSmtpConfigured) {
-    return { skipped: true }
-  }
+  if (!to || !isEmailConfigured()) return { skipped: true }
 
   const vehicleLabel = buildVehicleLabel({ make, model, year })
   const subject = `Vehicle Ready for Release${plateNumber ? ` - ${plateNumber}` : ''}`
@@ -125,7 +265,7 @@ async function sendReadyForReleaseEmail({
     </div>
   `)
 
-  await getTransporter().sendMail({
+  await sendEmail({
     from: env.smtpFrom,
     to,
     replyTo: env.smtpReplyTo || undefined,
@@ -149,9 +289,7 @@ async function sendReceiptEmail({
   warrantyExpiresAt,
   followUpDate,
 }) {
-  if (!to || !isSmtpConfigured) {
-    return { skipped: true }
-  }
+  if (!to || !isEmailConfigured()) return { skipped: true }
 
   const vehicleLabel = buildVehicleLabel({ make, model, year })
   const subject = `Vehicle Released${plateNumber ? ` - ${plateNumber}` : ''} — Thank You!`
@@ -189,7 +327,7 @@ async function sendReceiptEmail({
     </div>
   `)
 
-  await getTransporter().sendMail({
+  await sendEmail({
     from: env.smtpFrom,
     to,
     replyTo: env.smtpReplyTo || undefined,
@@ -212,9 +350,7 @@ async function sendCompletionEmail({
   referenceNo,
   servicePackage,
 }) {
-  if (!to || !isSmtpConfigured) {
-    return { skipped: true }
-  }
+  if (!to || !isEmailConfigured()) return { skipped: true }
 
   const vehicleLabel = buildVehicleLabel({ make, model, year })
   const subject = `Service Completed${plateNumber ? ` - ${plateNumber}` : ''} — MasterAuto`
@@ -244,7 +380,7 @@ async function sendCompletionEmail({
     </div>
   `)
 
-  await getTransporter().sendMail({
+  await sendEmail({
     from: env.smtpFrom,
     to,
     replyTo: env.smtpReplyTo || undefined,
@@ -283,9 +419,7 @@ async function sendServiceConfirmationEmail({
   configReminders,
   configClosing,
 }) {
-  if (!to || !isSmtpConfigured) {
-    return { skipped: true }
-  }
+  if (!to || !isEmailConfigured()) return { skipped: true }
 
   const { subject, html, text } = buildServiceConfirmationEmail({
     customerName,
@@ -311,8 +445,8 @@ async function sendServiceConfirmationEmail({
     configClosing,
   })
 
-  await getTransporter().sendMail({
-    from:    env.smtpFrom,
+  await sendEmail({
+    from: env.smtpFrom,
     to,
     replyTo: env.smtpReplyTo || undefined,
     subject,
@@ -342,9 +476,7 @@ async function sendWorkStartedEmail({
   scheduleEnd,
   scheduleBay,
 }) {
-  if (!to || !isSmtpConfigured) {
-    return { skipped: true }
-  }
+  if (!to || !isEmailConfigured()) return { skipped: true }
 
   const { subject, html, text } = buildWorkStartedEmail({
     customerName,
@@ -362,8 +494,8 @@ async function sendWorkStartedEmail({
     scheduleBay,
   })
 
-  await getTransporter().sendMail({
-    from:    env.smtpFrom,
+  await sendEmail({
+    from: env.smtpFrom,
     to,
     replyTo: env.smtpReplyTo || undefined,
     subject,
@@ -393,9 +525,7 @@ async function sendTechnicianAssignedEmail({
   scheduleEnd,
   scheduleBay,
 }) {
-  if (!to || !isSmtpConfigured) {
-    return { skipped: true }
-  }
+  if (!to || !isEmailConfigured()) return { skipped: true }
 
   const { subject, html, text } = buildTechnicianAssignedEmail({
     customerName,
@@ -413,8 +543,8 @@ async function sendTechnicianAssignedEmail({
     scheduleBay,
   })
 
-  await getTransporter().sendMail({
-    from:    env.smtpFrom,
+  await sendEmail({
+    from: env.smtpFrom,
     to,
     replyTo: env.smtpReplyTo || undefined,
     subject,
@@ -440,13 +570,13 @@ async function sendJobCompletedEmail({
   color,
   services,
   totalAmount,
+  subtotal,
+  vatAmount,
   technicianNames,
   completedAt,
   customerMobile,
 }) {
-  if (!to || !isSmtpConfigured) {
-    return { skipped: true }
-  }
+  if (!to || !isEmailConfigured()) return { skipped: true }
 
   const { subject, html, text } = buildJobCompletedEmail({
     customerName,
@@ -459,13 +589,15 @@ async function sendJobCompletedEmail({
     color,
     services,
     totalAmount,
+    subtotal,
+    vatAmount,
     technicianNames,
     completedAt,
     customerMobile,
   })
 
-  await getTransporter().sendMail({
-    from:    env.smtpFrom,
+  await sendEmail({
+    from: env.smtpFrom,
     to,
     replyTo: env.smtpReplyTo || undefined,
     subject,
@@ -491,12 +623,12 @@ async function sendJobReleasedEmail({
   color,
   services,
   totalAmount,
+  subtotal,
+  vatAmount,
   technicianNames,
   releasedAt,
 }) {
-  if (!to || !isSmtpConfigured) {
-    return { skipped: true }
-  }
+  if (!to || !isEmailConfigured()) return { skipped: true }
 
   const { subject, html, text } = buildJobReleasedEmail({
     customerName,
@@ -509,12 +641,14 @@ async function sendJobReleasedEmail({
     color,
     services,
     totalAmount,
+    subtotal,
+    vatAmount,
     technicianNames,
     releasedAt,
   })
 
-  await getTransporter().sendMail({
-    from:    env.smtpFrom,
+  await sendEmail({
+    from: env.smtpFrom,
     to,
     replyTo: env.smtpReplyTo || undefined,
     subject,
@@ -543,7 +677,7 @@ async function sendCancellationEmail({
   amountPaid,
   refundNote,
 }) {
-  if (!to || !isSmtpConfigured) return { skipped: true }
+  if (!to || !isEmailConfigured()) return { skipped: true }
 
   const { subject, html, text } = buildCancellationEmail({
     customerName, plateNumber, make, model, year,
@@ -551,7 +685,7 @@ async function sendCancellationEmail({
     paymentAction, amountPaid, refundNote,
   })
 
-  await getTransporter().sendMail({
+  await sendEmail({
     from: env.smtpFrom,
     to,
     replyTo: env.smtpReplyTo || undefined,
@@ -588,9 +722,7 @@ async function sendBookingConfirmationEmail({
   configReminders,
   configClosing,
 }) {
-  if (!to || !isSmtpConfigured) {
-    return { skipped: true }
-  }
+  if (!to || !isEmailConfigured()) return { skipped: true }
 
   const { subject, html, text } = buildBookingConfirmationEmail({
     customerName,
@@ -612,8 +744,8 @@ async function sendBookingConfirmationEmail({
     configClosing,
   })
 
-  await getTransporter().sendMail({
-    from:    env.smtpFrom,
+  await sendEmail({
+    from: env.smtpFrom,
     to,
     replyTo: env.smtpReplyTo || undefined,
     subject,
@@ -641,7 +773,7 @@ async function sendPortalBookingRequestEmail({
   referenceNo,
   notes,
 }) {
-  if (!to || !isSmtpConfigured) return { skipped: true }
+  if (!to || !isEmailConfigured()) return { skipped: true }
 
   const { subject, html, text } = buildPortalBookingRequestEmail({
     customerName,
@@ -657,7 +789,7 @@ async function sendPortalBookingRequestEmail({
     notes,
   })
 
-  await getTransporter().sendMail({
+  await sendEmail({
     from: env.smtpFrom,
     to,
     replyTo: env.smtpReplyTo || undefined,
@@ -687,7 +819,7 @@ async function sendQuotationApprovedScheduledEmail({
   serviceName,
   referenceNo,
 }) {
-  if (!to || !isSmtpConfigured) return { skipped: true }
+  if (!to || !isEmailConfigured()) return { skipped: true }
 
   const { subject, html, text } = buildQuotationApprovedScheduledEmail({
     customerName,
@@ -704,7 +836,41 @@ async function sendQuotationApprovedScheduledEmail({
     referenceNo,
   })
 
-  await getTransporter().sendMail({
+  await sendEmail({
+    from: env.smtpFrom,
+    to,
+    replyTo: env.smtpReplyTo || undefined,
+    subject,
+    html,
+    text,
+    attachments: withDefaultAttachments(),
+  })
+
+  return { skipped: false }
+}
+
+// ── Portal: Access Created (staff walk-in registration) ─────────────────────
+
+async function sendPortalAccessEmail({
+  to,
+  customerName,
+  loginEmail,
+  loginMobile,
+  temporaryPassword,
+  portalUrl,
+}) {
+  if (!to || !isEmailConfigured()) return { skipped: true }
+
+  const { buildPortalAccessEmail } = require('./emailTemplates')
+  const { subject, html, text } = buildPortalAccessEmail({
+    customerName,
+    loginEmail,
+    loginMobile,
+    temporaryPassword,
+    portalUrl,
+  })
+
+  await sendEmail({
     from: env.smtpFrom,
     to,
     replyTo: env.smtpReplyTo || undefined,
@@ -726,6 +892,8 @@ async function sendPaymentReceiptEmail({
   paymentAmount,
   totalPaid,
   totalAmount,
+  subtotal,
+  vatAmount,
   outstandingBalance,
   paymentMethod,
   paymentReference,
@@ -736,9 +904,7 @@ async function sendPaymentReceiptEmail({
   vehicleYear,
   color,
 }) {
-  if (!to || !isSmtpConfigured) {
-    return { skipped: true }
-  }
+  if (!to || !isEmailConfigured()) return { skipped: true }
 
   const { subject, html, text } = buildPaymentReceiptEmail({
     customerName,
@@ -746,6 +912,8 @@ async function sendPaymentReceiptEmail({
     paymentAmount,
     totalPaid,
     totalAmount,
+    subtotal,
+    vatAmount,
     outstandingBalance,
     paymentMethod,
     paymentReference,
@@ -757,8 +925,8 @@ async function sendPaymentReceiptEmail({
     color,
   })
 
-  await getTransporter().sendMail({
-    from:    env.smtpFrom,
+  await sendEmail({
+    from: env.smtpFrom,
     to,
     replyTo: env.smtpReplyTo || undefined,
     subject,
@@ -773,6 +941,7 @@ async function sendPaymentReceiptEmail({
 // ─────────────────────────────────────────────────────────────────────────────
 
 module.exports = {
+  isEmailConfigured,
   sendReadyForReleaseEmail,
   sendReceiptEmail,
   sendCompletionEmail,
@@ -785,24 +954,25 @@ module.exports = {
   sendBookingConfirmationEmail,
   sendPortalBookingRequestEmail,
   sendQuotationApprovedScheduledEmail,
+  sendPortalAccessEmail,
   sendPaymentReceiptEmail,
   // Generic send helper for campaign / custom emails
   sendRawEmail: async function ({ to, subject, html, text, from, attachments }) {
-    if (!to || !isSmtpConfigured) return { skipped: true }
-    await getTransporter().sendMail({
+    if (!to || !isEmailConfigured()) return { skipped: true }
+    await sendEmail({
       from: from || env.smtpFrom,
       to,
       replyTo: env.smtpReplyTo || undefined,
       subject,
       html,
       text,
-      ...(withDefaultAttachments(attachments) ? { attachments: withDefaultAttachments(attachments) } : {}),
+      attachments: withDefaultAttachments(attachments),
     })
     return { skipped: false }
   },
 
   sendCampaignEmail: async function ({ to, subject, content, ctaLabel, ctaUrl, customerName, from, bannerImageUrl }) {
-    if (!to || !isSmtpConfigured) return { skipped: true }
+    if (!to || !isEmailConfigured()) return { skipped: true }
     
     // CID Embedding: If image is local, attach it to the email
     let finalBannerUrl = bannerImageUrl
@@ -831,14 +1001,14 @@ module.exports = {
     const { buildCampaignEmail } = require('./emailTemplates')
     const { html, text } = buildCampaignEmail({ subject, content, ctaLabel, ctaUrl, customerName, bannerImageUrl: finalBannerUrl })
     
-    await getTransporter().sendMail({
+    await sendEmail({
       from: from || env.smtpFrom,
       to,
       replyTo: env.smtpReplyTo || undefined,
       subject,
       html,
       text,
-      ...(withDefaultAttachments(attachments) ? { attachments: withDefaultAttachments(attachments) } : {}),
+      attachments: withDefaultAttachments(attachments),
     })
     return { skipped: false }
   },
