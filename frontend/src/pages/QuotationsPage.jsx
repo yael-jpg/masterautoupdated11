@@ -685,10 +685,13 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
         notes: form.notes,
         totalAmount: preDiscount,
         vehicleSize: form.vehicleSize,
-        bay: form.bay || null,
         ...(form.promoCode?.trim() ? { promoCode: form.promoCode.trim() } : {}),
         ...(overrideBalance ? { overrideBalance: true } : {}),
       }
+
+      // Branch (bay) is now assigned from CRM / customer profile during creation.
+      // Keep it editable only when editing an existing quotation.
+      if (editingId) payload.bay = form.bay || null
       if (editingId) {
         const updated = await apiPatch(`/quotations/${editingId}`, token, payload)
         closeForm()
@@ -1363,15 +1366,17 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
               )}
             </div>
 
-            <div className="form-group">
-              <label className="vf-label">🏢 Branch <span className="vf-required">*</span></label>
-              <select value={form.bay} onChange={(e) => setForm((p) => ({ ...p, bay: e.target.value }))} required>
-                <option value="">— Select branch —</option>
-                {branchLocations.map((b) => (
-                   <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
-            </div>
+            {editingId && (
+              <div className="form-group">
+                <label className="vf-label">🏢 Branch <span className="vf-required">*</span></label>
+                <select value={form.bay} onChange={(e) => setForm((p) => ({ ...p, bay: e.target.value }))} required>
+                  <option value="">— Select branch —</option>
+                  {branchLocations.map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* ── Section: Pricing & Services ── */}
