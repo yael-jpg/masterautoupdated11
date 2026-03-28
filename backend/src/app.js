@@ -7,6 +7,7 @@ const routes = require('./routes')
 const db = require('./config/db')
 const { notFound, errorHandler } = require('./middleware/errorHandler')
 const { createRateLimiter } = require('./middleware/rateLimit')
+const systemController = require('./controllers/systemController')
 
 const app = express()
 
@@ -47,51 +48,10 @@ const apiRateLimiter = createRateLimiter({
   message: 'Too many requests. Please slow down.',
 })
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'masterauto-backend' })
-})
+app.get('/health', systemController.health)
+app.get('/uploads-test', systemController.uploadsTest)
 
-app.get('/uploads-test', (req, res) => {
-  const fs = require('fs')
-  const path = require('path')
-  const uploadsPath = path.join(__dirname, '../public/uploads/vehicles')
-  
-  try {
-    const files = fs.readdirSync(uploadsPath)
-    res.json({ 
-      message: 'Uploads directory accessible',
-      path: uploadsPath,
-      files: files.filter(f => !f.startsWith('.'))
-    })
-  } catch (error) {
-    res.status(500).json({ 
-      message: 'Error accessing uploads directory',
-      error: error.message 
-    })
-  }
-})
-
-app.get('/ready', async (req, res) => {
-  try {
-    await db.query('SELECT 1 AS ok')
-    return res.json({
-      status: 'ready',
-      service: 'masterauto-backend',
-      checks: {
-        database: 'ok',
-      },
-    })
-  } catch (error) {
-    return res.status(503).json({
-      status: 'not_ready',
-      service: 'masterauto-backend',
-      checks: {
-        database: 'failed',
-      },
-      message: error.message,
-    })
-  }
-})
+app.get('/ready', systemController.ready)
 
 app.use('/api/auth', authRateLimiter)
 app.use('/api', apiRateLimiter)
