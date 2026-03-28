@@ -60,31 +60,6 @@ CREATE TABLE IF NOT EXISTS vehicles (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS vehicle_photos (
-  id SERIAL PRIMARY KEY,
-  vehicle_id INT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
-  photo_type VARCHAR(20) NOT NULL,
-  tag VARCHAR(50),
-  file_url TEXT NOT NULL,
-  sale_id INT REFERENCES sales(id) ON DELETE CASCADE,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS vehicle_service_records (
-  id SERIAL PRIMARY KEY,
-  vehicle_id INT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
-  sale_id INT REFERENCES sales(id) ON DELETE CASCADE,
-  service_date TIMESTAMP NOT NULL,
-  service_description TEXT,
-  damage_notes TEXT,
-  remarks TEXT,
-  assigned_staff_id INT REFERENCES users(id),
-  assigned_staff_name VARCHAR(120),
-  odometer_reading INT,
-  created_by INT REFERENCES users(id),
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
 CREATE TABLE IF NOT EXISTS services (
   id SERIAL PRIMARY KEY,
   code VARCHAR(40) UNIQUE NOT NULL,
@@ -108,6 +83,31 @@ CREATE TABLE IF NOT EXISTS sales (
   discount_amount NUMERIC(12,2) DEFAULT 0,
   total_amount NUMERIC(12,2) NOT NULL,
   workflow_status VARCHAR(30) NOT NULL,
+  created_by INT REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS vehicle_photos (
+  id SERIAL PRIMARY KEY,
+  vehicle_id INT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  photo_type VARCHAR(20) NOT NULL,
+  tag VARCHAR(50),
+  file_url TEXT NOT NULL,
+  sale_id INT REFERENCES sales(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS vehicle_service_records (
+  id SERIAL PRIMARY KEY,
+  vehicle_id INT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  sale_id INT REFERENCES sales(id) ON DELETE CASCADE,
+  service_date TIMESTAMP NOT NULL,
+  service_description TEXT,
+  damage_notes TEXT,
+  remarks TEXT,
+  assigned_staff_id INT REFERENCES users(id),
+  assigned_staff_name VARCHAR(120),
+  odometer_reading INT,
   created_by INT REFERENCES users(id),
   created_at TIMESTAMP DEFAULT NOW()
 );
