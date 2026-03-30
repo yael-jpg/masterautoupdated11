@@ -177,7 +177,7 @@
 }
 
 /*  Shared buttons  */
-.lp-btn-w {
+.lp button.lp-btn-w {
   display: inline-flex;
   align-items: center;
   gap: 9px;
@@ -193,8 +193,8 @@
   font-family: inherit;
   transition: background var(--t), transform var(--t), box-shadow var(--t);
 }
-.lp-btn-w:hover { background: var(--gray-100); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
-.lp-btn-o {
+.lp button.lp-btn-w:hover { background: var(--gray-100); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+.lp button.lp-btn-o {
   display: inline-flex;
   align-items: center;
   gap: 9px;
@@ -210,8 +210,8 @@
   font-family: inherit;
   transition: background var(--t), border-color var(--t), transform var(--t);
 }
-.lp-btn-o:hover { background: rgba(255,255,255,0.08); border-color: var(--white); transform: translateY(-2px); }
-.lp-btn-ow {
+.lp button.lp-btn-o:hover { background: rgba(255,255,255,0.08); border-color: var(--white); transform: translateY(-2px); }
+.lp button.lp-btn-ow {
   display: inline-flex;
   align-items: center;
   padding: 13px 28px;
@@ -226,7 +226,7 @@
   font-family: inherit;
   transition: background var(--t), border-color var(--t);
 }
-.lp-btn-ow:hover { background: rgba(255,255,255,0.08); border-color: var(--white); }
+.lp button.lp-btn-ow:hover { background: rgba(255,255,255,0.08); border-color: var(--white); }
 
 /* Scroll arrow */
 .lp-down-arrow {
