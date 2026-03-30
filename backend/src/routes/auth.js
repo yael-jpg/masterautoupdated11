@@ -200,10 +200,14 @@ router.post(
       { expiresIn: ttlMinutes * 60 },
     )
 
+    const tokenPayload = jwt.decode(token)
+
     await writeAuditLog({ userId: user.id, action: 'LOGIN', entity: 'auth', meta: { email } })
 
     return res.json({
       token,
+      tokenTtlMinutes: ttlMinutes,
+      tokenExp: tokenPayload?.exp || null,
       user: {
         id: user.id,
         fullName: user.full_name,
@@ -287,10 +291,14 @@ router.post(
       { expiresIn: ttlMinutes * 60 },
     )
 
+    const tokenPayload = jwt.decode(token)
+
     await writeAuditLog({ userId: user.id, action: 'LOGIN', entity: 'auth', meta: { email } })
 
     return res.json({
       token,
+      tokenTtlMinutes: ttlMinutes,
+      tokenExp: tokenPayload?.exp || null,
       user: {
         id: user.id,
         fullName: user.full_name,

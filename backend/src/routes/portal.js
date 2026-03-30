@@ -237,8 +237,11 @@ router.post(
 
     const ttlMinutes = await getPortalJwtTtlMinutes()
     const token = jwt.sign({ customerId }, env.jwtSecret, { expiresIn: ttlMinutes * 60 })
+    const tokenPayload = jwt.decode(token)
     return res.json({
       token,
+      tokenTtlMinutes: ttlMinutes,
+      tokenExp: tokenPayload?.exp || null,
       customer: { id: customerId, name: fullName, email },
     })
   }),
@@ -428,8 +431,11 @@ router.post(
     if (customer.portal_email_verified_at) {
       const ttlMinutes = await getPortalJwtTtlMinutes()
       const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: ttlMinutes * 60 })
+      const tokenPayload = jwt.decode(token)
       return res.json({
         token,
+        tokenTtlMinutes: ttlMinutes,
+        tokenExp: tokenPayload?.exp || null,
         customer: {
           id: customer.id,
           name: customer.full_name,
@@ -462,8 +468,11 @@ router.post(
 
     const ttlMinutes = await getPortalJwtTtlMinutes()
     const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: ttlMinutes * 60 })
+    const tokenPayload = jwt.decode(token)
     return res.json({
       token,
+      tokenTtlMinutes: ttlMinutes,
+      tokenExp: tokenPayload?.exp || null,
       customer: {
         id: customer.id,
         name: customer.full_name,
@@ -657,8 +666,11 @@ router.post(
 
     const ttlMinutes = await getPortalJwtTtlMinutes()
     const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: ttlMinutes * 60 })
+    const tokenPayload = jwt.decode(token)
     return res.json({
       token,
+      tokenTtlMinutes: ttlMinutes,
+      tokenExp: tokenPayload?.exp || null,
       customer: {
         id: customer.id,
         name: customer.full_name,
@@ -746,8 +758,11 @@ router.post(
 
     const ttlMinutes = await getPortalJwtTtlMinutes()
     const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: ttlMinutes * 60 })
+    const tokenPayload = jwt.decode(token)
     return res.json({
       token,
+      tokenTtlMinutes: ttlMinutes,
+      tokenExp: tokenPayload?.exp || null,
       customer: {
         id: customer.id,
         name: customer.full_name,
