@@ -19,9 +19,22 @@ CREATE INDEX IF NOT EXISTS idx_vehicle_service_records_status
   ON vehicle_service_records(status);
 
 -- Add check constraint for valid status values
-ALTER TABLE vehicle_service_records
-ADD CONSTRAINT chk_service_record_status 
-  CHECK (status IN ('pending', 'in-progress', 'completed', 'cancelled'));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE c.conname = 'chk_service_record_status'
+      AND n.nspname = 'public'
+      AND t.relname = 'vehicle_service_records'
+  ) THEN
+    ALTER TABLE vehicle_service_records
+    ADD CONSTRAINT chk_service_record_status
+      CHECK (status IN ('pending', 'in-progress', 'completed', 'cancelled'));
+  END IF;
+END $$;
 
 -- Add comments
 COMMENT ON COLUMN vehicle_service_records.status IS 'Service record completion status: pending, in-progress, completed, cancelled';

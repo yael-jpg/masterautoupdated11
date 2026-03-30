@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { GoogleLogin } from '@react-oauth/google'
-import { portalPost, setPortalSession } from '../../api/portalClient'
+import { portalLoginRequest, portalPost, setPortalSession } from '../../api/portalClient'
 
 function decodeJwtPayload(jwt) {
   try {
@@ -56,7 +56,7 @@ export function PortalLoginPage({ onLogin }) {
     setPortalError('')
     setPortalLoading(true)
     try {
-      const result = await portalPost('/auth/login', { identifier: portalId, password: portalPw })
+      const result = await portalLoginRequest(portalId, portalPw)
       setPortalSession(result.token, result.customer)
       onLogin(result.token, result.customer)
     } catch (err) {

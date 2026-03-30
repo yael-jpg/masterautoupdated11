@@ -426,8 +426,10 @@ const FIELD_SCHEMA = {
       section: 'Security',
       desc: 'Control how long session tokens remain valid before requiring sign-in again.',
       fields: [
-        { key: 'admin_session_token_ttl_minutes',  label: 'Admin Session Token Expiry (minutes)',  type: 'number', min: 5, max: 525600, step: 5, desc: 'Example: 600 = 10 hours.' },
-        { key: 'portal_session_token_ttl_minutes', label: 'Portal Session Token Expiry (minutes)', type: 'number', min: 5, max: 525600, step: 60, desc: 'Example: 43200 = 30 days.' },
+        { key: 'admin_session_token_ttl_minutes',  label: 'Admin Session Token Expiry (minutes)',  type: 'number', min: 1, max: 525600, step: 1, desc: 'Example: 600 = 10 hours.' },
+        { key: 'portal_session_token_ttl_minutes', label: 'Portal Session Token Expiry (minutes)', type: 'number', min: 1, max: 525600, step: 1, desc: 'Example: 43200 = 30 days.' },
+        { key: 'force_hashed_admin_login',         label: 'Force Hashed Admin Login',             type: 'toggle', desc: 'When enabled, staff/admin login uses challenge-response only (no plaintext password fallback). Enable after accounts are upgraded.' },
+        { key: 'force_hashed_portal_login',        label: 'Force Hashed Portal Login',            type: 'toggle', desc: 'When enabled, portal login uses challenge-response only (no plaintext password fallback). Enable after accounts are upgraded.' },
       ],
     },
     {

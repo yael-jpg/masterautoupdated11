@@ -14,6 +14,29 @@ import { PortalAppointments } from './PortalAppointments'
 import { PortalServices } from './PortalServices'
 import { PortalVehicles } from './PortalVehicles'
 import { PortalProfile } from './PortalProfile'
+import { getJwtExpMs } from '../../utils/jwt'
+
+function SessionExpiredOverlay({ message, onResignIn }) {
+  return (
+    <div className="modal-overlay" role="dialog" aria-modal="true">
+      <div className="modal-content" style={{ width: 'min(520px, 100%)' }}>
+        <div className="modal-header">
+          <h2>Session Expired</h2>
+        </div>
+        <div style={{ padding: '22px 24px 24px' }}>
+          <p style={{ margin: '0 0 18px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            {message || 'Your session has expired. Please sign in again.'}
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button type="button" className="btn-primary" onClick={onResignIn}>
+              Re-sign in
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const NAV = [
   {
@@ -122,6 +145,7 @@ const PAGE_TITLES = {
 export function PortalApp() {
   const [token, setToken] = useState(() => getPortalToken())
   const [customer, setCustomer] = useState(() => getPortalCustomer())
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState(null)
   const [activePage, setActivePage] = useState('dashboard')
   const [initialServiceId, setInitialServiceId] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -143,6 +167,7 @@ export function PortalApp() {
   const handleLogin = (t, c) => {
     setToken(t)
     setCustomer(c)
+    setSessionExpiredNotice(null)
     setActivePage('dashboard')
     window.history.replaceState({}, '', '/portal')
   }
@@ -151,6 +176,7 @@ export function PortalApp() {
     clearPortalSession()
     setToken('')
     setCustomer(null)
+    setSessionExpiredNotice(null)
     window.history.replaceState({}, '', '/portal/login')
   }
 
@@ -163,13 +189,47 @@ export function PortalApp() {
         { id: `${Date.now()}-${Math.random()}`, read: false, time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), title: 'Session Expired', message: msg },
         ...prev,
       ])
-      handleLogout()
+      clearPortalSession()
+      setToken('')
+      setCustomer(null)
+      setSessionExpiredNotice({ message: msg, at: Date.now() })
     }
 
     window.addEventListener('ma:session-expired', handleSessionExpired)
     return () => window.removeEventListener('ma:session-expired', handleSessionExpired)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Proactive token expiry handling (so idle sessions still auto-logout).
+  useEffect(() => {
+    if (!token) return
+
+    const emitExpired = (message) => {
+      window.dispatchEvent(new CustomEvent('ma:session-expired', { detail: { scope: 'portal', message } }))
+    }
+
+    const expMs = getJwtExpMs(token)
+    if (!expMs) return
+
+    const tick = () => {
+      if (Date.now() >= expMs) {
+        emitExpired('Session expired. Please sign in again.')
+        return true
+      }
+      return false
+    }
+
+    if (tick()) return
+
+    const timeoutMs = Math.max(0, expMs - Date.now() + 500)
+    const t = setTimeout(() => tick(), timeoutMs)
+    const i = setInterval(() => tick(), 15000)
+
+    return () => {
+      clearTimeout(t)
+      clearInterval(i)
+    }
+  }, [token])
 
   // Keep portal URLs clean:
   // - Logged out → always show /portal/login
@@ -178,6 +238,7 @@ export function PortalApp() {
     const pathname = window.location.pathname
 
     if (!token || !customer) {
+      if (sessionExpiredNotice) return
       if (pathname !== '/portal/login') window.history.replaceState({}, '', '/portal/login')
       return
     }
@@ -486,7 +547,20 @@ export function PortalApp() {
     }
   }, [token, customer])
 
-  if (!token || !customer) return <PortalLoginPage onLogin={handleLogin} />
+  if (!token || !customer) {
+    if (sessionExpiredNotice) {
+      return (
+        <SessionExpiredOverlay
+          message={sessionExpiredNotice.message}
+          onResignIn={() => {
+            setSessionExpiredNotice(null)
+            window.history.replaceState({}, '', '/portal/login')
+          }}
+        />
+      )
+    }
+    return <PortalLoginPage onLogin={handleLogin} />
+  }
 
   const initials = customer.name
     ? customer.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()

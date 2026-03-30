@@ -94,7 +94,12 @@ CREATE TRIGGER installer_commissions_updated_at
   FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
 -- ── 7. Summary view: inventory stock status ──────────────────
-CREATE OR REPLACE VIEW inventory_stock_status AS
+-- NOTE: We DROP & recreate because inventory_items columns can evolve over time
+-- (e.g., beginning_inventory), and PostgreSQL forbids changing view column
+-- order/names via CREATE OR REPLACE when SELECT uses i.*.
+DROP VIEW IF EXISTS inventory_stock_status;
+
+CREATE VIEW inventory_stock_status AS
 SELECT
   i.*,
   COALESCE(

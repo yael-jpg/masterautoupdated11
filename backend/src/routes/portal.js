@@ -34,10 +34,83 @@ const { normalizePlate, validatePlateFormat, isSuspiciousPlate } = require('../u
 const ConfigurationService = require('../services/configurationService')
 const { sendPortalBookingRequestEmail, sendRawEmail } = require('../services/mailer')
 const { buildQuotationRequestStaffEmail } = require('../services/emailTemplates')
+const { randomB64url, deriveVerifierFromPassword, computeProof, timingSafeEqualB64url } = require('../utils/hashedLogin')
 
 const googleClient = new OAuth2Client(env.googleClientId)
 
 const router = express.Router()
+
+let portalHashedColsChecked = false
+let portalHashedColsAvailable = false
+
+async function ensurePortalHashedLoginColumnsExist() {
+  if (portalHashedColsChecked) return portalHashedColsAvailable
+  portalHashedColsChecked = true
+  try {
+    const r = await db.query(
+      `SELECT COUNT(*)::int AS cnt
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'customers'
+         AND column_name IN ('portal_password_salt','portal_password_verifier','portal_password_verifier_iters')`,
+    )
+    portalHashedColsAvailable = Number(r.rows?.[0]?.cnt || 0) === 3
+    return portalHashedColsAvailable
+  } catch {
+    portalHashedColsAvailable = false
+    return false
+  }
+}
+
+const clampMinutes = (v, { min = 1, max = 525600, fallback = 43200 } = {}) => {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(min, Math.min(max, Math.round(n)))
+}
+
+async function getPortalJwtTtlMinutes() {
+  try {
+    return clampMinutes(await ConfigurationService.get('system', 'portal_session_token_ttl_minutes'), { fallback: 43200 })
+  } catch {
+    return 43200
+  }
+}
+
+async function getHashedLoginIters() {
+  try {
+    return clampMinutes(await ConfigurationService.get('system', 'hashed_login_pbkdf2_iters'), { min: 10000, max: 600000, fallback: 150000 })
+  } catch {
+    return 150000
+  }
+}
+
+async function isForceHashedPortalLogin() {
+  try {
+    return Boolean(await ConfigurationService.get('system', 'force_hashed_portal_login'))
+  } catch {
+    return false
+  }
+}
+
+// In-memory replay protection for challenge tokens (best-effort; per-process).
+const usedPortalChallengeJtis = new Map() // jti -> expiresAtMs
+function markPortalUsed(jti, expiresAtMs) {
+  usedPortalChallengeJtis.set(jti, expiresAtMs)
+  const now = Date.now()
+  for (const [k, v] of usedPortalChallengeJtis.entries()) {
+    if (v <= now) usedPortalChallengeJtis.delete(k)
+  }
+}
+
+function portalWasUsed(jti) {
+  const v = usedPortalChallengeJtis.get(jti)
+  if (!v) return false
+  if (v <= Date.now()) {
+    usedPortalChallengeJtis.delete(jti)
+    return false
+  }
+  return true
+}
 
 function generateOtpCode() {
   const n = crypto.randomInt(0, 1000000)
@@ -162,7 +235,8 @@ router.post(
     const customerId = r.rows[0].id
     const fullName = r.rows[0].full_name
 
-    const token = jwt.sign({ customerId }, env.jwtSecret, { expiresIn: '30d' })
+    const ttlMinutes = await getPortalJwtTtlMinutes()
+    const token = jwt.sign({ customerId }, env.jwtSecret, { expiresIn: ttlMinutes * 60 })
     return res.json({
       token,
       customer: { id: customerId, name: fullName, email },
@@ -210,6 +284,10 @@ router.post(
     }
 
     const hash = await bcrypt.hash(password, 10)
+    const hasHashedCols = await ensurePortalHashedLoginColumnsExist()
+    const iters = hasHashedCols ? await getHashedLoginIters() : null
+    const salt = hasHashedCols ? randomB64url(16) : null
+    const verifier = hasHashedCols ? deriveVerifierFromPassword({ password, saltB64url: salt, iterations: iters }) : null
 
     // If admin already created a customer record with this mobile, attach to it;
     // otherwise create a new customer record.
@@ -217,27 +295,60 @@ router.post(
     let customerId
     if (existing.rows.length > 0) {
       customerId = existing.rows[0].id
-      await db.query(
-        `UPDATE customers
-         SET portal_password_hash = $1,
-             full_name = $2,
-             email = $3,
-             lead_source = COALESCE(NULLIF(lead_source, ''), 'Portal')
-         WHERE id = $4`,
-        [hash, fullName, email, customerId],
-      )
+      if (hasHashedCols) {
+        await db.query(
+          `UPDATE customers
+           SET portal_password_hash = $1,
+               portal_password_salt = $2,
+               portal_password_verifier = $3,
+               portal_password_verifier_iters = $4,
+               full_name = $5,
+               email = $6,
+               lead_source = COALESCE(NULLIF(lead_source, ''), 'Portal')
+           WHERE id = $7`,
+          [hash, salt, verifier, iters, fullName, email, customerId],
+        )
+      } else {
+        await db.query(
+          `UPDATE customers
+           SET portal_password_hash = $1,
+               full_name = $2,
+               email = $3,
+               lead_source = COALESCE(NULLIF(lead_source, ''), 'Portal')
+           WHERE id = $4`,
+          [hash, fullName, email, customerId],
+        )
+      }
     } else {
-      const ins = await db.query(
-        `INSERT INTO customers (full_name, mobile, email, portal_password_hash, customer_type, lead_source, created_at)
-         VALUES ($1, $2, $3, $4, 'Walk-in', 'Portal', NOW())
-         RETURNING id`,
-        [fullName, mobile, email, hash],
-      )
+      const ins = hasHashedCols
+        ? await db.query(
+          `INSERT INTO customers (
+             full_name,
+             mobile,
+             email,
+             portal_password_hash,
+             portal_password_salt,
+             portal_password_verifier,
+             portal_password_verifier_iters,
+             customer_type,
+             lead_source,
+             created_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'Walk-in', 'Portal', NOW())
+           RETURNING id`,
+          [fullName, mobile, email, hash, salt, verifier, iters],
+        )
+        : await db.query(
+          `INSERT INTO customers (full_name, mobile, email, portal_password_hash, customer_type, lead_source, created_at)
+           VALUES ($1, $2, $3, $4, 'Walk-in', 'Portal', NOW())
+           RETURNING id`,
+          [fullName, mobile, email, hash],
+        )
       customerId = ins.rows[0].id
     }
 
-    const hasCols = await ensurePortalEmailVerificationColumnsExist()
-    if (!hasCols) {
+    const hasEmailCols = await ensurePortalEmailVerificationColumnsExist()
+    if (!hasEmailCols) {
       return res.status(503).json({
         message:
           'Email verification is not available on this server yet. Please apply migration: backend/sql/migrations/066_portal_email_verification.sql',
@@ -315,7 +426,8 @@ router.post(
     if (!customer) return res.status(404).json({ message: 'No portal account found for this email.' })
 
     if (customer.portal_email_verified_at) {
-      const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: '30d' })
+      const ttlMinutes = await getPortalJwtTtlMinutes()
+      const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: ttlMinutes * 60 })
       return res.json({
         token,
         customer: {
@@ -348,19 +460,7 @@ router.post(
       [customer.id],
     )
 
-    const clampMinutes = (v, { min = 5, max = 525600, fallback = 43200 } = {}) => {
-      const n = Number(v)
-      if (!Number.isFinite(n)) return fallback
-      return Math.max(min, Math.min(max, Math.round(n)))
-    }
-
-    let ttlMinutes = 43200
-    try {
-      ttlMinutes = clampMinutes(await ConfigurationService.get('system', 'portal_session_token_ttl_minutes'), { fallback: 43200 })
-    } catch {
-      ttlMinutes = 43200
-    }
-
+    const ttlMinutes = await getPortalJwtTtlMinutes()
     const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: ttlMinutes * 60 })
     return res.json({
       token,
@@ -440,6 +540,136 @@ router.post(
 // ─── POST /auth/login ────────────────────────────────────────────────────────
 
 router.post(
+  '/auth/login/challenge',
+  body('identifier').trim().notEmpty().withMessage('Mobile or email is required'),
+  validateRequest,
+  asyncHandler(async (req, res) => {
+    const identifier = String(req.body.identifier || '').trim()
+    const forceHashed = await isForceHashedPortalLogin()
+    const itersFallback = await getHashedLoginIters()
+
+    const hasCols = await ensurePortalHashedLoginColumnsExist()
+    if (!hasCols) {
+      return res.json({ mode: 'plain' })
+    }
+
+    let result
+    try {
+      result = await db.query(
+        `SELECT id, portal_password_salt, portal_password_verifier, portal_password_verifier_iters
+         FROM customers
+         WHERE (mobile = $1 OR LOWER(email) = LOWER($1)) AND portal_password_hash IS NOT NULL
+         LIMIT 1`,
+        [identifier],
+      )
+    } catch {
+      return res.json({ mode: 'plain' })
+    }
+    const customer = result.rows?.[0]
+    const hasVerifier = Boolean(customer?.portal_password_verifier && customer?.portal_password_salt && customer?.portal_password_verifier_iters)
+
+    if (!hasVerifier) {
+      if (forceHashed && customer) {
+        return res.status(409).json({
+          code: 'MISSING_VERIFIER',
+          message: 'Hashed login is required but this portal account is not upgraded yet. Please disable force_hashed_portal_login temporarily to upgrade, or reset the password.',
+        })
+      }
+      return res.json({ mode: 'plain' })
+    }
+
+    const nonce = randomB64url(32)
+    const jti = randomB64url(16)
+    const challengeToken = jwt.sign(
+      { typ: 'portal_login_challenge', identifier, nonce, jti },
+      env.jwtSecret,
+      { expiresIn: 120 },
+    )
+
+    return res.json({
+      mode: 'verifier',
+      salt: customer.portal_password_salt,
+      iters: Number(customer.portal_password_verifier_iters) || itersFallback,
+      nonce,
+      challengeToken,
+    })
+  }),
+)
+
+router.post(
+  '/auth/login/response',
+  body('identifier').trim().notEmpty().withMessage('Mobile or email is required'),
+  body('challengeToken').notEmpty().withMessage('challengeToken is required'),
+  body('proof').notEmpty().withMessage('proof is required'),
+  validateRequest,
+  asyncHandler(async (req, res) => {
+        const hasCols = await ensurePortalHashedLoginColumnsExist()
+        if (!hasCols) {
+          return res.status(409).json({ code: 'MISSING_VERIFIER', message: 'Hashed portal login is not available on this server yet. Please apply migration: backend/sql/migrations/068_hashed_login_verifier.sql' })
+        }
+    const identifier = String(req.body.identifier || '').trim()
+    const challengeToken = String(req.body.challengeToken || '')
+    const proof = String(req.body.proof || '')
+
+    let payload
+    try {
+      payload = jwt.verify(challengeToken, env.jwtSecret)
+    } catch {
+      return res.status(401).json({ message: 'Invalid or expired challenge.' })
+    }
+
+    if (payload?.typ !== 'portal_login_challenge' || String(payload?.identifier || '') !== identifier) {
+      return res.status(401).json({ message: 'Invalid challenge.' })
+    }
+
+    const jti = String(payload?.jti || '')
+    if (!jti) return res.status(401).json({ message: 'Invalid challenge.' })
+    if (portalWasUsed(jti)) return res.status(401).json({ message: 'Challenge already used.' })
+
+    const result = await db.query(
+      `SELECT id, full_name, mobile, email,
+              portal_password_verifier, portal_password_salt, portal_password_verifier_iters,
+              portal_email_verified_at
+       FROM customers
+       WHERE (mobile = $1 OR LOWER(email) = LOWER($1)) AND portal_password_hash IS NOT NULL
+       LIMIT 1`,
+      [identifier],
+    )
+    const customer = result.rows?.[0]
+    if (!customer || !customer.portal_password_verifier) {
+      return res.status(401).json({ message: 'Invalid credentials or no portal account found.' })
+    }
+
+    const expected = computeProof({ verifierB64url: customer.portal_password_verifier, nonce: String(payload.nonce || '') })
+    const ok = timingSafeEqualB64url(expected, proof)
+    if (!ok) return res.status(401).json({ message: 'Invalid credentials' })
+
+    const expMs = typeof payload.exp === 'number' ? payload.exp * 1000 : Date.now() + 120000
+    markPortalUsed(jti, expMs)
+
+    if (!customer.portal_email_verified_at) {
+      return res.status(403).json({
+        message: 'Please verify your email address before logging in.',
+        requiresEmailVerification: true,
+        email: customer.email,
+      })
+    }
+
+    const ttlMinutes = await getPortalJwtTtlMinutes()
+    const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: ttlMinutes * 60 })
+    return res.json({
+      token,
+      customer: {
+        id: customer.id,
+        name: customer.full_name,
+        mobile: customer.mobile,
+        email: customer.email,
+      },
+    })
+  }),
+)
+
+router.post(
   '/auth/login',
   body('identifier').trim().notEmpty().withMessage('Mobile or email is required'),
   body('password').notEmpty().withMessage('Password is required'),
@@ -448,12 +678,32 @@ router.post(
     const identifier = String(req.body.identifier || '').trim()
     const password = String(req.body.password || '')
 
-    const result = await db.query(
-      `SELECT id, full_name, mobile, email, portal_password_hash, portal_email_verified_at
-       FROM customers
-       WHERE (mobile = $1 OR LOWER(email) = LOWER($1)) AND portal_password_hash IS NOT NULL`,
-      [identifier],
-    )
+    const hasCols = await ensurePortalHashedLoginColumnsExist()
+
+    let result
+    if (hasCols) {
+      try {
+        result = await db.query(
+          `SELECT id, full_name, mobile, email,
+                  portal_password_hash,
+                  portal_password_salt, portal_password_verifier, portal_password_verifier_iters,
+                  portal_email_verified_at
+           FROM customers
+           WHERE (mobile = $1 OR LOWER(email) = LOWER($1)) AND portal_password_hash IS NOT NULL`,
+          [identifier],
+        )
+      } catch {
+        // Fallback below
+      }
+    }
+    if (!result) {
+      result = await db.query(
+        `SELECT id, full_name, mobile, email, portal_password_hash, portal_email_verified_at
+         FROM customers
+         WHERE (mobile = $1 OR LOWER(email) = LOWER($1)) AND portal_password_hash IS NOT NULL`,
+        [identifier],
+      )
+    }
     const customer = result.rows[0]
     if (!customer) {
       return res
@@ -466,6 +716,25 @@ router.post(
       return res.status(401).json({ message: 'Invalid credentials' })
     }
 
+    // If verifier isn't set yet, upgrade it now (so the next login can be hashed-in-browser).
+    if (hasCols && (!customer.portal_password_verifier || !customer.portal_password_salt || !customer.portal_password_verifier_iters)) {
+      try {
+        const iters = await getHashedLoginIters()
+        const salt = randomB64url(16)
+        const verifier = deriveVerifierFromPassword({ password, saltB64url: salt, iterations: iters })
+        await db.query(
+          `UPDATE customers
+           SET portal_password_salt = $1,
+               portal_password_verifier = $2,
+               portal_password_verifier_iters = $3
+           WHERE id = $4`,
+          [salt, verifier, iters, customer.id],
+        )
+      } catch {
+        // Ignore upgrade failures; keep normal login working.
+      }
+    }
+
     // Require email verification for email-based accounts.
     if (!customer.portal_email_verified_at) {
       return res.status(403).json({
@@ -475,7 +744,8 @@ router.post(
       })
     }
 
-    const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: '30d' })
+    const ttlMinutes = await getPortalJwtTtlMinutes()
+    const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: ttlMinutes * 60 })
     return res.json({
       token,
       customer: {
@@ -557,8 +827,11 @@ router.put(
       const isValid = await bcrypt.compare(current_password || '', r.rows[0].portal_password_hash)
       if (!isValid) return res.status(400).json({ message: 'Current password is incorrect.' })
       const hash = await bcrypt.hash(new_password, 10)
-      extraClause = ', portal_password_hash = $8'
-      params.push(hash)
+      const iters = await getHashedLoginIters()
+      const salt = randomB64url(16)
+      const verifier = deriveVerifierFromPassword({ password: new_password, saltB64url: salt, iterations: iters })
+      extraClause = ', portal_password_hash = $8, portal_password_salt = $9, portal_password_verifier = $10, portal_password_verifier_iters = $11'
+      params.push(hash, salt, verifier, iters)
     }
 
     const updated = await db.query(

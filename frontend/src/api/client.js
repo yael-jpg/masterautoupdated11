@@ -1,3 +1,5 @@
+import { computeLoginProof } from '../utils/hashedLoginProof'
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
 let activeRequests = 0
 
@@ -72,6 +74,26 @@ async function request(path, { method = 'GET', token, body, responseType = 'json
 }
 
 export async function loginRequest(email, password) {
+  const challenge = await request('/auth/login/challenge', {
+    method: 'POST',
+    body: { email },
+  })
+
+  if (challenge?.mode === 'verifier') {
+    const proof = await computeLoginProof({
+      password,
+      salt: challenge.salt,
+      iters: challenge.iters,
+      nonce: challenge.nonce,
+    })
+
+    return request('/auth/login/response', {
+      method: 'POST',
+      body: { email, challengeToken: challenge.challengeToken, proof },
+    })
+  }
+
+  // Backwards-compat: plaintext login for accounts/servers not yet upgraded.
   return request('/auth/login', {
     method: 'POST',
     body: { email, password },

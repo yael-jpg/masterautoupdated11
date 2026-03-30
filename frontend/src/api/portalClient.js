@@ -4,6 +4,8 @@
  * localStorage under "ma_portal_token".
  */
 
+import { computeLoginProof } from '../utils/hashedLoginProof'
+
 const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
 
 // Normalize base URL so we always end up with ".../api/portal".
@@ -90,3 +92,23 @@ export const portalGet = (path) => portalRequest(path)
 export const portalPost = (path, body) => portalRequest(path, { method: 'POST', body })
 export const portalPut = (path, body) => portalRequest(path, { method: 'PUT', body })
 export const portalDelete = (path) => portalRequest(path, { method: 'DELETE' })
+
+export async function portalLoginRequest(identifier, password) {
+  const challenge = await portalPost('/auth/login/challenge', { identifier })
+  if (challenge?.mode === 'verifier') {
+    const proof = await computeLoginProof({
+      password,
+      salt: challenge.salt,
+      iters: challenge.iters,
+      nonce: challenge.nonce,
+    })
+
+    return portalPost('/auth/login/response', {
+      identifier,
+      challengeToken: challenge.challengeToken,
+      proof,
+    })
+  }
+
+  return portalPost('/auth/login', { identifier, password })
+}

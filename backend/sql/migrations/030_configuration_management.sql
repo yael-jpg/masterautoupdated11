@@ -49,7 +49,8 @@ INSERT INTO configuration_settings (category, "key", value, description, data_ty
 ('general', 'date_format', 'MM/DD/YYYY', 'Default date format for display', 'string', TRUE),
 ('general', 'system_logo_url', '/images/logo.png', 'URL to system logo', 'string', TRUE),
 ('general', 'system_email', 'info@masterauto.com', 'System email for notifications', 'string', TRUE),
-('general', 'language', 'en', 'Default language', 'string', TRUE);
+('general', 'language', 'en', 'Default language', 'string', TRUE)
+ON CONFLICT (category, "key") DO NOTHING;
 
 -- B. Business Information
 INSERT INTO configuration_settings (category, "key", value, description, data_type, is_editable) VALUES
@@ -59,7 +60,8 @@ INSERT INTO configuration_settings (category, "key", value, description, data_ty
 ('business', 'business_email', 'contact@masterauto.com', 'Business email address', 'string', TRUE),
 ('business', 'tax_vat_rate', '12', 'VAT rate percentage', 'number', TRUE),
 ('business', 'registration_number', '', 'Business registration number', 'string', TRUE),
-('business', 'operating_hours', '{"mon_fri":"9:00 AM - 6:00 PM","sat":"9:00 AM - 5:00 PM","sun":"Closed"}', 'Operating hours by day', 'json', TRUE);
+('business', 'operating_hours', '{"mon_fri":"9:00 AM - 6:00 PM","sat":"9:00 AM - 5:00 PM","sun":"Closed"}', 'Operating hours by day', 'json', TRUE)
+ON CONFLICT (category, "key") DO NOTHING;
 
 -- C. Vehicle Configuration
 INSERT INTO configuration_settings (category, "key", value, description, data_type, is_editable) VALUES
@@ -69,7 +71,8 @@ INSERT INTO configuration_settings (category, "key", value, description, data_ty
 ('vehicle', 'plate_validation_enabled', 'true', 'Enable plate number validation', 'boolean', TRUE),
 ('vehicle', 'plate_format', 'XX###XXXX|###XXXX|XXXX###|ABC1234', 'Accepted plate formats (regex patterns)', 'string', TRUE),
 ('vehicle', 'default_categories', '["Sedan","SUV","Hatchback","Pickup","Van"]', 'Default vehicle categories', 'json', TRUE),
-('vehicle', 'allow_custom_plate', 'false', 'Allow vehicles with placeholder plates', 'boolean', TRUE);
+('vehicle', 'allow_custom_plate', 'false', 'Allow vehicles with placeholder plates', 'boolean', TRUE)
+ON CONFLICT (category, "key") DO NOTHING;
 
 -- D. Booking Rules
 INSERT INTO configuration_settings (category, "key", value, description, data_type, is_editable) VALUES
@@ -80,7 +83,8 @@ INSERT INTO configuration_settings (category, "key", value, description, data_ty
 ('booking', 'auto_cancel_unpaid_hours', '48', 'Hours to wait before auto-cancelling unpaid bookings', 'number', TRUE),
 ('booking', 'minimum_booking_notice', '24', 'Minimum hours notice required to book', 'number', TRUE),
 ('booking', 'allow_multiple_services', 'true', 'Allow multiple services in single booking', 'boolean', TRUE),
-('booking', 'require_phone_verification', 'false', 'Require phone verification for guest bookings', 'boolean', TRUE);
+('booking', 'require_phone_verification', 'false', 'Require phone verification for guest bookings', 'boolean', TRUE)
+ON CONFLICT (category, "key") DO NOTHING;
 
 -- E. Payment Configuration
 INSERT INTO configuration_settings (category, "key", value, description, data_type, is_editable) VALUES
@@ -91,7 +95,8 @@ INSERT INTO configuration_settings (category, "key", value, description, data_ty
 ('payment', 'refund_eligibility_days', '30', 'Days after payment to allow refunds', 'number', TRUE),
 ('payment', 'payment_due_days', '30', 'Days after booking for full payment due', 'number', TRUE),
 ('payment', 'enable_online_payment', 'false', 'Enable online payment gateway integration', 'boolean', TRUE),
-('payment', 'online_payment_provider', '', 'Online payment provider (Stripe, PayMongo, etc)', 'string', TRUE);
+('payment', 'online_payment_provider', '', 'Online payment provider (Stripe, PayMongo, etc)', 'string', TRUE)
+ON CONFLICT (category, "key") DO NOTHING;
 
 -- F. Sales Configuration
 INSERT INTO configuration_settings (category, "key", value, description, data_type, is_editable) VALUES
@@ -101,7 +106,8 @@ INSERT INTO configuration_settings (category, "key", value, description, data_ty
 ('sales', 'report_generation_time', '00:00', 'Time to generate daily reports (HH:MM format)', 'string', TRUE),
 ('sales', 'enable_sales_targets', 'false', 'Enable sales target tracking', 'boolean', TRUE),
 ('sales', 'sales_target_amount', '0', 'Monthly sales target amount', 'number', TRUE),
-('sales', 'tax_calculation_method', 'inclusive', 'Tax calculation: inclusive or exclusive', 'string', TRUE);
+('sales', 'tax_calculation_method', 'inclusive', 'Tax calculation: inclusive or exclusive', 'string', TRUE)
+ON CONFLICT (category, "key") DO NOTHING;
 
 -- G. User Roles & Permissions
 INSERT INTO configuration_settings (category, "key", value, description, data_type, is_editable) VALUES
@@ -109,7 +115,8 @@ INSERT INTO configuration_settings (category, "key", value, description, data_ty
 ('roles', 'require_two_factor_auth', 'false', 'Require two-factor authentication for admin', 'boolean', TRUE),
 ('roles', 'session_timeout_minutes', '30', 'Auto logout after inactivity (minutes)', 'number', TRUE),
 ('roles', 'max_login_attempts', '5', 'Maximum failed login attempts before lockout', 'number', TRUE),
-('roles', 'password_expiry_days', '90', 'Force password change after N days (0 = disabled)', 'number', TRUE);
+('roles', 'password_expiry_days', '90', 'Force password change after N days (0 = disabled)', 'number', TRUE)
+ON CONFLICT (category, "key") DO NOTHING;
 
 -- H. System Logs (Status only - not editable)
 INSERT INTO configuration_settings (category, "key", value, description, data_type, is_editable) VALUES
@@ -119,4 +126,5 @@ INSERT INTO configuration_settings (category, "key", value, description, data_ty
 ('system', 'database_backup_enabled', 'true', 'Enable automatic database backups', 'boolean', FALSE),
 ('system', 'last_backup_date', NULL, 'Timestamp of last backup', 'string', FALSE),
 ('system', 'system_version', '1.0.0', 'Current system version', 'string', FALSE),
-('system', 'system_status', 'operational', 'Current system status', 'string', FALSE);
+('system', 'system_status', 'operational', 'Current system status', 'string', FALSE)
+ON CONFLICT (category, "key") DO NOTHING;

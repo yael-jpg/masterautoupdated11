@@ -22,6 +22,29 @@ import { SettingsPage } from './pages/SettingsPage'
 import { apiDownload, buildApiUrl, loginRequest, pushToast } from './api/client'
 import { ToastViewport } from './components/ToastViewport'
 import { computeNewPortalCancellations, computeNewPortalCancellationRequests, computeNewPortalQuotationBookings, createPortalBookingWatchState } from './utils/portalBookingWatcher'
+import { getJwtExpMs } from './utils/jwt'
+
+function SessionExpiredOverlay({ message, onResignIn }) {
+  return (
+    <div className="modal-overlay" role="dialog" aria-modal="true">
+      <div className="modal-content" style={{ width: 'min(520px, 100%)' }}>
+        <div className="modal-header">
+          <h2>Session Expired</h2>
+        </div>
+        <div style={{ padding: '22px 24px 24px' }}>
+          <p style={{ margin: '0 0 18px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            {message || 'Your session has expired. Please sign in again.'}
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button type="button" className="btn-primary" onClick={onResignIn}>
+              Re-sign in
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function App() {
   // Initialize theme on mount (reads localStorage, applies data-theme to <html>)
@@ -37,6 +60,7 @@ function App() {
   })
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState(null)
   const [activeKey, setActiveKey] = useState('dashboard')
   const [networkBusy, setNetworkBusy] = useState(false)
   const [toasts, setToasts] = useState([])
@@ -174,6 +198,9 @@ function App() {
     const pathname = window.location.pathname
 
     if (!session.token) {
+      // When the session expired, do not auto-navigate to login.
+      // Show a caution prompt and let the user click "Re-sign in".
+      if (sessionExpiredNotice) return
       // Backwards-compat: if old /login is used, normalize to /admin/login.
       if (pathname !== '/admin/login') window.history.replaceState({}, '', '/admin/login')
       return
@@ -731,7 +758,7 @@ function App() {
         localStorage.removeItem('masterauto_user')
       } catch (_) {}
       setSession({ token: null, user: null })
-      pushToast('error', msg)
+      setSessionExpiredNotice({ message: msg, at: Date.now() })
     }
 
     window.addEventListener('ma:session-expired', handleSessionExpired)
@@ -742,6 +769,38 @@ function App() {
       window.removeEventListener('ma:session-expired', handleSessionExpired)
     }
   }, [])
+
+  // Proactive token expiry handling (so idle sessions still auto-logout).
+  useEffect(() => {
+    const token = session.token
+    if (!token) return
+
+    const emitExpired = (message) => {
+      window.dispatchEvent(new CustomEvent('ma:session-expired', { detail: { scope: 'admin', message } }))
+    }
+
+    const expMs = getJwtExpMs(token)
+    if (!expMs) return
+
+    const tick = () => {
+      if (Date.now() >= expMs) {
+        emitExpired('Session expired. Please sign in again.')
+        return true
+      }
+      return false
+    }
+
+    if (tick()) return
+
+    const timeoutMs = Math.max(0, expMs - Date.now() + 500)
+    const t = setTimeout(() => tick(), timeoutMs)
+    const i = setInterval(() => tick(), 15000)
+
+    return () => {
+      clearTimeout(t)
+      clearInterval(i)
+    }
+  }, [session.token])
 
   const dismissToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id))
 
@@ -1018,6 +1077,7 @@ function App() {
       localStorage.setItem('masterauto_token', result.token)
       localStorage.setItem('masterauto_user', JSON.stringify(result.user))
       setSession({ token: result.token, user: result.user })
+      setSessionExpiredNotice(null)
       window.history.replaceState({}, '', '/admin')
     } catch (error) {
       setAuthError(error.message)
@@ -1031,6 +1091,7 @@ function App() {
     localStorage.removeItem('masterauto_token')
     localStorage.removeItem('masterauto_user')
     setSession({ token: '', user: null })
+    setSessionExpiredNotice(null)
     window.history.replaceState({}, '', '/admin/login')
   }
 
@@ -1066,6 +1127,23 @@ function App() {
   }
 
   if (!session.token) {
+    if (sessionExpiredNotice) {
+      return (
+        <>
+          <SessionExpiredOverlay
+            message={sessionExpiredNotice.message}
+            onResignIn={() => {
+              setSessionExpiredNotice(null)
+              window.history.replaceState({}, '', '/admin/login')
+            }}
+          />
+          {createPortal(
+            <ToastViewport toasts={toasts} loading={networkBusy} onDismiss={dismissToast} />,
+            document.body,
+          )}
+        </>
+      )
+    }
     return (
       <>
         <LoginPage onLogin={handleLogin} loading={authLoading} error={authError} />

@@ -16,4 +16,5 @@ INSERT INTO configuration_settings (category, "key", value, description, data_ty
 ('email', 'mailchimp_enabled', 'false', 'Enable Mailchimp integration for campaigns', 'boolean', TRUE),
 ('email', 'preview_recipients', '[]', 'List of emails to send preview/test messages to (JSON array)', 'json', TRUE),
 ('email', 'spam_risk_threshold', '0.5', 'Spam risk threshold (0-1) used by spam checker', 'number', TRUE),
-('email', 'default_schedule_timezone', 'Asia/Manila', 'Default timezone for scheduled campaigns', 'string', TRUE);
+('email', 'default_schedule_timezone', 'Asia/Manila', 'Default timezone for scheduled campaigns', 'string', TRUE)
+ON CONFLICT (category, "key") DO NOTHING;
