@@ -83,6 +83,44 @@ function requirePortalAuth(req, res, next) {
   }
 }
 
+async function resolveLinkedCustomerIds(primaryCustomerId) {
+  // Some deployments end up with duplicate customer rows for the same person
+  // (e.g., portal-created customer and a staff-created walk-in), but with the
+  // same email/mobile. For portal display/notifications, treat those as the
+  // same identity so records reflect without manual merging.
+  try {
+    const me = await db.query('SELECT id, email, mobile FROM customers WHERE id = $1', [primaryCustomerId])
+    if (!me.rows.length) return [primaryCustomerId]
+    const email = String(me.rows[0].email || '').trim().toLowerCase()
+    const mobile = String(me.rows[0].mobile || '').trim()
+
+    if (!email && !mobile) return [primaryCustomerId]
+
+    const clauses = []
+    const params = []
+    if (email) {
+      params.push(email)
+      clauses.push(`LOWER(email) = $${params.length}`)
+    }
+    if (mobile) {
+      params.push(mobile)
+      clauses.push(`mobile = $${params.length}`)
+    }
+
+    const r = await db.query(
+      `SELECT id
+       FROM customers
+       WHERE ${clauses.join(' OR ')}
+       ORDER BY id ASC`,
+      params,
+    )
+    const ids = r.rows.map((row) => Number(row.id)).filter((id) => Number.isFinite(id))
+    return ids.length ? ids : [primaryCustomerId]
+  } catch (_e) {
+    return [primaryCustomerId]
+  }
+}
+
 // ─── POST /auth/google ────────────────────────────────────────────────
 router.post(
   '/auth/google',
@@ -437,6 +475,14 @@ router.post(
 // ─── All routes below require portal auth ────────────────────────────────────
 
 router.use(requirePortalAuth)
+
+// Resolve linked customer IDs for portal listings (email/mobile match)
+router.use(
+  asyncHandler(async (req, _res, next) => {
+    req.customerIds = await resolveLinkedCustomerIds(req.customerId)
+    return next()
+  }),
+)
 
 // ─── GET /me ────────────────────────────────────────────────────────────────
 
@@ -1003,9 +1049,9 @@ router.get(
       const r = await db.query(
         `SELECT ${selectFields.join(', ')}
          FROM vehicles
-         WHERE customer_id = $1
+         WHERE customer_id = ANY($1::int[])
          ORDER BY ${orderBy}`,
-        [req.customerId],
+        [req.customerIds || [req.customerId]],
       )
       return res.json(r.rows)
     } catch (err) {
@@ -1013,9 +1059,9 @@ router.get(
       const r = await db.query(
         `SELECT id, make, model, year, plate_number
          FROM vehicles
-         WHERE customer_id = $1
+         WHERE customer_id = ANY($1::int[])
          ORDER BY id DESC`,
-        [req.customerId],
+        [req.customerIds || [req.customerId]],
       )
       return res.json(r.rows)
     }
@@ -1282,8 +1328,8 @@ router.get(
       `SELECT id, make, model, year, plate_number, conduction_sticker,
               vin_chassis, color, variant, odometer
        FROM vehicles
-       WHERE id = $1 AND customer_id = $2`,
-      [req.params.id, req.customerId],
+       WHERE id = $1 AND customer_id = ANY($2::int[])`,
+      [req.params.id, req.customerIds || [req.customerId]],
     )
     if (!v.rows.length) return res.status(404).json({ message: 'Vehicle not found.' })
 
@@ -1353,10 +1399,10 @@ router.get(
        JOIN quotations  q ON q.id = jo.quotation_id
        JOIN vehicles    v ON v.id = jo.vehicle_id
        LEFT JOIN appointments a ON a.id = jo.schedule_id
-       WHERE (jo.customer_id = $1 OR v.customer_id = $1)
+       WHERE (jo.customer_id = ANY($1::int[]) OR v.customer_id = ANY($1::int[]))
          AND jo.status != 'Deleted'
        ORDER BY jo.created_at DESC`,
-      [req.customerId],
+      [req.customerIds || [req.customerId]],
     )
 
     // ALL quotations for this customer (including ones converted to JOs)
@@ -1387,10 +1433,10 @@ router.get(
          ORDER BY jo3.created_at ASC
          LIMIT 1
        ) jo2 ON true
-       WHERE (q.customer_id = $1 OR v.customer_id = $1)
+       WHERE (q.customer_id = ANY($1::int[]) OR v.customer_id = ANY($1::int[]))
          AND q.status NOT IN ('Cancelled')
        ORDER BY q.created_at DESC`,
-      [req.customerId],
+      [req.customerIds || [req.customerId]],
     )
 
     // Normalize JSONB services → items [{name, code, group, price, qty}]
@@ -1439,9 +1485,9 @@ router.get(
        LEFT JOIN quotation_payment_summary qps ON qps.quotation_id = p.quotation_id
        LEFT JOIN sales s        ON s.id = p.sale_id
        JOIN  vehicles v         ON v.id = COALESCE(q.vehicle_id, s.vehicle_id)
-       WHERE (COALESCE(q.customer_id, s.customer_id) = $1 OR v.customer_id = $1)
+       WHERE (COALESCE(q.customer_id, s.customer_id) = ANY($1::int[]) OR v.customer_id = ANY($1::int[]))
        ORDER BY p.created_at DESC`,
-      [req.customerId],
+      [req.customerIds || [req.customerId]],
     )
     return res.json(r.rows)
   }),
