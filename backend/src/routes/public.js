@@ -368,10 +368,20 @@ router.get(
       return res.status(400).json({ message: 'Invalid model id' })
     }
     try {
+      const cols = await db.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'vehicle_variants' AND column_name IN ('is_active')",
+      )
+      const hasIsActive = cols.rows.some((r) => r.column_name === 'is_active')
+      const whereClause = hasIsActive
+        ? 'WHERE model_id = $1 AND is_active = TRUE'
+        : 'WHERE model_id = $1'
+      const selectFields = ['id', 'name', 'fuel_type', 'transmission']
+      if (hasIsActive) selectFields.push('is_active')
+
       const { rows } = await db.query(
-        `SELECT id, name, fuel_type, transmission, is_active
+        `SELECT ${selectFields.join(', ')}
          FROM vehicle_variants
-         WHERE model_id = $1 AND is_active = TRUE
+         ${whereClause}
          ORDER BY name`,
         [modelId],
       )

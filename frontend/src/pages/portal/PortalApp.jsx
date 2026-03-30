@@ -136,6 +136,8 @@ export function PortalApp() {
     seenApptIds: new Set(),
     seenJoIds: new Set(),
     seenQuotationIds: new Set(),
+    seenVehicleIds: new Set(),
+    seenPaymentIds: new Set(),
   })
 
   const handleLogin = (t, c) => {
@@ -184,15 +186,19 @@ export function PortalApp() {
       try {
         const watch = portalNotifWatchRef.current
 
-        const [appts, docs] = await Promise.all([
+        const [appts, docs, vehs, pays] = await Promise.all([
           portalGet('/appointments'),
           portalGet('/job-orders'),
+          portalGet('/vehicles').catch(() => []),
+          portalGet('/payments').catch(() => []),
         ])
 
         if (stopped) return
 
         const apptRows = Array.isArray(appts) ? appts : []
         const docRows = Array.isArray(docs) ? docs : []
+        const vehicleRows = Array.isArray(vehs) ? vehs : []
+        const paymentRows = Array.isArray(pays) ? pays : []
 
         const jobOrders = docRows.filter((d) => d?.doc_type === 'JobOrder')
         const quotations = docRows.filter((d) => d?.doc_type === 'Quotation')
@@ -207,9 +213,55 @@ export function PortalApp() {
           watch.seenQuotationIds = new Set(quotations.map((q) => q?.id).filter((id) => id != null))
           watch.quotationStatusById = new Map(quotations.map((q) => [q?.id, q?.quotation_approval_status]))
 
+          watch.seenVehicleIds = new Set(vehicleRows.map((v) => v?.id).filter((id) => id != null))
+          watch.seenPaymentIds = new Set(paymentRows.map((p) => p?.id).filter((id) => id != null))
+
           watch.initialized = true
           portalNotifWatchRef.current = watch
           return
+        }
+
+        // Vehicles: new vehicles under account
+        for (const v of vehicleRows) {
+          if (v?.id == null) continue
+          if (!watch.seenVehicleIds.has(v.id)) {
+            watch.seenVehicleIds.add(v.id)
+            addNotification({
+              title: 'New Vehicle Added',
+              message: `${v?.plate_number || 'No plate'} • ${[v?.make, v?.model].filter(Boolean).join(' ') || 'Vehicle'}`,
+              details: {
+                type: 'vehicle',
+                vehicle_id: v.id,
+                plate_number: v?.plate_number,
+                make: v?.make,
+                model: v?.model,
+                year: v?.year,
+                color: v?.color,
+              },
+            })
+          }
+        }
+
+        // Payments: new payment entries
+        for (const p of paymentRows) {
+          if (p?.id == null) continue
+          if (!watch.seenPaymentIds.has(p.id)) {
+            watch.seenPaymentIds.add(p.id)
+            const amount = Number(p?.amount) || 0
+            addNotification({
+              title: 'Payment Received',
+              message: `${p?.sale_reference_no || 'Invoice'} • ₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+              details: {
+                type: 'payment',
+                payment_id: p.id,
+                sale_reference_no: p?.sale_reference_no,
+                amount: p?.amount,
+                payment_type: p?.payment_type,
+                reference_no: p?.reference_no,
+                created_at: p?.created_at,
+              },
+            })
+          }
         }
 
         // Appointments: new or status change

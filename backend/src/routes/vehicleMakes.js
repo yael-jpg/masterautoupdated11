@@ -82,14 +82,38 @@ router.get(
   '/models/:modelId/variants',
   asyncHandler(async (req, res) => {
     const { modelId } = req.params
-    const { rows } = await db.query(
-      `SELECT id, name, fuel_type, transmission, is_active
-       FROM vehicle_variants
-       WHERE model_id = $1 AND is_active = TRUE
-       ORDER BY name`,
-      [modelId],
-    )
-    res.json(rows)
+    try {
+      const cols = await db.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'vehicle_variants' AND column_name IN ('is_active')",
+      )
+      const hasIsActive = cols.rows.some((r) => r.column_name === 'is_active')
+
+      const whereClause = hasIsActive
+        ? 'WHERE model_id = $1 AND is_active = TRUE'
+        : 'WHERE model_id = $1'
+
+      const selectFields = ['id', 'name', 'fuel_type', 'transmission']
+      if (hasIsActive) selectFields.push('is_active')
+
+      const { rows } = await db.query(
+        `SELECT ${selectFields.join(', ')}
+         FROM vehicle_variants
+         ${whereClause}
+         ORDER BY name`,
+        [modelId],
+      )
+      return res.json(rows)
+    } catch (err) {
+      console.error('Error fetching vehicle variants for model', modelId, err)
+      const { rows } = await db.query(
+        `SELECT id, name, fuel_type, transmission
+         FROM vehicle_variants
+         WHERE model_id = $1
+         ORDER BY name`,
+        [modelId],
+      )
+      return res.json(rows)
+    }
   }),
 )
 

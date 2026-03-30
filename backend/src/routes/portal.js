@@ -977,15 +977,47 @@ router.post(
 router.get(
   '/vehicles',
   asyncHandler(async (req, res) => {
-    const r = await db.query(
-      `SELECT id, make, model, year, plate_number, conduction_sticker,
-              color, variant, odometer
-       FROM vehicles
-       WHERE customer_id = $1
-       ORDER BY created_at DESC`,
-      [req.customerId],
-    )
-    return res.json(r.rows)
+    try {
+      const cols = await db.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles'",
+      )
+      const colNames = new Set(cols.rows.map((r) => r.column_name))
+
+      const pick = (name) => (colNames.has(name) ? name : null)
+      const selectFields = [
+        'id',
+        pick('make'),
+        pick('model'),
+        pick('year'),
+        pick('plate_number'),
+        pick('conduction_sticker'),
+        pick('color'),
+        pick('variant'),
+        pick('odometer'),
+      ].filter(Boolean)
+
+      const hasCreatedAt = colNames.has('created_at')
+      const orderBy = hasCreatedAt ? 'created_at DESC' : 'id DESC'
+
+      const r = await db.query(
+        `SELECT ${selectFields.join(', ')}
+         FROM vehicles
+         WHERE customer_id = $1
+         ORDER BY ${orderBy}`,
+        [req.customerId],
+      )
+      return res.json(r.rows)
+    } catch (err) {
+      console.error('Portal vehicles query failed:', err.message || err)
+      const r = await db.query(
+        `SELECT id, make, model, year, plate_number
+         FROM vehicles
+         WHERE customer_id = $1
+         ORDER BY id DESC`,
+        [req.customerId],
+      )
+      return res.json(r.rows)
+    }
   }),
 )
 
@@ -1062,14 +1094,36 @@ router.get(
     if (!modelId || Number.isNaN(Number(modelId))) {
       return res.status(400).json({ message: 'Invalid model id' })
     }
-    const { rows } = await db.query(
-      `SELECT id, name, fuel_type, transmission, is_active
-       FROM vehicle_variants
-       WHERE model_id = $1 AND is_active = TRUE
-       ORDER BY name`,
-      [modelId],
-    )
-    return res.json(rows)
+    try {
+      const cols = await db.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'vehicle_variants' AND column_name IN ('is_active')",
+      )
+      const hasIsActive = cols.rows.some((r) => r.column_name === 'is_active')
+      const whereClause = hasIsActive
+        ? 'WHERE model_id = $1 AND is_active = TRUE'
+        : 'WHERE model_id = $1'
+      const selectFields = ['id', 'name', 'fuel_type', 'transmission']
+      if (hasIsActive) selectFields.push('is_active')
+
+      const { rows } = await db.query(
+        `SELECT ${selectFields.join(', ')}
+         FROM vehicle_variants
+         ${whereClause}
+         ORDER BY name`,
+        [modelId],
+      )
+      return res.json(rows)
+    } catch (err) {
+      console.error('Portal variants query failed:', err.message || err)
+      const { rows } = await db.query(
+        `SELECT id, name, fuel_type, transmission
+         FROM vehicle_variants
+         WHERE model_id = $1
+         ORDER BY name`,
+        [modelId],
+      )
+      return res.json(rows)
+    }
   }),
 )
 
@@ -1462,7 +1516,7 @@ router.get(
         allServicesFlat
           .map((svc) => (svc && typeof svc === 'object' ? svc.name : null))
           .filter(Boolean)
-          .map((n) => String(n).trim().toLowerCase())
+          .map((name) => String(name).trim().toLowerCase())
           .filter(Boolean),
       ),
     )
