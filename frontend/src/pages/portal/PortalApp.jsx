@@ -173,7 +173,7 @@ export function PortalApp() {
     if (!token || !customer) return
 
     let stopped = false
-    const intervalMs = 10000
+    const intervalMs = 5000
 
     const timeNow = () => new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
     const cap = (list) => (list.length > 40 ? list.slice(0, 40) : list)
@@ -185,6 +185,16 @@ export function PortalApp() {
     const poll = async (isInitial = false) => {
       try {
         const watch = portalNotifWatchRef.current
+
+        const graceMs = 2 * 60 * 1000
+        const cutoff = Date.now() - graceMs
+        const isRecent = (value) => {
+          if (!value) return false
+          const t = new Date(value).getTime()
+          return Number.isFinite(t) && t >= cutoff
+        }
+
+        const byCreatedAtAsc = (a, b) => new Date(a?.created_at).getTime() - new Date(b?.created_at).getTime()
 
         const [appts, docs, vehs, pays] = await Promise.all([
           portalGet('/appointments'),
@@ -204,6 +214,7 @@ export function PortalApp() {
         const quotations = docRows.filter((d) => d?.doc_type === 'Quotation')
 
         if (!watch.initialized || isInitial) {
+          // Establish baseline first so we don't spam old items.
           watch.seenApptIds = new Set(apptRows.map((a) => a?.id).filter((id) => id != null))
           watch.apptStatusById = new Map(apptRows.map((a) => [a?.id, a?.status]))
 
@@ -215,6 +226,72 @@ export function PortalApp() {
 
           watch.seenVehicleIds = new Set(vehicleRows.map((v) => v?.id).filter((id) => id != null))
           watch.seenPaymentIds = new Set(paymentRows.map((p) => p?.id).filter((id) => id != null))
+
+          // Grace window: notify very recent items created right before login/refresh.
+          const recentVehicles = vehicleRows.filter((v) => v?.id != null && isRecent(v?.created_at)).sort(byCreatedAtAsc)
+          for (const v of recentVehicles) {
+            addNotification({
+              title: 'New Vehicle Added',
+              message: `${v?.plate_number || 'No plate'} • ${[v?.make, v?.model].filter(Boolean).join(' ') || 'Vehicle'}`,
+              details: {
+                type: 'vehicle',
+                vehicle_id: v.id,
+                plate_number: v?.plate_number,
+                make: v?.make,
+                model: v?.model,
+                year: v?.year,
+                color: v?.color,
+              },
+            })
+          }
+
+          const recentPayments = paymentRows.filter((p) => p?.id != null && isRecent(p?.created_at)).sort(byCreatedAtAsc)
+          for (const p of recentPayments) {
+            const amount = Number(p?.amount) || 0
+            addNotification({
+              title: 'Payment Received',
+              message: `${p?.sale_reference_no || 'Invoice'} • ₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+              details: {
+                type: 'payment',
+                payment_id: p.id,
+                sale_reference_no: p?.sale_reference_no,
+                amount: p?.amount,
+                payment_type: p?.payment_type,
+                reference_no: p?.reference_no,
+                created_at: p?.created_at,
+              },
+            })
+          }
+
+          const recentJobOrders = jobOrders.filter((jo) => jo?.id != null && isRecent(jo?.created_at)).sort(byCreatedAtAsc)
+          for (const jo of recentJobOrders) {
+            addNotification({
+              title: 'New Job Order',
+              message: `${jo?.service_package || 'Service'} • ${jo?.workflow_status || 'Pending'}`,
+              details: {
+                type: 'job-order',
+                job_order_id: jo.id,
+                reference_no: jo?.reference_no,
+                status: jo?.workflow_status,
+                plate_number: jo?.plate_number,
+              },
+            })
+          }
+
+          const recentQuotations = quotations.filter((q) => q?.id != null && isRecent(q?.created_at)).sort(byCreatedAtAsc)
+          for (const q of recentQuotations) {
+            addNotification({
+              title: 'New Quotation',
+              message: `${q?.service_package || 'Quotation'} • ${q?.quotation_approval_status || 'Pending'}`,
+              details: {
+                type: 'quotation',
+                quotation_id: q.id,
+                reference_no: q?.reference_no,
+                status: q?.quotation_approval_status,
+                plate_number: q?.plate_number,
+              },
+            })
+          }
 
           watch.initialized = true
           portalNotifWatchRef.current = watch

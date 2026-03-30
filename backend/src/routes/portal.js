@@ -986,6 +986,7 @@ router.get(
       const pick = (name) => (colNames.has(name) ? name : null)
       const selectFields = [
         'id',
+        pick('created_at'),
         pick('make'),
         pick('model'),
         pick('year'),

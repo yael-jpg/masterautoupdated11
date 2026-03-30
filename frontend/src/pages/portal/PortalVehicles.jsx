@@ -747,7 +747,7 @@ export function PortalVehicles({ onBook }) {
 
     loadInitial()
 
-    const intervalMs = 20000
+    const intervalMs = 10000
     const id = setInterval(() => pollList(), intervalMs)
 
     return () => {
