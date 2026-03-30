@@ -455,13 +455,13 @@ router.patch(
 
     // Void path: moving a quotation to Not Approved is allowed even if the
     // quotation is currently in a terminal status, but only when there is no
-    // active (non-deleted) Job Order linked to it.
+    // active Job Order linked to it.
     if (status === 'Not Approved') {
       const { rows: jos } = await db.query(
         `SELECT id, job_order_no
          FROM job_orders
          WHERE quotation_id = $1
-           AND (status IS NULL OR status != 'Deleted')
+           AND COALESCE(status, '') NOT IN ('Deleted', 'Cancelled', 'Canceled')
          LIMIT 1`,
         [req.params.id],
       )
@@ -683,20 +683,54 @@ router.delete(
       [req.params.id],
     )
     if (!rows.length) return res.status(404).json({ message: 'Quotation not found' })
-    // Block delete if any job order references this quotation (regardless of quotation status)
-    const { rows: jos } = await db.query(
-      `SELECT id, job_order_no
-       FROM job_orders
+
+    // Block delete if any ACTIVE appointment references this quotation.
+    const { rows: activeAppts } = await db.query(
+      `SELECT id
+       FROM appointments
        WHERE quotation_id = $1
-         AND (status IS NULL OR status != 'Deleted')
+         AND COALESCE(status, '') NOT IN ('Deleted', 'Cancelled', 'Canceled')
        LIMIT 1`,
       [req.params.id],
     )
-    if (jos.length) {
+    if (activeAppts.length) {
       return res.status(409).json({
-        message: `Cannot delete this quotation — Job Order ${jos[0].job_order_no} is linked to it. Remove the Job Order first.`,
+        message: 'Cannot delete this quotation — an appointment is linked to it. Remove or cancel the appointment first.',
       })
     }
+
+    // Block delete if any ACTIVE job order references this quotation (regardless of quotation status)
+    const { rows: activeJos } = await db.query(
+      `SELECT id, job_order_no
+       FROM job_orders
+       WHERE quotation_id = $1
+         AND COALESCE(status, '') NOT IN ('Deleted', 'Cancelled', 'Canceled')
+       LIMIT 1`,
+      [req.params.id],
+    )
+    if (activeJos.length) {
+      return res.status(409).json({
+        message: `Cannot delete this quotation — Job Order ${activeJos[0].job_order_no} is linked to it. Remove the Job Order first.`,
+      })
+    }
+
+    // Unlink inactive appointments so we don't leave stale references.
+    await db.query(
+      `UPDATE appointments
+       SET quotation_id = NULL
+       WHERE quotation_id = $1
+         AND COALESCE(status, '') IN ('Deleted', 'Cancelled', 'Canceled')`,
+      [req.params.id],
+    )
+
+    // If only inactive JOs remain linked, unlink them so we don't leave stale references.
+    await db.query(
+      `UPDATE job_orders
+       SET quotation_id = NULL
+       WHERE quotation_id = $1
+         AND COALESCE(status, '') IN ('Deleted', 'Cancelled', 'Canceled')`,
+      [req.params.id],
+    )
     await db.query('DELETE FROM quotations WHERE id = $1', [req.params.id])
     res.status(204).send()
   }),
