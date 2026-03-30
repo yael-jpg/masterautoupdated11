@@ -43,6 +43,12 @@ export function clearPortalSession() {
   localStorage.removeItem('ma_portal_customer')
 }
 
+function emitSessionExpired(message) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ma:session-expired', { detail: { scope: 'portal', message } }))
+  }
+}
+
 // ─── Core fetch wrapper ───────────────────────────────────────────────────────
 
 async function portalRequest(path, { method = 'GET', body } = {}) {
@@ -59,7 +65,17 @@ async function portalRequest(path, { method = 'GET', body } = {}) {
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    const err = new Error(data.message || data.error || 'Request failed')
+    const message = data.message || data.error || 'Request failed'
+
+    if (
+      res.status === 401 &&
+      token &&
+      (data.code === 'SESSION_EXPIRED' || /expired/i.test(message)) &&
+      !String(path).includes('/auth/login')
+    ) {
+      emitSessionExpired(message)
+    }
+    const err = new Error(message)
     Object.assign(err, data)
     throw err
   }

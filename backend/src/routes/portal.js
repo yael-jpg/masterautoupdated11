@@ -78,8 +78,11 @@ function requirePortalAuth(req, res, next) {
     }
     req.customerId = decoded.customerId
     return next()
-  } catch {
-    return res.status(401).json({ message: 'Invalid or expired token' })
+  } catch (error) {
+    if (error && error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Session expired. Please sign in again.', code: 'SESSION_EXPIRED' })
+    }
+    return res.status(401).json({ message: 'Invalid token', code: 'INVALID_TOKEN' })
   }
 }
 
@@ -345,7 +348,20 @@ router.post(
       [customer.id],
     )
 
-    const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: '30d' })
+    const clampMinutes = (v, { min = 5, max = 525600, fallback = 43200 } = {}) => {
+      const n = Number(v)
+      if (!Number.isFinite(n)) return fallback
+      return Math.max(min, Math.min(max, Math.round(n)))
+    }
+
+    let ttlMinutes = 43200
+    try {
+      ttlMinutes = clampMinutes(await ConfigurationService.get('system', 'portal_session_token_ttl_minutes'), { fallback: 43200 })
+    } catch {
+      ttlMinutes = 43200
+    }
+
+    const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: ttlMinutes * 60 })
     return res.json({
       token,
       customer: {

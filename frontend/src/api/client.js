@@ -13,6 +13,12 @@ function emitToast(type, message) {
   }
 }
 
+function emitSessionExpired(message) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ma:session-expired', { detail: { scope: 'admin', message } }))
+  }
+}
+
 async function request(path, { method = 'GET', token, body, responseType = 'json' } = {}) {
   activeRequests += 1
   emitNetwork()
@@ -31,6 +37,18 @@ async function request(path, { method = 'GET', token, body, responseType = 'json
     if (!response.ok) {
       const data = await response.json().catch(() => ({}))
       const message = data.message || data.error || 'Request failed'
+
+      // If the token expired, force a logout flow in the app.
+      // Skip login endpoints to avoid interfering with invalid-credential responses.
+      if (
+        response.status === 401 &&
+        token &&
+        (data.code === 'SESSION_EXPIRED' || /expired/i.test(message)) &&
+        !String(path).includes('/auth/login')
+      ) {
+        emitSessionExpired(message)
+      }
+
       emitToast('error', message)
       const err = new Error(message)
       // Attach all error body fields to the error object (e.g. requiresOverride, outstanding_balance)

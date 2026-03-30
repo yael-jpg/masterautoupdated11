@@ -423,6 +423,14 @@ const FIELD_SCHEMA = {
       ],
     },
     {
+      section: 'Security',
+      desc: 'Control how long session tokens remain valid before requiring sign-in again.',
+      fields: [
+        { key: 'admin_session_token_ttl_minutes',  label: 'Admin Session Token Expiry (minutes)',  type: 'number', min: 5, max: 525600, step: 5, desc: 'Example: 600 = 10 hours.' },
+        { key: 'portal_session_token_ttl_minutes', label: 'Portal Session Token Expiry (minutes)', type: 'number', min: 5, max: 525600, step: 60, desc: 'Example: 43200 = 30 days.' },
+      ],
+    },
+    {
       section: 'System Info',
       desc: 'Read-only metadata managed by the system.',
       fields: [

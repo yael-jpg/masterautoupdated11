@@ -14,7 +14,10 @@ function requireAuth(req, res, next) {
     req.user = payload
     return next()
   } catch (error) {
-    return res.status(401).json({ message: 'Invalid or expired token' })
+    if (error && error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Session expired. Please sign in again.', code: 'SESSION_EXPIRED' })
+    }
+    return res.status(401).json({ message: 'Invalid token', code: 'INVALID_TOKEN' })
   }
 }
 

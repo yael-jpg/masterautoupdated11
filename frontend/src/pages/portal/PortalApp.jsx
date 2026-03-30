@@ -154,6 +154,23 @@ export function PortalApp() {
     window.history.replaceState({}, '', '/portal/login')
   }
 
+  // Force logout when the portal JWT expires.
+  useEffect(() => {
+    const handleSessionExpired = (event) => {
+      if (event?.detail?.scope && event.detail.scope !== 'portal') return
+      const msg = event?.detail?.message || 'Session expired. Please sign in again.'
+      setNotifications((prev) => [
+        { id: `${Date.now()}-${Math.random()}`, read: false, time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), title: 'Session Expired', message: msg },
+        ...prev,
+      ])
+      handleLogout()
+    }
+
+    window.addEventListener('ma:session-expired', handleSessionExpired)
+    return () => window.removeEventListener('ma:session-expired', handleSessionExpired)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Keep portal URLs clean:
   // - Logged out → always show /portal/login
   // - Logged in  → show /portal (if user is on /portal/login)

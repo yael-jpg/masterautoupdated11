@@ -7,6 +7,7 @@ const env = require('../config/env')
 const { asyncHandler } = require('../utils/asyncHandler')
 const { writeAuditLog } = require('../utils/auditLog')
 const { validateRequest } = require('../middleware/validateRequest')
+const ConfigurationService = require('../services/configurationService')
 
 const router = express.Router()
 
@@ -36,9 +37,24 @@ router.post(
       return res.status(401).json({ message: 'Invalid credentials' })
     }
 
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, env.jwtSecret, {
-      expiresIn: '10h',
-    })
+    const clampMinutes = (v, { min = 5, max = 525600, fallback = 600 } = {}) => {
+      const n = Number(v)
+      if (!Number.isFinite(n)) return fallback
+      return Math.max(min, Math.min(max, Math.round(n)))
+    }
+
+    let ttlMinutes = 600
+    try {
+      ttlMinutes = clampMinutes(await ConfigurationService.get('system', 'admin_session_token_ttl_minutes'), { fallback: 600 })
+    } catch {
+      ttlMinutes = 600
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      env.jwtSecret,
+      { expiresIn: ttlMinutes * 60 },
+    )
 
     await writeAuditLog({ userId: user.id, action: 'LOGIN', entity: 'auth', meta: { email } })
 

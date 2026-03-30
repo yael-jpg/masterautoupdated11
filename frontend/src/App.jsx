@@ -723,9 +723,23 @@ function App() {
     window.addEventListener('ma:network', handleNetwork)
     window.addEventListener('ma:toast', handleToast)
 
+    const handleSessionExpired = (event) => {
+      if (event?.detail?.scope && event.detail.scope !== 'admin') return
+      const msg = event?.detail?.message || 'Session expired. Please sign in again.'
+      try {
+        localStorage.removeItem('masterauto_token')
+        localStorage.removeItem('masterauto_user')
+      } catch (_) {}
+      setSession({ token: null, user: null })
+      pushToast('error', msg)
+    }
+
+    window.addEventListener('ma:session-expired', handleSessionExpired)
+
     return () => {
       window.removeEventListener('ma:network', handleNetwork)
       window.removeEventListener('ma:toast', handleToast)
+      window.removeEventListener('ma:session-expired', handleSessionExpired)
     }
   }, [])
 
