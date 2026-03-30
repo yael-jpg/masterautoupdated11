@@ -661,7 +661,11 @@ router.delete(
     if (!rows.length) return res.status(404).json({ message: 'Quotation not found' })
     // Block delete if any job order references this quotation (regardless of quotation status)
     const { rows: jos } = await db.query(
-      'SELECT id, job_order_no FROM job_orders WHERE quotation_id = $1 LIMIT 1',
+      `SELECT id, job_order_no
+       FROM job_orders
+       WHERE quotation_id = $1
+         AND (status IS NULL OR status != 'Deleted')
+       LIMIT 1`,
       [req.params.id],
     )
     if (jos.length) {
