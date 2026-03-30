@@ -17,6 +17,42 @@ const {
 
 const router = express.Router()
 
+let _hasQuotationPaymentSummaryView
+async function hasQuotationPaymentSummaryView() {
+  if (typeof _hasQuotationPaymentSummaryView === 'boolean') return _hasQuotationPaymentSummaryView
+  try {
+    const { rows } = await db.query(
+      `SELECT 1
+       FROM information_schema.views
+       WHERE table_schema = 'public'
+         AND table_name = 'quotation_payment_summary'
+       LIMIT 1`,
+    )
+    _hasQuotationPaymentSummaryView = rows.length > 0
+  } catch {
+    _hasQuotationPaymentSummaryView = false
+  }
+  return _hasQuotationPaymentSummaryView
+}
+
+let _hasSaleFinancialSummaryView
+async function hasSaleFinancialSummaryView() {
+  if (typeof _hasSaleFinancialSummaryView === 'boolean') return _hasSaleFinancialSummaryView
+  try {
+    const { rows } = await db.query(
+      `SELECT 1
+       FROM information_schema.views
+       WHERE table_schema = 'public'
+         AND table_name = 'sale_financial_summary'
+       LIMIT 1`,
+    )
+    _hasSaleFinancialSummaryView = rows.length > 0
+  } catch {
+    _hasSaleFinancialSummaryView = false
+  }
+  return _hasSaleFinancialSummaryView
+}
+
 // Derived from workflowEngine — kept as local aliases for backward compatibility
 const STATUS_ORDER     = APPOINTMENT_WORKFLOW.statusOrder
 const STATUS_TIMESTAMP = APPOINTMENT_WORKFLOW.timestampColumn
@@ -24,6 +60,9 @@ const STATUS_TIMESTAMP = APPOINTMENT_WORKFLOW.timestampColumn
 router.get(
   '/',
   asyncHandler(async (req, res) => {
+    const useQuotationPaymentSummary = await hasQuotationPaymentSummaryView()
+    const useSaleFinancialSummary = await hasSaleFinancialSummaryView()
+
     const search = String(req.query.search || '').trim().toLowerCase()
     const status = String(req.query.status || '').trim()
     // tab=active  → all records where status != 'Completed' (live/working bookings)
@@ -113,6 +152,57 @@ router.get(
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
 
+    const salesPaymentJoin = useSaleFinancialSummary
+      ? 'LEFT JOIN sale_financial_summary fs ON fs.sale_id = s.id'
+      : `LEFT JOIN (
+           SELECT sale_id, SUM(amount) AS total_paid
+           FROM payments
+           WHERE sale_id IS NOT NULL
+           GROUP BY sale_id
+         ) spay ON spay.sale_id = a.sale_id`
+
+    const salesPaymentStatusExpr = useSaleFinancialSummary
+      ? 'fs.payment_status'
+      : `CASE
+           WHEN COALESCE(spay.total_paid, 0) <= 0 THEN 'UNPAID'
+           WHEN COALESCE(spay.total_paid, 0) > s.total_amount THEN 'OVERPAID'
+           WHEN COALESCE(spay.total_paid, 0) >= s.total_amount THEN 'PAID'
+           ELSE 'PARTIALLY_PAID'
+         END`
+
+    const salesTotalPaidExpr = useSaleFinancialSummary ? 'fs.total_paid' : 'COALESCE(spay.total_paid, 0)'
+    const salesOutstandingExpr = useSaleFinancialSummary
+      ? 'fs.outstanding_balance'
+      : 'GREATEST(s.total_amount - COALESCE(spay.total_paid, 0), 0)'
+
+    const quotationPaymentJoin = useQuotationPaymentSummary
+      ? 'LEFT JOIN quotation_payment_summary qfs ON qfs.quotation_id = a.quotation_id'
+      : `LEFT JOIN (
+           SELECT quotation_id, SUM(amount) AS total_paid
+           FROM payments
+           WHERE quotation_id IS NOT NULL
+           GROUP BY quotation_id
+         ) qpay ON qpay.quotation_id = a.quotation_id`
+
+    const quotationPaymentStatusExpr = useQuotationPaymentSummary
+      ? 'qfs.payment_status'
+      : `CASE
+           WHEN COALESCE(qpay.total_paid, 0) <= 0 THEN 'UNPAID'
+           WHEN COALESCE(qpay.total_paid, 0) > q.total_amount THEN 'OVERPAID'
+           WHEN COALESCE(qpay.total_paid, 0) >= q.total_amount THEN 'PAID'
+           ELSE 'PARTIALLY_PAID'
+         END`
+
+    const quotationTotalPaidExpr = useQuotationPaymentSummary ? 'qfs.total_paid' : 'COALESCE(qpay.total_paid, 0)'
+    const quotationOutstandingExpr = useQuotationPaymentSummary
+      ? 'qfs.outstanding_balance'
+      : 'GREATEST(q.total_amount - COALESCE(qpay.total_paid, 0), 0)'
+
+    const groupByPaymentFields = [
+      useSaleFinancialSummary ? 'fs.payment_status, fs.total_paid, fs.outstanding_balance' : 'spay.total_paid',
+      useQuotationPaymentSummary ? 'qfs.payment_status, qfs.total_paid, qfs.outstanding_balance' : 'qpay.total_paid',
+    ].join(', ')
+
     const buildListSql = () => (
       `SELECT a.*,
               c.full_name AS customer_name,
@@ -121,15 +211,15 @@ router.get(
               s.reference_no AS sale_reference,
               s.is_locked AS sale_locked,
               q.status AS quotation_status,
-              COALESCE(fs.payment_status, qfs.payment_status,
+              COALESCE(${salesPaymentStatusExpr}, ${quotationPaymentStatusExpr},
                 CASE WHEN a.down_payment_method IS NOT NULL AND a.down_payment_method != 'cash'
                           AND a.down_payment_amount > 0 THEN 'PARTIAL' END,
                 'UNPAID')                                                     AS payment_status,
-              COALESCE(fs.total_paid, qfs.total_paid,
+              COALESCE(${salesTotalPaidExpr}, ${quotationTotalPaidExpr},
                 CASE WHEN a.down_payment_method IS NOT NULL AND a.down_payment_method != 'cash'
                           THEN a.down_payment_amount ELSE 0 END,
                 0)::NUMERIC                                                   AS total_paid,
-              COALESCE(fs.outstanding_balance, qfs.outstanding_balance,
+              COALESCE(${salesOutstandingExpr}, ${quotationOutstandingExpr},
                        s.total_amount, q.total_amount, 0)::NUMERIC           AS outstanding_balance,
               STRING_AGG(si.item_name, ' | '
                 ORDER BY si.id)                                              AS all_services
@@ -138,15 +228,14 @@ router.get(
        JOIN vehicles v ON v.id = a.vehicle_id
        LEFT JOIN services sv ON sv.id = a.service_id
        LEFT JOIN sales s ON s.id = a.sale_id
-       LEFT JOIN sale_financial_summary fs ON fs.sale_id = s.id
+       ${salesPaymentJoin}
        LEFT JOIN sale_items si ON si.sale_id = a.sale_id
        LEFT JOIN quotations q ON q.id = a.quotation_id
-       LEFT JOIN quotation_payment_summary qfs ON qfs.quotation_id = a.quotation_id
+       ${quotationPaymentJoin}
        ${whereClause}
        GROUP BY a.id, c.full_name, v.plate_number, sv.name,
                 s.reference_no, s.is_locked, s.total_amount,
-                fs.payment_status, fs.total_paid, fs.outstanding_balance,
-                qfs.payment_status, qfs.total_paid, qfs.outstanding_balance,
+                ${groupByPaymentFields},
                 q.total_amount, q.status
       ORDER BY ${sortBy} ${sortDir} ${nullsClause}, a.id DESC
        LIMIT $${index}

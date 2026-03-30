@@ -43,10 +43,27 @@ router.get(
        ORDER BY created_at::date ASC`,
     )
 
-    const outstanding = await db.query(
-      `SELECT COALESCE(SUM(outstanding_balance), 0) AS outstanding
-       FROM quotation_payment_summary`,
-    )
+    let outstanding
+    try {
+      outstanding = await db.query(
+        `SELECT COALESCE(SUM(outstanding_balance), 0) AS outstanding
+         FROM quotation_payment_summary`,
+      )
+    } catch (err) {
+      // Backward-compat: some deployments may not have migration 011 applied yet.
+      // Fall back to computing outstanding from quotations + payments directly.
+      if (String(err?.code) !== '42P01') throw err
+      outstanding = await db.query(
+        `SELECT COALESCE(SUM(GREATEST(q.total_amount - COALESCE(p.total_paid, 0), 0)), 0) AS outstanding
+         FROM quotations q
+         LEFT JOIN (
+           SELECT quotation_id, SUM(amount) AS total_paid
+           FROM payments
+           WHERE quotation_id IS NOT NULL
+           GROUP BY quotation_id
+         ) p ON p.quotation_id = q.id`,
+      )
+    }
 
     res.json({
       dailyTotal: daily.rows[0].total,

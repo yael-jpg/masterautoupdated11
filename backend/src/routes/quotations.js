@@ -11,6 +11,24 @@ const router = express.Router()
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+let _hasQuotationPaymentSummaryView
+async function hasQuotationPaymentSummaryView() {
+  if (typeof _hasQuotationPaymentSummaryView === 'boolean') return _hasQuotationPaymentSummaryView
+  try {
+    const { rows } = await db.query(
+      `SELECT 1
+       FROM information_schema.views
+       WHERE table_schema = 'public'
+         AND table_name = 'quotation_payment_summary'
+       LIMIT 1`,
+    )
+    _hasQuotationPaymentSummaryView = rows.length > 0
+  } catch {
+    _hasQuotationPaymentSummaryView = false
+  }
+  return _hasQuotationPaymentSummaryView
+}
+
 let _quotationsHasBayColumn
 async function quotationsHasBayColumn() {
   if (typeof _quotationsHasBayColumn === 'boolean') return _quotationsHasBayColumn
@@ -58,6 +76,8 @@ async function nextQuotationNo(client, branchCode = 'BR') {
 router.get(
   '/',
   asyncHandler(async (req, res) => {
+    const usePaymentSummary = await hasQuotationPaymentSummaryView()
+
     const search   = String(req.query.search || '').trim().toLowerCase()
     const status   = String(req.query.status || '').trim()
     const tab      = req.query.tab ? String(req.query.tab).trim() : null // 'active' | 'history' | null (no filter)
@@ -126,6 +146,28 @@ router.get(
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
 
+    const paymentJoin = usePaymentSummary
+      ? 'LEFT JOIN quotation_payment_summary qps ON qps.quotation_id = q.id'
+      : `LEFT JOIN (
+           SELECT quotation_id, SUM(amount) AS total_paid
+           FROM payments
+           WHERE quotation_id IS NOT NULL
+           GROUP BY quotation_id
+         ) qpay ON qpay.quotation_id = q.id`
+
+    const paymentSelect = usePaymentSummary
+      ? `COALESCE(qps.total_paid, 0)::NUMERIC            AS total_paid,
+              COALESCE(qps.outstanding_balance, q.total_amount)::NUMERIC AS outstanding_balance,
+              COALESCE(qps.payment_status, 'UNPAID')          AS payment_status`
+      : `COALESCE(qpay.total_paid, 0)::NUMERIC AS total_paid,
+              GREATEST(q.total_amount - COALESCE(qpay.total_paid, 0), 0)::NUMERIC AS outstanding_balance,
+              CASE
+                WHEN COALESCE(qpay.total_paid, 0) <= 0 THEN 'UNPAID'
+                WHEN COALESCE(qpay.total_paid, 0) > q.total_amount THEN 'OVERPAID'
+                WHEN COALESCE(qpay.total_paid, 0) >= q.total_amount THEN 'PAID'
+                ELSE 'PARTIALLY_PAID'
+              END AS payment_status`
+
     const { rows } = await db.query(
       `SELECT q.*,
               c.full_name   AS customer_name,
@@ -138,14 +180,12 @@ router.get(
               (SELECT status FROM job_orders jo WHERE jo.quotation_id = q.id ORDER BY id DESC LIMIT 1) AS job_order_status,
               (SELECT job_order_no FROM job_orders jo WHERE jo.quotation_id = q.id ORDER BY id DESC LIMIT 1) AS job_order_no,
               (SELECT COUNT(*) FROM appointments  a  WHERE a.quotation_id  = q.id)::int AS appointment_count,
-              COALESCE(qps.total_paid, 0)::NUMERIC            AS total_paid,
-              COALESCE(qps.outstanding_balance, q.total_amount)::NUMERIC AS outstanding_balance,
-              COALESCE(qps.payment_status, 'UNPAID')          AS payment_status
+              ${paymentSelect}
        FROM quotations q
        JOIN customers c ON c.id = q.customer_id
        JOIN vehicles  v ON v.id = q.vehicle_id
        LEFT JOIN users u ON u.id = q.created_by
-       LEFT JOIN quotation_payment_summary qps ON qps.quotation_id = q.id
+       ${paymentJoin}
        ${where}
        ORDER BY q.created_at DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
@@ -204,16 +244,41 @@ router.get(
     const { customerId } = req.query
     if (!customerId) return res.status(400).json({ message: 'customerId is required' })
 
-    const { rows } = await db.query(
-      `SELECT q.id, q.quotation_no, q.status,
-              qps.outstanding_balance, qps.total_amount, qps.total_paid, qps.payment_status
-       FROM quotations q
-       JOIN quotation_payment_summary qps ON qps.quotation_id = q.id
-       WHERE q.customer_id = $1
-         AND q.status = 'WITH BALANCE'
-         AND qps.outstanding_balance > 0`,
-      [customerId],
-    )
+    const usePaymentSummary = await hasQuotationPaymentSummaryView()
+    const { rows } = usePaymentSummary
+      ? await db.query(
+          `SELECT q.id, q.quotation_no, q.status,
+                  qps.outstanding_balance, qps.total_amount, qps.total_paid, qps.payment_status
+           FROM quotations q
+           JOIN quotation_payment_summary qps ON qps.quotation_id = q.id
+           WHERE q.customer_id = $1
+             AND q.status = 'WITH BALANCE'
+             AND qps.outstanding_balance > 0`,
+          [customerId],
+        )
+      : await db.query(
+          `SELECT q.id, q.quotation_no, q.status,
+                  GREATEST(q.total_amount - COALESCE(p.total_paid, 0), 0)::NUMERIC AS outstanding_balance,
+                  q.total_amount,
+                  COALESCE(p.total_paid, 0)::NUMERIC AS total_paid,
+                  CASE
+                    WHEN COALESCE(p.total_paid, 0) <= 0 THEN 'UNPAID'
+                    WHEN COALESCE(p.total_paid, 0) > q.total_amount THEN 'OVERPAID'
+                    WHEN COALESCE(p.total_paid, 0) >= q.total_amount THEN 'PAID'
+                    ELSE 'PARTIALLY_PAID'
+                  END AS payment_status
+           FROM quotations q
+           LEFT JOIN (
+             SELECT quotation_id, SUM(amount) AS total_paid
+             FROM payments
+             WHERE quotation_id IS NOT NULL
+             GROUP BY quotation_id
+           ) p ON p.quotation_id = q.id
+           WHERE q.customer_id = $1
+             AND q.status = 'WITH BALANCE'
+             AND GREATEST(q.total_amount - COALESCE(p.total_paid, 0), 0) > 0`,
+          [customerId],
+        )
     res.json({ hasBalance: rows.length > 0, balances: rows })
   }),
 )
@@ -245,15 +310,37 @@ router.post(
     // Admin can bypass with overrideBalance: true
     const userRole = req.user?.role_name || ''
     if (!overrideBalance) {
-      const { rows: balRows } = await db.query(
-        `SELECT q.id, q.quotation_no, qps.outstanding_balance
-         FROM quotations q
-         JOIN quotation_payment_summary qps ON qps.quotation_id = q.id
-         WHERE q.customer_id = $1
-           AND q.status = 'WITH BALANCE'
-           AND qps.outstanding_balance > 0`,
-        [effectiveCustomerId],
-      )
+      const usePaymentSummary = await hasQuotationPaymentSummaryView()
+      const balRows = usePaymentSummary
+        ? (
+            await db.query(
+              `SELECT q.id, q.quotation_no, qps.outstanding_balance
+               FROM quotations q
+               JOIN quotation_payment_summary qps ON qps.quotation_id = q.id
+               WHERE q.customer_id = $1
+                 AND q.status = 'WITH BALANCE'
+                 AND qps.outstanding_balance > 0`,
+              [effectiveCustomerId],
+            )
+          ).rows
+        : (
+            await db.query(
+              `SELECT q.id, q.quotation_no,
+                      GREATEST(q.total_amount - COALESCE(p.total_paid, 0), 0)::NUMERIC AS outstanding_balance
+               FROM quotations q
+               LEFT JOIN (
+                 SELECT quotation_id, SUM(amount) AS total_paid
+                 FROM payments
+                 WHERE quotation_id IS NOT NULL
+                 GROUP BY quotation_id
+               ) p ON p.quotation_id = q.id
+               WHERE q.customer_id = $1
+                 AND q.status = 'WITH BALANCE'
+                 AND GREATEST(q.total_amount - COALESCE(p.total_paid, 0), 0) > 0`,
+              [effectiveCustomerId],
+            )
+          ).rows
+
       if (balRows.length > 0) {
         const total = balRows.reduce((s, r) => s + Number(r.outstanding_balance), 0)
         return res.status(409).json({
