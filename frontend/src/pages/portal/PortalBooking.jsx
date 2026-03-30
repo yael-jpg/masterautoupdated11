@@ -193,9 +193,11 @@ function PortalServicePicker({ services, value, onChange, vehicleSize, priceOver
 export function PortalBooking({ initialServiceId = '' }) {
   const [vehicles, setVehicles] = useState([])
   const [services, setServices] = useState([])
+  const [branches, setBranches] = useState(['Cubao', 'Manila'])
   const [priceOverrides, setPriceOverrides] = useState({})
   const [form, setForm] = useState({
     vehicleId: '',
+    branch: '',
     vehicleSize: 'medium',
     serviceId: initialServiceId,
     scheduleStart: null,
@@ -213,18 +215,26 @@ export function PortalBooking({ initialServiceId = '' }) {
 
     const load = async (isInitial = false) => {
       try {
-        const [v, s, overrides] = await Promise.all([
+        const [v, s, overrides, branchList] = await Promise.all([
           portalGet('/vehicles'),
           portalGet('/services'),
           fetch(`${PUBLIC_BASE}/price-config`)
             .then((r) => r.ok ? r.json().catch(() => ({})) : ({}))
             .catch(() => ({})),
+          fetch(`${PUBLIC_BASE}/branch-locations`)
+            .then((r) => r.ok ? r.json().catch(() => null) : null)
+            .catch(() => null),
         ])
 
         if (stopped) return
         setVehicles(Array.isArray(v) ? v : [])
         setServices(Array.isArray(s) ? s : [])
         setPriceOverrides(overrides && typeof overrides === 'object' ? overrides : {})
+
+        if (Array.isArray(branchList) && branchList.length > 0) {
+          const cleaned = branchList.map((x) => String(x || '').trim()).filter(Boolean)
+          if (cleaned.length) setBranches(cleaned)
+        }
 
         if (isInitial && Array.isArray(v) && v.length === 1) {
           setForm((f) => ({ ...f, vehicleId: String(v[0].id) }))
@@ -282,6 +292,7 @@ export function PortalBooking({ initialServiceId = '' }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.scheduleStart) { setError('Please select a preferred date and time.'); return }
+    if (!String(form.branch || '').trim()) { setError('Please select a branch.'); return }
     if (selectedService && selectedServiceUnavailable) {
       setError('Selected service is not available for the chosen vehicle size.')
       return
@@ -308,6 +319,7 @@ export function PortalBooking({ initialServiceId = '' }) {
     const minDown = selectedService ? Math.ceil(selectedServicePrice * 0.5) : 0
     setPendingBook({
       vehicleId: Number(form.vehicleId),
+      branch: String(form.branch || '').trim(),
       vehicleSize: form.vehicleSize || 'medium',
       serviceId: form.serviceId ? Number(form.serviceId) : null,
       serviceUnitPrice: selectedService ? selectedServicePrice : null,
@@ -342,6 +354,7 @@ export function PortalBooking({ initialServiceId = '' }) {
       setShowPayment(false)
       setSuccess({
         quotationNo: result?.quotationNo || null,
+        branch: pendingBook?.branch || null,
         vehicle: selectedVehicle,
         service: selectedService,
         vehicleSize: form.vehicleSize || 'medium',
@@ -355,6 +368,7 @@ export function PortalBooking({ initialServiceId = '' }) {
       })
       setForm({
         vehicleId: vehicles.length === 1 ? String(vehicles[0].id) : '',
+        branch: '',
         vehicleSize: 'medium',
         serviceId: '',
         scheduleStart: null,
@@ -396,6 +410,12 @@ export function PortalBooking({ initialServiceId = '' }) {
               <div className="portal-booking-success-row">
                 <span className="label">Vehicle</span>
                 <span className="value">{success.vehicle.plate_number} — {success.vehicle.year} {success.vehicle.make} {success.vehicle.model}</span>
+              </div>
+            )}
+            {success.branch && (
+              <div className="portal-booking-success-row">
+                <span className="label">Branch</span>
+                <span className="value">{success.branch}</span>
               </div>
             )}
             {success.service && (
@@ -483,6 +503,21 @@ export function PortalBooking({ initialServiceId = '' }) {
                 ))}
               </select>
             )}
+          </div>
+
+          {/* Branch */}
+          <div className="portal-form-group">
+            <label>Branch <span className="portal-required">*</span></label>
+            <select
+              value={form.branch}
+              onChange={(e) => setForm((f) => ({ ...f, branch: e.target.value }))}
+              required
+            >
+              <option value="">— Select branch —</option>
+              {branches.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
           </div>
 
           {/* Vehicle size */}

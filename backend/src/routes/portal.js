@@ -611,7 +611,7 @@ router.get(
 router.post(
   '/appointments/book',
   asyncHandler(async (req, res) => {
-    const { vehicleId, vehicleSize, serviceId, serviceUnitPrice, scheduleStart, scheduleEnd, notes,
+    const { vehicleId, branch, vehicleSize, serviceId, serviceUnitPrice, scheduleStart, scheduleEnd, notes,
             downPaymentAmount, downPaymentMethod, downPaymentRef } = req.body
 
     if (!vehicleId || !scheduleStart) {
@@ -682,7 +682,10 @@ router.post(
       )
       const resolvedBay = custRows[0]?.bay || null
 
-      const quotationNo = await nextQuotationNo(client, getBranchCode(resolvedBay))
+      const requestedBranch = String(branch || '').trim() || null
+      const finalBranch = requestedBranch || resolvedBay
+
+      const quotationNo = await nextQuotationNo(client, getBranchCode(finalBranch))
 
       const scheduleLabel = dt(scheduleStart)
       const endLabel = dt(scheduleEnd)
@@ -736,7 +739,7 @@ router.post(
            RETURNING id, quotation_no, status, created_at`
 
       const insertParams = hasBay
-        ? [quotationNo, req.customerId, vehicleId, JSON.stringify(servicesJson), finalNotes, totalAmount, null, 'Pending', resolvedBay]
+        ? [quotationNo, req.customerId, vehicleId, JSON.stringify(servicesJson), finalNotes, totalAmount, null, 'Pending', finalBranch]
         : [quotationNo, req.customerId, vehicleId, JSON.stringify(servicesJson), finalNotes, totalAmount, null, 'Pending']
 
       const { rows: qRows } = await client.query(insertSql, insertParams)
@@ -794,7 +797,7 @@ router.post(
           if (businessEmail) {
             const staffTemplate = buildQuotationRequestStaffEmail({
               quotationNo: createdQuotation?.quotation_no || null,
-              branch: resolvedBay,
+              branch: finalBranch,
               customerName: detail[0]?.customer_name,
               mobile: detail[0]?.customer_mobile,
               email: detail[0]?.customer_email,
