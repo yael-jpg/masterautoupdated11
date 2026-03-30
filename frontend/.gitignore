@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Allow tracking dist for deployments that don't build on-server.
+!dist/
+!dist/**
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

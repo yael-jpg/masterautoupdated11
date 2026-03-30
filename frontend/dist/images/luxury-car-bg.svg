@@ -1,0 +1,28 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="paint0" x1="180" y1="460" x2="1400" y2="460" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EDF2FF" stop-opacity="0.12"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#D9E2FF" stop-opacity="0.12"/>
+    </linearGradient>
+    <linearGradient id="paint1" x1="260" y1="540" x2="1335" y2="540" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.04"/>
+    </linearGradient>
+    <filter id="glow" x="0" y="0" width="1600" height="900" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feBlend in="SourceGraphic" in2="blur" mode="screen"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#glow)">
+    <path d="M220 575C275 575 347 568 410 554C505 533 575 500 648 449C684 424 736 399 782 396C845 391 909 392 1025 406C1115 416 1178 426 1248 448C1317 470 1378 505 1402 548C1414 569 1389 586 1354 586H220C192 586 189 575 220 575Z" stroke="url(#paint0)" stroke-width="4"/>
+    <path d="M312 540C356 526 417 485 489 465C543 449 605 442 671 442H916C991 442 1073 456 1143 487C1185 506 1218 525 1264 540" stroke="url(#paint1)" stroke-width="3"/>
+    <path d="M438 587C438 547 470 515 510 515C550 515 582 547 582 587" stroke="url(#paint0)" stroke-width="4"/>
+    <path d="M1044 587C1044 547 1076 515 1116 515C1156 515 1188 547 1188 587" stroke="url(#paint0)" stroke-width="4"/>
+    <circle cx="510" cy="587" r="46" stroke="url(#paint0)" stroke-width="4"/>
+    <circle cx="1116" cy="587" r="46" stroke="url(#paint0)" stroke-width="4"/>
+    <path d="M665 429C706 389 740 366 783 360C829 354 872 359 936 375" stroke="url(#paint0)" stroke-width="3"/>
+    <path d="M746 398L1005 407" stroke="url(#paint1)" stroke-width="2"/>
+  </g>
+</svg>

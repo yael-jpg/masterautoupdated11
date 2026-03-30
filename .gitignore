@@ -3,6 +3,11 @@
 **/dist/
 **/dist-ssr/
 
+# Allow tracking the production build for the Vite frontend (used by deployments
+# that pull built assets directly from the repo).
+!frontend/dist/
+!frontend/dist/**
+
 # Logs
 logs/
 *.log
