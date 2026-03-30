@@ -22,7 +22,8 @@ frontend/.env
 .env.*.local
 
 # Database backups
-# (Unignored so they can be committed/pushed)
+backend/backups/
+backups/
 
 # Uploads / runtime data
 # (Unignored so they can be committed/pushed)

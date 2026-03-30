@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { apiGet, apiPost, apiPatch, apiDelete, apiDownload, pushToast } from '../api/client'
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete, apiDownload, pushToast } from '../api/client'
 import { DataTable } from '../components/DataTable'
 import { PaginationBar } from '../components/PaginationBar'
 import { SectionCard } from '../components/SectionCard'
@@ -41,12 +41,13 @@ export function AdminPage({ token, user }) {
   useEffect(() => {
     const load = async () => {
       try {
-              const [usersData, logs, master, rolesData, clientsData] = await Promise.all([
+              const [usersData, logs, master, rolesData, clientsData, backupStatus] = await Promise.all([
           apiGet('/admin/users', token),
           apiGet('/admin/audit-logs', token).catch(() => []),
           apiGet('/admin/master-data', token),
           apiGet('/admin/roles', token).catch(() => []),
           apiGet('/customers', token, { limit: 200, portal: 'true' }).catch(() => ({ data: [] })),
+          apiGet('/admin/backup/status', token).catch(() => ({})),
         ])
 
         setUsers(
@@ -95,12 +96,35 @@ export function AdminPage({ token, user }) {
         if (rolesData && rolesData.length > 0) {
           setUserForm((prev) => ({ ...prev, roleId: String(rolesData[0].id) }))
         }
+
+        // Backup panel
+        if (backupStatus && typeof backupStatus === 'object') {
+          if (backupStatus.schedule) setBackupSchedule(String(backupStatus.schedule))
+          if (backupStatus.lastBackupAt) {
+            try {
+              setLastBackup(new Date(backupStatus.lastBackupAt).toLocaleString('en-PH'))
+            } catch {
+              setLastBackup(String(backupStatus.lastBackupAt))
+            }
+          }
+        }
       } catch (loadError) {
         setError(loadError.message)
       }
     }
     load()
   }, [token])
+
+  const handleBackupScheduleChange = async (next) => {
+    const nextSchedule = String(next || '').trim()
+    setBackupSchedule(nextSchedule)
+    try {
+      await apiPut('/admin/backup/schedule', token, { schedule: nextSchedule })
+      pushToast('success', 'Backup schedule saved')
+    } catch (err) {
+      pushToast('error', err.message)
+    }
+  }
 
   useEffect(() => {
     if (!token) return
@@ -238,9 +262,16 @@ export function AdminPage({ token, user }) {
   const handleManualBackup = async () => {
     setIsBackingUp(true)
     try {
-      await apiPost('/admin/backup', token, {})
-      setLastBackup(new Date().toLocaleString('en-PH'))
-      pushToast('success', 'Database backup completed successfully')
+      const filename = `db-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json.gz`
+      await apiDownload('/admin/backup/download', token, filename)
+      // Refresh displayed last-backup timestamp from server (more accurate)
+      const st = await apiGet('/admin/backup/status', token).catch(() => ({}))
+      if (st?.lastBackupAt) {
+        try { setLastBackup(new Date(st.lastBackupAt).toLocaleString('en-PH')) } catch { setLastBackup(String(st.lastBackupAt)) }
+      } else {
+        setLastBackup(new Date().toLocaleString('en-PH'))
+      }
+      pushToast('success', 'Database backup downloaded')
     } catch (err) {
       pushToast('error', `Backup failed: ${err.message}`)
     } finally {
@@ -648,7 +679,7 @@ export function AdminPage({ token, user }) {
               <select
                 className="adm-schedule-select"
                 value={backupSchedule}
-                onChange={(e) => setBackupSchedule(e.target.value)}
+                onChange={(e) => handleBackupScheduleChange(e.target.value)}
               >
                 <option>Hourly</option>
                 <option>Daily</option>

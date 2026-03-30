@@ -7,8 +7,42 @@ const { requireRole } = require('../middleware/auth')
 const { validateRequest } = require('../middleware/validateRequest')
 const { writeAuditLog } = require('../utils/auditLog')
 const { runAutoCancelJob } = require('../utils/autoCancelJob')
+const { createJsonGzipBackup } = require('../utils/dbBackup')
+const { startBackupJob } = require('../utils/backupJob')
 
 const router = express.Router()
+
+async function getSystemConfigValue(category, key, fallback = null) {
+  const { rows } = await db.query(
+    'SELECT value FROM system_config WHERE category = $1 AND key = $2',
+    [category, key],
+  )
+  if (!rows.length) return fallback
+  return rows[0].value
+}
+
+async function setSystemConfigValue({ category, key, value, userId, changedByName, ipAddress }) {
+  const { rows: existing } = await db.query(
+    'SELECT value FROM system_config WHERE category = $1 AND key = $2',
+    [category, key],
+  )
+  const oldValue = existing[0]?.value ?? null
+
+  await db.query(
+    `INSERT INTO system_config (category, key, value, value_type, updated_by, updated_at)
+     VALUES ($1, $2, $3, 'string', $4, NOW())
+     ON CONFLICT (category, key)
+     DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+    [category, key, value, userId || null],
+  )
+
+  await db.query(
+    `INSERT INTO config_change_logs
+       (category, config_key, old_value, new_value, changed_by, changed_by_name, ip_address)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [category, key, oldValue, value, userId || null, changedByName || null, ipAddress || null],
+  ).catch(() => {})
+}
 
 router.get(
   '/roles',
@@ -228,6 +262,82 @@ router.post(
   asyncHandler(async (req, res) => {
     await runAutoCancelJob()
     res.json({ message: 'Auto-cancel job completed. Check server logs for details.' })
+  }),
+)
+
+// ── Backup & Export helpers (SuperAdmin only) ─────────────────────────────
+
+router.get(
+  '/backup/status',
+  requireRole('SuperAdmin'),
+  asyncHandler(async (req, res) => {
+    const schedule = await getSystemConfigValue('general', 'backup_schedule', 'Daily')
+    const lastBackupAt = await getSystemConfigValue('general', 'last_backup_at', null)
+    const lastBackupFile = await getSystemConfigValue('general', 'last_backup_file', null)
+    res.json({ schedule: schedule || 'Daily', lastBackupAt, lastBackupFile })
+  }),
+)
+
+router.put(
+  '/backup/schedule',
+  requireRole('SuperAdmin'),
+  body('schedule').isString().notEmpty().withMessage('schedule is required'),
+  validateRequest,
+  asyncHandler(async (req, res) => {
+    const scheduleRaw = String(req.body.schedule || '').trim()
+    const allowed = new Set(['Hourly', 'Daily', 'Weekly'])
+    if (!allowed.has(scheduleRaw)) {
+      return res.status(400).json({ message: 'Invalid schedule. Use Hourly, Daily, or Weekly.' })
+    }
+
+    const userId = req.user?.id || null
+    const userRow = userId ? await db.query('SELECT full_name FROM users WHERE id = $1', [userId]) : { rows: [] }
+    const changedByName = userRow.rows[0]?.full_name || 'Unknown'
+    const ipAddress = req.ip || req.connection?.remoteAddress || null
+
+    await setSystemConfigValue({ category: 'general', key: 'backup_schedule', value: scheduleRaw, userId, changedByName, ipAddress })
+
+    // Reschedule the running cron job immediately.
+    try { await startBackupJob() } catch { /* ignore */ }
+
+    await writeAuditLog({
+      userId,
+      action: 'UPDATE_BACKUP_SCHEDULE',
+      entity: 'system_config',
+      entityId: null,
+      meta: { schedule: scheduleRaw },
+    })
+
+    res.json({ message: 'Backup schedule updated', schedule: scheduleRaw })
+  }),
+)
+
+router.get(
+  '/backup/download',
+  requireRole('SuperAdmin'),
+  asyncHandler(async (req, res) => {
+    const userId = req.user?.id || null
+    const userRow = userId ? await db.query('SELECT full_name FROM users WHERE id = $1', [userId]) : { rows: [] }
+    const changedByName = userRow.rows[0]?.full_name || 'Unknown'
+    const ipAddress = req.ip || req.connection?.remoteAddress || null
+
+    const result = await createJsonGzipBackup({ reason: 'manual', requestedByUserId: userId })
+
+    const nowIso = new Date().toISOString()
+    await setSystemConfigValue({ category: 'general', key: 'last_backup_at', value: nowIso, userId, changedByName, ipAddress })
+    await setSystemConfigValue({ category: 'general', key: 'last_backup_file', value: result.fileName, userId, changedByName, ipAddress })
+
+    await writeAuditLog({
+      userId,
+      action: 'CREATE_DB_BACKUP',
+      entity: 'backups',
+      entityId: null,
+      meta: { file: result.fileName, bytes: result.bytes, format: result.format },
+    })
+
+    res.setHeader('Content-Type', 'application/gzip')
+    res.setHeader('Content-Disposition', `attachment; filename=${result.fileName}`)
+    return res.sendFile(result.filePath)
   }),
 )
 
