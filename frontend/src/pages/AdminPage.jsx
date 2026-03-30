@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { apiGet, apiPost, apiPut, apiPatch, apiDelete, apiDownload, pushToast } from '../api/client'
+import { apiGet, apiPost, apiPatch, apiDelete, apiDownload, pushToast } from '../api/client'
 import { DataTable } from '../components/DataTable'
 import { PaginationBar } from '../components/PaginationBar'
 import { SectionCard } from '../components/SectionCard'
@@ -34,7 +34,6 @@ export function AdminPage({ token, user }) {
 
   // Backup & Export state
   const [lastBackup, setLastBackup] = useState(null)
-  const [backupSchedule, setBackupSchedule] = useState('Daily')
   const [isBackingUp, setIsBackingUp] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
 
@@ -99,7 +98,6 @@ export function AdminPage({ token, user }) {
 
         // Backup panel
         if (backupStatus && typeof backupStatus === 'object') {
-          if (backupStatus.schedule) setBackupSchedule(String(backupStatus.schedule))
           if (backupStatus.lastBackupAt) {
             try {
               setLastBackup(new Date(backupStatus.lastBackupAt).toLocaleString('en-PH'))
@@ -114,17 +112,6 @@ export function AdminPage({ token, user }) {
     }
     load()
   }, [token])
-
-  const handleBackupScheduleChange = async (next) => {
-    const nextSchedule = String(next || '').trim()
-    setBackupSchedule(nextSchedule)
-    try {
-      await apiPut('/admin/backup/schedule', token, { schedule: nextSchedule })
-      pushToast('success', 'Backup schedule saved')
-    } catch (err) {
-      pushToast('error', err.message)
-    }
-  }
 
   useEffect(() => {
     if (!token) return
@@ -262,7 +249,7 @@ export function AdminPage({ token, user }) {
   const handleManualBackup = async () => {
     setIsBackingUp(true)
     try {
-      const filename = `db-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json.gz`
+      const filename = `db-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.sql.gz`
       await apiDownload('/admin/backup/download', token, filename)
       // Refresh displayed last-backup timestamp from server (more accurate)
       const st = await apiGet('/admin/backup/status', token).catch(() => ({}))
@@ -271,7 +258,7 @@ export function AdminPage({ token, user }) {
       } else {
         setLastBackup(new Date().toLocaleString('en-PH'))
       }
-      pushToast('success', 'Database backup downloaded')
+      pushToast('success', 'SQL backup downloaded')
     } catch (err) {
       pushToast('error', `Backup failed: ${err.message}`)
     } finally {
@@ -654,7 +641,7 @@ export function AdminPage({ token, user }) {
       {/* ── Data Management & Backups ── */}
       <SectionCard
         title="Data Management & Backups"
-        subtitle="Automated backups and data export for reporting"
+        subtitle="Manual SQL backup download and data export"
       >
         <div className="adm-data-grid">
 
@@ -670,29 +657,17 @@ export function AdminPage({ token, user }) {
               </div>
               <div>
                 <p className="adm-panel-title">Database Backup</p>
-                <p className="adm-panel-sub">Automated scheduled backups</p>
+                <p className="adm-panel-sub">Download full SQL backup</p>
               </div>
             </div>
             <span className="adm-last-backup">Last backup: {lastBackup || 'Never'}</span>
-            <div className="adm-schedule-field">
-              <label className="adm-schedule-label">Schedule</label>
-              <select
-                className="adm-schedule-select"
-                value={backupSchedule}
-                onChange={(e) => handleBackupScheduleChange(e.target.value)}
-              >
-                <option>Hourly</option>
-                <option>Daily</option>
-                <option>Weekly</option>
-              </select>
-            </div>
             <button type="button" className="adm-backup-btn" onClick={handleManualBackup} disabled={isBackingUp}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
                 <polyline points="17 21 17 13 7 13 7 21"/>
                 <polyline points="7 3 7 8 15 8"/>
               </svg>
-              {isBackingUp ? 'Backing up…' : 'Manual Backup'}
+              {isBackingUp ? 'Preparing…' : 'Download SQL Backup'}
             </button>
           </div>
 
@@ -742,7 +717,7 @@ export function AdminPage({ token, user }) {
         </article>
         <article>
           <h3>Data Protection</h3>
-          <p>Daily automated backups + manual backup option. Export to Excel/CSV for reports and compliance.</p>
+          <p>Manual full SQL backups available for safekeeping and restore. Export to Excel/CSV for reports and compliance.</p>
         </article>
         <article>
           <h3>System Info</h3>

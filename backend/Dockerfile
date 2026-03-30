@@ -1,5 +1,5 @@
 FROM node:20-alpine
-RUN apk add --no-cache font-dejavu
+RUN apk add --no-cache font-dejavu postgresql-client
 WORKDIR /app
 COPY package*.json ./
 RUN npm install

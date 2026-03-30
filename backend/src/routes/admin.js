@@ -7,8 +7,7 @@ const { requireRole } = require('../middleware/auth')
 const { validateRequest } = require('../middleware/validateRequest')
 const { writeAuditLog } = require('../utils/auditLog')
 const { runAutoCancelJob } = require('../utils/autoCancelJob')
-const { createJsonGzipBackup } = require('../utils/dbBackup')
-const { startBackupJob } = require('../utils/backupJob')
+const { createSqlGzipBackup } = require('../utils/pgDumpBackup')
 
 const router = express.Router()
 
@@ -271,44 +270,9 @@ router.get(
   '/backup/status',
   requireRole('SuperAdmin'),
   asyncHandler(async (req, res) => {
-    const schedule = await getSystemConfigValue('general', 'backup_schedule', 'Daily')
     const lastBackupAt = await getSystemConfigValue('general', 'last_backup_at', null)
     const lastBackupFile = await getSystemConfigValue('general', 'last_backup_file', null)
-    res.json({ schedule: schedule || 'Daily', lastBackupAt, lastBackupFile })
-  }),
-)
-
-router.put(
-  '/backup/schedule',
-  requireRole('SuperAdmin'),
-  body('schedule').isString().notEmpty().withMessage('schedule is required'),
-  validateRequest,
-  asyncHandler(async (req, res) => {
-    const scheduleRaw = String(req.body.schedule || '').trim()
-    const allowed = new Set(['Hourly', 'Daily', 'Weekly'])
-    if (!allowed.has(scheduleRaw)) {
-      return res.status(400).json({ message: 'Invalid schedule. Use Hourly, Daily, or Weekly.' })
-    }
-
-    const userId = req.user?.id || null
-    const userRow = userId ? await db.query('SELECT full_name FROM users WHERE id = $1', [userId]) : { rows: [] }
-    const changedByName = userRow.rows[0]?.full_name || 'Unknown'
-    const ipAddress = req.ip || req.connection?.remoteAddress || null
-
-    await setSystemConfigValue({ category: 'general', key: 'backup_schedule', value: scheduleRaw, userId, changedByName, ipAddress })
-
-    // Reschedule the running cron job immediately.
-    try { await startBackupJob() } catch { /* ignore */ }
-
-    await writeAuditLog({
-      userId,
-      action: 'UPDATE_BACKUP_SCHEDULE',
-      entity: 'system_config',
-      entityId: null,
-      meta: { schedule: scheduleRaw },
-    })
-
-    res.json({ message: 'Backup schedule updated', schedule: scheduleRaw })
+    res.json({ lastBackupAt, lastBackupFile })
   }),
 )
 
@@ -321,7 +285,19 @@ router.get(
     const changedByName = userRow.rows[0]?.full_name || 'Unknown'
     const ipAddress = req.ip || req.connection?.remoteAddress || null
 
-    const result = await createJsonGzipBackup({ reason: 'manual', requestedByUserId: userId })
+    let result
+    try {
+      result = await createSqlGzipBackup({ reason: 'manual', requestedByUserId: userId })
+    } catch (e) {
+      const msg = String(e?.message || '')
+      if (msg.toLowerCase().includes('spawn') || msg.toLowerCase().includes('enoent')) {
+        return res.status(500).json({
+          message:
+            'Backup failed: SQL backup requires pg_dump. Install PostgreSQL client tools (pg_dump), or run the backend via docker-compose (postgres service) so the server can generate the dump.',
+        })
+      }
+      throw e
+    }
 
     const nowIso = new Date().toISOString()
     await setSystemConfigValue({ category: 'general', key: 'last_backup_at', value: nowIso, userId, changedByName, ipAddress })
