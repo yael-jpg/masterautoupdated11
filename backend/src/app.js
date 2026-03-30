@@ -11,6 +11,24 @@ const systemController = require('./controllers/systemController')
 
 const app = express()
 
+// Behind Render/Netlify proxies, trust X-Forwarded-* headers.
+app.set('trust proxy', 1)
+
+// In production, ensure requests come over HTTPS when behind a proxy.
+// (This does not affect local dev; and should be safe on Render where x-forwarded-proto is set.)
+app.use((req, res, next) => {
+  try {
+    const isProd = process.env.NODE_ENV === 'production'
+    const proto = String(req.headers['x-forwarded-proto'] || '').toLowerCase()
+    if (isProd && proto && proto !== 'https') {
+      return res.redirect(301, `https://${req.headers.host}${req.originalUrl}`)
+    }
+  } catch (_) {
+    // ignore
+  }
+  return next()
+})
+
 // Configure helmet with relaxed settings for development
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -54,6 +72,7 @@ app.get('/uploads-test', systemController.uploadsTest)
 app.get('/ready', systemController.ready)
 
 app.use('/api/auth', authRateLimiter)
+app.use('/api/portal/auth', authRateLimiter)
 app.use('/api', apiRateLimiter)
 app.use('/api/public', require('./routes/public'))
 app.use('/api/portal', require('./routes/portal'))

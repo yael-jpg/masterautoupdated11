@@ -122,8 +122,10 @@ function AuthModal({ prefillService, onClose }) {
   const [tab, setTab] = useState('register')
   const [reg, setReg] = useState({ fullName: '', email: '', mobile: '', address: '', password: '' })
   const [login, setLogin] = useState({ identifier: '', password: '' })
+  const [verify, setVerify] = useState({ email: '', code: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -133,12 +135,13 @@ function AuthModal({ prefillService, onClose }) {
     }
   }, [])
 
-  const setR = (k, v) => { setReg(p => ({ ...p, [k]: v })); setError('') }
-  const setL = (k, v) => { setLogin(p => ({ ...p, [k]: v })); setError('') }
+  const setR = (k, v) => { setReg(p => ({ ...p, [k]: v })); setError(''); setNotice('') }
+  const setL = (k, v) => { setLogin(p => ({ ...p, [k]: v })); setError(''); setNotice('') }
+  const setV = (k, v) => { setVerify(p => ({ ...p, [k]: v })); setError(''); setNotice('') }
 
   async function handleRegister(e) {
     e.preventDefault()
-    if (!reg.fullName || !reg.mobile || !reg.password) return setError('Full name, mobile, and password are required.')
+    if (!reg.fullName || !reg.mobile || !reg.email || !reg.password) return setError('Full name, mobile, email, and password are required.')
     if (reg.password.length < 6) return setError('Password must be at least 6 characters.')
     try {
       setLoading(true)
@@ -149,6 +152,14 @@ function AuthModal({ prefillService, onClose }) {
         address: reg.address,
         password: reg.password,
       })
+      if (d?.requiresEmailVerification) {
+        setVerify({ email: d.email || reg.email, code: '' })
+        setTab('verify')
+        setNotice(d.message || 'Verification code sent. Please check your email.')
+        return
+      }
+
+      // Backwards-compat fallback
       localStorage.setItem('ma_portal_token', d.token)
       localStorage.setItem('ma_portal_customer', JSON.stringify(d.customer))
       window.location.href = '/portal'
@@ -165,6 +176,37 @@ function AuthModal({ prefillService, onClose }) {
       localStorage.setItem('ma_portal_token', d.token)
       localStorage.setItem('ma_portal_customer', JSON.stringify(d.customer))
       window.location.href = '/portal'
+    } catch (err) {
+      if (err?.requiresEmailVerification && err?.email) {
+        setVerify({ email: err.email, code: '' })
+        setTab('verify')
+        setNotice('Please enter the verification code sent to your email.')
+      } else {
+        setError(err.message)
+      }
+    }
+    finally { setLoading(false) }
+  }
+
+  async function handleVerify(e) {
+    e.preventDefault()
+    if (!verify.email || !verify.code) return setError('Email and verification code are required.')
+    try {
+      setLoading(true)
+      const d = await portalFetch('/auth/verify-email', { email: verify.email, code: verify.code })
+      localStorage.setItem('ma_portal_token', d.token)
+      localStorage.setItem('ma_portal_customer', JSON.stringify(d.customer))
+      window.location.href = '/portal'
+    } catch (err) { setError(err.message) }
+    finally { setLoading(false) }
+  }
+
+  async function handleResend() {
+    if (!verify.email) return setError('Email is required.')
+    try {
+      setLoading(true)
+      const d = await portalFetch('/auth/resend-verification', { email: verify.email })
+      setNotice(d?.message || 'Verification code sent.')
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
   }
@@ -203,12 +245,24 @@ function AuthModal({ prefillService, onClose }) {
             <form onSubmit={handleRegister}>
               <div className="lp-field"><label>Full Name *</label><input value={reg.fullName} onChange={e => setR('fullName', e.target.value)} placeholder="Juan dela Cruz" autoFocus /></div>
               <div className="lp-field"><label>Mobile Number *</label><input value={reg.mobile} onChange={e => setR('mobile', e.target.value)} placeholder="09171234567" /></div>
-              <div className="lp-field"><label>Email</label><input type="email" value={reg.email} onChange={e => setR('email', e.target.value)} placeholder="juan@email.com" /></div>
+              <div className="lp-field"><label>Email *</label><input type="email" value={reg.email} onChange={e => setR('email', e.target.value)} placeholder="juan@email.com" required /></div>
               <div className="lp-field"><label>Address</label><input value={reg.address} onChange={e => setR('address', e.target.value)} placeholder="Street, Barangay, City" /></div>
               <div className="lp-field"><label>Password *</label><input type="password" value={reg.password} onChange={e => setR('password', e.target.value)} placeholder="Min. 6 characters" /></div>
               {error && <p className="lp-modal-err">{error}</p>}
               <button type="submit" className="lp-modal-submit" disabled={loading}>{loading ? 'Creating Account…' : 'Register & Continue to Portal'}</button>
               <p className="lp-modal-hint">You will be redirected to book your appointment and pay online.</p>
+            </form>
+          ) : tab === 'verify' ? (
+            <form onSubmit={handleVerify}>
+              <div className="lp-field"><label>Email *</label><input type="email" value={verify.email} onChange={e => setV('email', e.target.value)} placeholder="juan@email.com" required autoFocus /></div>
+              <div className="lp-field"><label>Verification Code *</label><input value={verify.code} onChange={e => setV('code', e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit code" inputMode="numeric" maxLength={6} required /></div>
+              {notice && <p className="lp-modal-hint">{notice}</p>}
+              {error && <p className="lp-modal-err">{error}</p>}
+              <button type="submit" className="lp-modal-submit" disabled={loading}>{loading ? 'Verifying…' : 'Verify & Continue'}</button>
+              <p className="lp-modal-hint">
+                Didn’t receive a code?{' '}
+                <button type="button" className="auth-link" onClick={handleResend} disabled={loading}>Resend</button>
+              </p>
             </form>
           ) : (
             <form onSubmit={handleLogin}>
@@ -458,7 +512,6 @@ export function LandingPage() {
             <div className="lp-fcol">
               <h4>Access</h4>
               <button onClick={() => { window.location.href = '/portal/login' }}>Create Account</button>
-              <a href="/login">Staff Login</a>
             </div>
           </div>
         </div>

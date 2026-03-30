@@ -937,6 +937,76 @@ function buildPortalAccessEmail({
   }
 }
 
+// ── Portal Email Verification (OTP) ─────────────────────────────────────────
+
+function buildPortalEmailVerificationEmail({
+  customerName,
+  otpCode,
+  expiresMinutes,
+  portalUrl,
+}) {
+  const safeName = customerName || 'Customer'
+  const safeCode = escapeHtml(String(otpCode || ''))
+  const minutes = Number(expiresMinutes || 10)
+
+  const safePortalUrl = portalUrl ? String(portalUrl) : ''
+  const portalHref = safePortalUrl ? escapeHtml(safePortalUrl) : ''
+
+  const html = wrapLayout(`
+    <div class="header">
+      <img class="header-logo" src="cid:masterauto_logo" alt="${BRAND_NAME}" />
+      <h1>Verify Your Email</h1>
+      <p>Enter this code to activate your Client Portal account.</p>
+    </div>
+    <div class="body">
+      <p>Hi <strong>${escapeHtml(safeName)}</strong>,</p>
+      <p>
+        Your verification code is:
+      </p>
+
+      <div style="margin:18px 0 12px; text-align:center;">
+        <span style="display:inline-block;padding:12px 18px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;font-size:22px;font-weight:900;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;letter-spacing:4px;">
+          ${safeCode}
+        </span>
+      </div>
+
+      <p style="margin: 0 0 14px; color:#475569;">
+        This code will expire in <strong>${escapeHtml(String(minutes))} minutes</strong>.
+      </p>
+
+      ${safePortalUrl ? `
+        <div style="font-size:13px;color:#475569;line-height:1.5;margin:0 0 12px;">
+          Portal login: <a href="${portalHref}" style="color:${BRAND_COLOR};font-weight:700;word-break:break-all;">${portalHref}</a>
+        </div>
+      ` : ''}
+
+      <hr class="divider" />
+      <p style="font-size:14px;color:#475569;">
+        If you did not create this account, please ignore this message.
+      </p>
+      <p style="margin-top:20px;"><em>— The ${BRAND_NAME} Team</em></p>
+    </div>
+  `)
+
+  const textLines = [
+    `${BRAND_NAME} — Verify Your Email`,
+    '',
+    `Hi ${safeName},`,
+    '',
+    `Your verification code is: ${otpCode || ''}`,
+    `This code will expire in ${minutes} minutes.`,
+    portalUrl ? `Portal login: ${portalUrl}` : null,
+    '',
+    'If you did not create this account, please ignore this message.',
+  ].filter(Boolean)
+
+  return {
+    subject: `Your Verification Code | ${BRAND_NAME}`,
+    html,
+    text: textLines.join('\n'),
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Booking Confirmation — sent right after a new booking/appointment is created
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1586,6 +1656,7 @@ module.exports = {
   buildPortalBookingRequestEmail,
   buildQuotationApprovedScheduledEmail,
   buildPortalAccessEmail,
+  buildPortalEmailVerificationEmail,
   buildPaymentReceiptEmail,
   buildQuotationRequestReceivedEmail,
   buildQuotationRequestStaffEmail,

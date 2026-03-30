@@ -56,24 +56,130 @@ function App() {
     },
   ])
 
+  // ── Admin notification sound ─────────────────────────────────────────
+  // Notes:
+  // - Browsers usually block audio until the user interacts with the page.
+  // - Avoid side effects in setState updaters: detect new notifications via effect.
+  const soundArmedRef = useRef(false)
+  const soundSeenIdsRef = useRef(new Set())
+  const soundCooldownUntilRef = useRef(0)
+  const audioContextRef = useRef(null)
+
+  useEffect(() => {
+    // Mark existing notifications as "seen" so we don't beep on initial render.
+    const seen = soundSeenIdsRef.current
+    notifications.forEach((n) => seen.add(n.id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    const arm = () => {
+      soundArmedRef.current = true
+    }
+
+    window.addEventListener('pointerdown', arm, { once: true })
+    window.addEventListener('keydown', arm, { once: true })
+    window.addEventListener('touchstart', arm, { once: true })
+
+    return () => {
+      window.removeEventListener('pointerdown', arm)
+      window.removeEventListener('keydown', arm)
+      window.removeEventListener('touchstart', arm)
+    }
+  }, [])
+
+  const playNotificationBeep = async () => {
+    if (!soundArmedRef.current) return
+
+    const now = Date.now()
+    if (now < soundCooldownUntilRef.current) return
+    soundCooldownUntilRef.current = now + 1200
+
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext
+      if (!AudioCtx) return
+
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioCtx()
+      }
+
+      const ctx = audioContextRef.current
+      if (ctx.state === 'suspended') {
+        await ctx.resume()
+      }
+
+      const oscillator = ctx.createOscillator()
+      const gain = ctx.createGain()
+
+      oscillator.type = 'sine'
+      oscillator.frequency.value = 880
+
+      const t0 = ctx.currentTime
+      gain.gain.setValueAtTime(0.0001, t0)
+      gain.gain.exponentialRampToValueAtTime(0.25, t0 + 0.01)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18)
+
+      oscillator.connect(gain)
+      gain.connect(ctx.destination)
+
+      oscillator.start(t0)
+      oscillator.stop(t0 + 0.2)
+    } catch (_) {
+      // Ignore: audio may be blocked or unavailable.
+    }
+  }
+
+  useEffect(() => {
+    const seen = soundSeenIdsRef.current
+    const newlyAdded = []
+    for (const n of notifications) {
+      if (!seen.has(n.id)) newlyAdded.push(n)
+    }
+
+    if (newlyAdded.length === 0) return
+
+    const isSoundWorthy = (n) => {
+      const title = String(n?.title || '').trim().toLowerCase()
+      if (!title) return true
+      // Skip the initial default notification
+      if (title === 'welcome!') return false
+      return true
+    }
+
+    const anyWorthy = newlyAdded.some(isSoundWorthy)
+    newlyAdded.forEach((n) => seen.add(n.id))
+
+    // Prevent unbounded growth if the app stays open for days.
+    if (seen.size > 2000) {
+      soundSeenIdsRef.current = new Set(notifications.slice(0, 200).map((n) => n.id))
+    }
+
+    if (anyWorthy) {
+      playNotificationBeep()
+    }
+  }, [notifications])
+
   // ── Online booking watcher (no refresh needed) ─────────────────────────
   // The Notification Center is currently frontend-only. To notify admins/staff
   // when a portal booking happens, we poll for newly created portal appointments.
   const portalWatchRef = useRef(createPortalBookingWatchState())
   const onlineQuotationWatchRef = useRef({ initialized: false, lastSeenIso: null, seenIds: new Set() })
+  const customerWatchRef = useRef({ initialized: false, lastSeenIso: null, seenIds: new Set() })
+  const vehicleWatchRef = useRef({ initialized: false, lastSeenId: null, seenIds: new Set() })
 
   // Keep staff login URL clean:
-  // - Logged out → always show /login (even if user opens /admin)
-  // - Logged in  → show /admin (if user is on /login)
+  // - Logged out → always show /admin/login (even if user opens /admin)
+  // - Logged in  → show /admin (if user is on /admin/login)
   useEffect(() => {
     const pathname = window.location.pathname
 
     if (!session.token) {
-      if (pathname !== '/login') window.history.replaceState({}, '', '/login')
+      // Backwards-compat: if old /login is used, normalize to /admin/login.
+      if (pathname !== '/admin/login') window.history.replaceState({}, '', '/admin/login')
       return
     }
 
-    if (pathname === '/login') window.history.replaceState({}, '', '/admin')
+    if (pathname === '/login' || pathname === '/admin/login') window.history.replaceState({}, '', '/admin')
   }, [session.token])
 
   useEffect(() => {
@@ -85,6 +191,8 @@ function App() {
     // Reset per-login session state
     portalWatchRef.current = createPortalBookingWatchState()
     onlineQuotationWatchRef.current = { initialized: false, lastSeenIso: null, seenIds: new Set() }
+    customerWatchRef.current = { initialized: false, lastSeenIso: null, seenIds: new Set() }
+    vehicleWatchRef.current = { initialized: false, lastSeenId: null, seenIds: new Set() }
 
     const addOnlineBookingRequestNotification = (quotation) => {
       const customerText = quotation?.customer_name || 'Customer'
@@ -373,6 +481,190 @@ function App() {
               watch.seenIds = seenIds
               watch.lastSeenIso = lastSeenIso
             }
+          }
+        } catch (_) {
+          // Silent
+        }
+
+        // Poll for newly created customers (walk-in and others)
+        try {
+          const custParams = new URLSearchParams({
+            page: '1',
+            limit: '10',
+          })
+          const { url: custUrl, headers: custHeaders } = buildApiUrl(`/customers?${custParams.toString()}`, session.token)
+          const custRes = await fetch(custUrl, { headers: custHeaders })
+          if (!custRes.ok) throw new Error('customers poll failed')
+          const custResult = await custRes.json().catch(() => ({}))
+          const custRows = Array.isArray(custResult?.data) ? custResult.data : []
+
+          const watch = customerWatchRef.current
+
+          const toIso = (value) => {
+            if (!value) return null
+            const d = new Date(value)
+            if (Number.isNaN(d.getTime())) return null
+            return d.toISOString()
+          }
+
+          const withIso = custRows
+            .map((r) => ({ row: r, createdIso: toIso(r?.created_at) }))
+            .filter((x) => x.createdIso)
+
+          const latestIso = withIso[0]?.createdIso || new Date().toISOString()
+
+          if (!watch.initialized) {
+            const graceMs = 2 * 60 * 1000
+            const graceCutoffIso = new Date(Date.now() - graceMs).toISOString()
+            const recentRows = withIso
+              .filter((x) => x.createdIso >= graceCutoffIso)
+              .sort((a, b) => new Date(a.createdIso) - new Date(b.createdIso))
+              .map((x) => x.row)
+
+            watch.seenIds = new Set(custRows.map((r) => r?.id).filter((id) => id !== undefined && id !== null))
+            watch.lastSeenIso = latestIso
+            watch.initialized = true
+
+            if (recentRows.length > 0) {
+              recentRows.forEach((c) => {
+                if (c?.id != null) watch.seenIds.add(c.id)
+                const leadSource = String(c?.lead_source || '').trim().toLowerCase()
+                const isPortal = leadSource === 'portal' || leadSource.includes('portal')
+                const isWalkIn = String(c?.customer_type || '').toLowerCase() === 'walk-in'
+                const time = new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
+                setNotifications((prev) => [
+                  {
+                    id: `${Date.now()}-${Math.random()}`,
+                    title: isPortal ? 'New Online Customer Register' : isWalkIn ? 'New Walk-in Customer' : 'New Customer',
+                    message: `${c?.full_name || 'Customer'} • ${c?.mobile || 'No mobile'}${c?.email ? ` • ${c.email}` : ''}`,
+                    details: {
+                      type: 'customer',
+                      customer_id: c?.id,
+                      customer_type: c?.customer_type,
+                      full_name: c?.full_name,
+                      mobile: c?.mobile,
+                      email: c?.email,
+                      lead_source: c?.lead_source,
+                    },
+                    time,
+                    read: false,
+                  },
+                  ...prev,
+                ])
+              })
+            }
+          } else {
+            const lastSeenIso = watch.lastSeenIso || new Date().toISOString()
+            const seenIds = watch.seenIds instanceof Set ? watch.seenIds : new Set()
+
+            const newRows = withIso
+              .filter(({ row, createdIso }) => {
+                if (createdIso > lastSeenIso) return true
+                if (createdIso === lastSeenIso && row?.id != null && !seenIds.has(row.id)) return true
+                return false
+              })
+              .sort((a, b) => new Date(a.createdIso) - new Date(b.createdIso))
+              .map((x) => x.row)
+
+            if (newRows.length > 0) {
+              newRows.forEach((c) => {
+                if (c?.id != null) seenIds.add(c.id)
+                const leadSource = String(c?.lead_source || '').trim().toLowerCase()
+                const isPortal = leadSource === 'portal' || leadSource.includes('portal')
+                const isWalkIn = String(c?.customer_type || '').toLowerCase() === 'walk-in'
+                const time = new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
+                setNotifications((prev) => [
+                  {
+                    id: `${Date.now()}-${Math.random()}`,
+                    title: isPortal ? 'New Online Customer Register' : isWalkIn ? 'New Walk-in Customer' : 'New Customer',
+                    message: `${c?.full_name || 'Customer'} • ${c?.mobile || 'No mobile'}${c?.email ? ` • ${c.email}` : ''}`,
+                    details: {
+                      type: 'customer',
+                      customer_id: c?.id,
+                      customer_type: c?.customer_type,
+                      full_name: c?.full_name,
+                      mobile: c?.mobile,
+                      email: c?.email,
+                      lead_source: c?.lead_source,
+                    },
+                    time,
+                    read: false,
+                  },
+                  ...prev,
+                ])
+              })
+
+              watch.seenIds = seenIds
+              watch.lastSeenIso = toIso(newRows[newRows.length - 1]?.created_at) || lastSeenIso
+            } else {
+              watch.seenIds = seenIds
+              watch.lastSeenIso = lastSeenIso
+            }
+          }
+        } catch (_) {
+          // Silent
+        }
+
+        // Poll for newly added vehicles (includes portal vehicle registrations)
+        try {
+          const vehParams = new URLSearchParams({
+            page: '1',
+            limit: '10',
+            status: 'all',
+          })
+          const { url: vehUrl, headers: vehHeaders } = buildApiUrl(`/vehicles?${vehParams.toString()}`, session.token)
+          const vehRes = await fetch(vehUrl, { headers: vehHeaders })
+          if (!vehRes.ok) throw new Error('vehicles poll failed')
+          const vehResult = await vehRes.json().catch(() => ({}))
+          const vehRows = Array.isArray(vehResult?.data) ? vehResult.data : []
+
+          const watch = vehicleWatchRef.current
+          const ids = vehRows.map((v) => v?.id).filter((id) => id !== undefined && id !== null)
+          const maxId = ids.length ? Math.max(...ids.map((x) => Number(x)).filter((x) => Number.isFinite(x))) : null
+
+          if (!watch.initialized) {
+            watch.seenIds = new Set(ids)
+            watch.lastSeenId = maxId
+            watch.initialized = true
+          } else {
+            const seenIds = watch.seenIds instanceof Set ? watch.seenIds : new Set()
+            const newRows = vehRows
+              .filter((v) => v?.id != null && !seenIds.has(v.id))
+              .sort((a, b) => Number(a?.id) - Number(b?.id))
+
+            if (newRows.length > 0) {
+              newRows.forEach((v) => {
+                if (v?.id != null) seenIds.add(v.id)
+                const time = new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
+                const plateText = v?.plate_number || 'No plate'
+                const modelText = [v?.make, v?.model].filter(Boolean).join(' ') || 'Vehicle'
+                const custText = v?.customer_name || 'Customer'
+                setNotifications((prev) => [
+                  {
+                    id: `${Date.now()}-${Math.random()}`,
+                    title: 'New Vehicle Added',
+                    message: `${custText} • ${plateText} • ${modelText}`,
+                    details: {
+                      type: 'vehicle',
+                      vehicle_id: v?.id,
+                      customer_id: v?.customer_id,
+                      customer_name: v?.customer_name,
+                      plate_number: v?.plate_number,
+                      make: v?.make,
+                      model: v?.model,
+                      year: v?.year,
+                      color: v?.color,
+                    },
+                    time,
+                    read: false,
+                  },
+                  ...prev,
+                ])
+              })
+            }
+
+            watch.seenIds = seenIds
+            watch.lastSeenId = maxId
           }
         } catch (_) {
           // Silent
@@ -725,7 +1017,7 @@ function App() {
     localStorage.removeItem('masterauto_token')
     localStorage.removeItem('masterauto_user')
     setSession({ token: '', user: null })
-    window.history.replaceState({}, '', '/login')
+    window.history.replaceState({}, '', '/admin/login')
   }
 
   const handleExport = async () => {

@@ -883,6 +883,38 @@ async function sendPortalAccessEmail({
   return { skipped: false }
 }
 
+// ── Portal: Email Verification (OTP) ────────────────────────────────────────
+
+async function sendPortalEmailVerificationEmail({
+  to,
+  customerName,
+  otpCode,
+  expiresMinutes,
+  portalUrl,
+}) {
+  if (!to || !isEmailConfigured()) return { skipped: true }
+
+  const { buildPortalEmailVerificationEmail } = require('./emailTemplates')
+  const { subject, html, text } = buildPortalEmailVerificationEmail({
+    customerName,
+    otpCode,
+    expiresMinutes,
+    portalUrl: portalUrl || env.portalUrl,
+  })
+
+  await sendEmail({
+    from: env.smtpFrom,
+    to,
+    replyTo: env.smtpReplyTo || undefined,
+    subject,
+    html,
+    text,
+    attachments: withDefaultAttachments(),
+  })
+
+  return { skipped: false }
+}
+
 // ── New: Payment Receipt Email (Payment recorded) ────────────────────────────
 
 async function sendPaymentReceiptEmail({
@@ -955,6 +987,7 @@ module.exports = {
   sendPortalBookingRequestEmail,
   sendQuotationApprovedScheduledEmail,
   sendPortalAccessEmail,
+  sendPortalEmailVerificationEmail,
   sendPaymentReceiptEmail,
   // Generic send helper for campaign / custom emails
   sendRawEmail: async function ({ to, subject, html, text, from, attachments }) {

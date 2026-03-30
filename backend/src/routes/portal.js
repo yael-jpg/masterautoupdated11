@@ -23,6 +23,7 @@
 const express = require('express')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
+const crypto = require('crypto')
 const { OAuth2Client } = require('google-auth-library')
 const { body, param } = require('express-validator')
 const db = require('../config/db')
@@ -37,6 +38,30 @@ const { buildQuotationRequestStaffEmail } = require('../services/emailTemplates'
 const googleClient = new OAuth2Client(env.googleClientId)
 
 const router = express.Router()
+
+function generateOtpCode() {
+  const n = crypto.randomInt(0, 1000000)
+  return String(n).padStart(6, '0')
+}
+
+async function ensurePortalEmailVerificationColumnsExist() {
+  try {
+    const r = await db.query(
+      `SELECT COUNT(*)::int AS cnt
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'customers'
+         AND column_name IN (
+           'portal_email_verified_at',
+           'portal_email_verification_code_hash',
+           'portal_email_verification_expires_at'
+         )`,
+    )
+    return Number(r.rows?.[0]?.cnt || 0) === 3
+  } catch (_e) {
+    return false
+  }
+}
 
 // ─── Portal JWT middleware ────────────────────────────────────────────────────
 
@@ -109,11 +134,17 @@ router.post(
 router.post(
   '/auth/register',
   body('fullName').trim().notEmpty().withMessage('Full name is required'),
+  body('email').trim().notEmpty().withMessage('Email address is required'),
+  body('email').isEmail().withMessage('Valid email address is required'),
   body('mobile').trim().notEmpty().withMessage('Mobile number is required'),
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
   validateRequest,
   asyncHandler(async (req, res) => {
-    const { fullName, email, mobile, password } = req.body
+    const mailer = require('../services/mailer')
+    const fullName = String(req.body.fullName || '').trim()
+    const email = String(req.body.email || '').trim().toLowerCase()
+    const mobile = String(req.body.mobile || '').trim()
+    const password = String(req.body.password || '')
 
     // Reject if a portal account with this mobile already exists
     const dup = await db.query(
@@ -126,6 +157,17 @@ router.post(
         .json({ message: 'An account with this mobile already exists. Please log in.' })
     }
 
+    // Reject if a portal account with this email already exists
+    const dupEmail = await db.query(
+      'SELECT id FROM customers WHERE email = $1 AND portal_password_hash IS NOT NULL',
+      [email],
+    )
+    if (dupEmail.rows.length > 0) {
+      return res
+        .status(409)
+        .json({ message: 'An account with this email already exists. Please log in.' })
+    }
+
     const hash = await bcrypt.hash(password, 10)
 
     // If admin already created a customer record with this mobile, attach to it;
@@ -135,23 +177,209 @@ router.post(
     if (existing.rows.length > 0) {
       customerId = existing.rows[0].id
       await db.query(
-        'UPDATE customers SET portal_password_hash = $1, full_name = $2 WHERE id = $3',
-        [hash, fullName, customerId],
+        `UPDATE customers
+         SET portal_password_hash = $1,
+             full_name = $2,
+             email = $3,
+             lead_source = COALESCE(NULLIF(lead_source, ''), 'Portal')
+         WHERE id = $4`,
+        [hash, fullName, email, customerId],
       )
     } else {
       const ins = await db.query(
-        `INSERT INTO customers (full_name, mobile, email, portal_password_hash, customer_type, created_at)
-         VALUES ($1, $2, $3, $4, 'Walk-in', NOW())
+        `INSERT INTO customers (full_name, mobile, email, portal_password_hash, customer_type, lead_source, created_at)
+         VALUES ($1, $2, $3, $4, 'Walk-in', 'Portal', NOW())
          RETURNING id`,
-        [fullName, mobile, email || null, hash],
+        [fullName, mobile, email, hash],
       )
       customerId = ins.rows[0].id
     }
 
-    const token = jwt.sign({ customerId }, env.jwtSecret, { expiresIn: '30d' })
-    return res
-      .status(201)
-      .json({ token, customer: { id: customerId, name: fullName, mobile, email: email || null } })
+    const hasCols = await ensurePortalEmailVerificationColumnsExist()
+    if (!hasCols) {
+      return res.status(503).json({
+        message:
+          'Email verification is not available on this server yet. Please apply migration: backend/sql/migrations/066_portal_email_verification.sql',
+      })
+    }
+
+    if (!mailer.isEmailConfigured || !mailer.isEmailConfigured()) {
+      return res.status(503).json({
+        message: 'Email service is not configured. Please contact support.',
+      })
+    }
+
+    const otpCode = generateOtpCode()
+    const otpHash = await bcrypt.hash(otpCode, 10)
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
+
+    await db.query(
+      `UPDATE customers
+       SET portal_email_verified_at = NULL,
+           portal_email_verification_code_hash = $1,
+           portal_email_verification_expires_at = $2
+       WHERE id = $3`,
+      [otpHash, expiresAt, customerId],
+    )
+
+    const sendRes = await mailer.sendPortalEmailVerificationEmail({
+      to: email,
+      customerName: fullName,
+      otpCode,
+      expiresMinutes: 10,
+    })
+    if (sendRes && sendRes.skipped) {
+      return res.status(503).json({ message: 'Email service is not configured. Please contact support.' })
+    }
+
+    return res.status(201).json({
+      requiresEmailVerification: true,
+      email,
+      message: 'Verification code sent. Please check your email to verify your account.',
+    })
+  }),
+)
+
+// ─── POST /auth/verify-email ────────────────────────────────────────────────
+
+router.post(
+  '/auth/verify-email',
+  body('email').trim().notEmpty().withMessage('Email address is required'),
+  body('email').isEmail().withMessage('Valid email address is required'),
+  body('code').trim().isLength({ min: 4 }).withMessage('Verification code is required'),
+  validateRequest,
+  asyncHandler(async (req, res) => {
+    const email = String(req.body.email || '').trim().toLowerCase()
+    const code = String(req.body.code || '').trim()
+
+    const hasCols = await ensurePortalEmailVerificationColumnsExist()
+    if (!hasCols) {
+      return res.status(503).json({
+        message:
+          'Email verification is not available on this server yet. Please apply migration: backend/sql/migrations/066_portal_email_verification.sql',
+      })
+    }
+
+    const r = await db.query(
+      `SELECT id, full_name, mobile, email,
+              portal_email_verified_at,
+              portal_email_verification_code_hash,
+              portal_email_verification_expires_at
+       FROM customers
+       WHERE LOWER(email) = LOWER($1) AND portal_password_hash IS NOT NULL
+       LIMIT 1`,
+      [email],
+    )
+    const customer = r.rows?.[0]
+    if (!customer) return res.status(404).json({ message: 'No portal account found for this email.' })
+
+    if (customer.portal_email_verified_at) {
+      const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: '30d' })
+      return res.json({
+        token,
+        customer: {
+          id: customer.id,
+          name: customer.full_name,
+          mobile: customer.mobile,
+          email: customer.email,
+        },
+      })
+    }
+
+    if (!customer.portal_email_verification_code_hash || !customer.portal_email_verification_expires_at) {
+      return res.status(400).json({ message: 'No verification code is active. Please request a new code.' })
+    }
+
+    const expiresAt = new Date(customer.portal_email_verification_expires_at)
+    if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() < Date.now()) {
+      return res.status(400).json({ message: 'Verification code expired. Please request a new code.' })
+    }
+
+    const ok = await bcrypt.compare(code, customer.portal_email_verification_code_hash)
+    if (!ok) return res.status(400).json({ message: 'Invalid verification code.' })
+
+    await db.query(
+      `UPDATE customers
+       SET portal_email_verified_at = NOW(),
+           portal_email_verification_code_hash = NULL,
+           portal_email_verification_expires_at = NULL
+       WHERE id = $1`,
+      [customer.id],
+    )
+
+    const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: '30d' })
+    return res.json({
+      token,
+      customer: {
+        id: customer.id,
+        name: customer.full_name,
+        mobile: customer.mobile,
+        email: customer.email,
+      },
+    })
+  }),
+)
+
+// ─── POST /auth/resend-verification ─────────────────────────────────────────
+
+router.post(
+  '/auth/resend-verification',
+  body('email').trim().notEmpty().withMessage('Email address is required'),
+  body('email').isEmail().withMessage('Valid email address is required'),
+  validateRequest,
+  asyncHandler(async (req, res) => {
+    const mailer = require('../services/mailer')
+    const email = String(req.body.email || '').trim().toLowerCase()
+
+    const hasCols = await ensurePortalEmailVerificationColumnsExist()
+    if (!hasCols) {
+      return res.status(503).json({
+        message:
+          'Email verification is not available on this server yet. Please apply migration: backend/sql/migrations/066_portal_email_verification.sql',
+      })
+    }
+
+    if (!mailer.isEmailConfigured || !mailer.isEmailConfigured()) {
+      return res.status(503).json({ message: 'Email service is not configured. Please contact support.' })
+    }
+
+    const r = await db.query(
+      `SELECT id, full_name, email, portal_email_verified_at
+       FROM customers
+       WHERE LOWER(email) = LOWER($1) AND portal_password_hash IS NOT NULL
+       LIMIT 1`,
+      [email],
+    )
+    const customer = r.rows?.[0]
+    if (!customer) return res.status(404).json({ message: 'No portal account found for this email.' })
+
+    if (customer.portal_email_verified_at) {
+      return res.json({ ok: true, message: 'Email already verified.' })
+    }
+
+    const otpCode = generateOtpCode()
+    const otpHash = await bcrypt.hash(otpCode, 10)
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
+
+    await db.query(
+      `UPDATE customers
+       SET portal_email_verification_code_hash = $1,
+           portal_email_verification_expires_at = $2
+       WHERE id = $3`,
+      [otpHash, expiresAt, customer.id],
+    )
+
+    const sendRes = await mailer.sendPortalEmailVerificationEmail({
+      to: customer.email,
+      customerName: customer.full_name,
+      otpCode,
+      expiresMinutes: 10,
+    })
+    if (sendRes && sendRes.skipped) {
+      return res.status(503).json({ message: 'Email service is not configured. Please contact support.' })
+    }
+
+    return res.json({ ok: true, message: 'Verification code sent.' })
   }),
 )
 
@@ -163,12 +391,13 @@ router.post(
   body('password').notEmpty().withMessage('Password is required'),
   validateRequest,
   asyncHandler(async (req, res) => {
-    const { identifier, password } = req.body
+    const identifier = String(req.body.identifier || '').trim()
+    const password = String(req.body.password || '')
 
     const result = await db.query(
-      `SELECT id, full_name, mobile, email, portal_password_hash
+      `SELECT id, full_name, mobile, email, portal_password_hash, portal_email_verified_at
        FROM customers
-       WHERE (mobile = $1 OR email = $1) AND portal_password_hash IS NOT NULL`,
+       WHERE (mobile = $1 OR LOWER(email) = LOWER($1)) AND portal_password_hash IS NOT NULL`,
       [identifier],
     )
     const customer = result.rows[0]
@@ -181,6 +410,15 @@ router.post(
     const isValid = await bcrypt.compare(password, customer.portal_password_hash)
     if (!isValid) {
       return res.status(401).json({ message: 'Invalid credentials' })
+    }
+
+    // Require email verification for email-based accounts.
+    if (!customer.portal_email_verified_at) {
+      return res.status(403).json({
+        message: 'Please verify your email address before logging in.',
+        requiresEmailVerification: true,
+        email: customer.email,
+      })
     }
 
     const token = jwt.sign({ customerId: customer.id }, env.jwtSecret, { expiresIn: '30d' })

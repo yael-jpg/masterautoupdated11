@@ -8,6 +8,7 @@ const { requireRole } = require('../middleware/auth')
 
 const bcrypt = require('bcryptjs')
 const crypto = require('crypto')
+const { URL } = require('url')
 
 const router = express.Router()
 
@@ -21,6 +22,55 @@ function generateTemporaryPortalPassword() {
     out += alphabet[bytes[i] % alphabet.length]
   }
   return out
+}
+
+function firstForwardedValue(value) {
+  if (!value) return ''
+  return String(value).split(',')[0].trim()
+}
+
+function deriveExternalBaseUrl(req) {
+  const origin = firstForwardedValue(req.get('origin'))
+  if (origin && origin !== 'null') {
+    try {
+      const u = new URL(origin)
+      if (u.protocol && u.host) return `${u.protocol}//${u.host}`
+    } catch (_e) {
+      // ignore invalid origin
+    }
+  }
+
+  const referer = firstForwardedValue(req.get('referer'))
+  if (referer) {
+    try {
+      const u = new URL(referer)
+      if (u.protocol && u.host) return `${u.protocol}//${u.host}`
+    } catch (_e) {
+      // ignore invalid referer
+    }
+  }
+
+  const proto = firstForwardedValue(req.get('x-forwarded-proto')) || req.protocol || 'http'
+  const host = firstForwardedValue(req.get('x-forwarded-host')) || firstForwardedValue(req.get('host'))
+  if (!host) return ''
+  return `${proto}://${host}`
+}
+
+function resolvePortalLoginUrl(req, configuredPortalUrl) {
+  const configured = String(configuredPortalUrl || '').trim()
+  if (configured) {
+    try {
+      const u = new URL(configured)
+      if (!u.pathname || u.pathname === '/') u.pathname = '/portal/login'
+      return u.toString().replace(/\/$/, '')
+    } catch (_e) {
+      return configured
+    }
+  }
+
+  const baseUrl = deriveExternalBaseUrl(req)
+  if (!baseUrl) return ''
+  return `${baseUrl.replace(/\/$/, '')}/portal/login`
 }
 
 // Simple Email Blast endpoint (frontend expects this route when triggering an email blast)
@@ -454,7 +504,10 @@ router.post(
       // Only set if not already provisioned (do not overwrite existing portal accounts)
       const upd = await db.query(
         `UPDATE customers
-         SET portal_password_hash = $1
+         SET portal_password_hash = $1,
+             portal_email_verified_at = COALESCE(portal_email_verified_at, NOW()),
+             portal_email_verification_code_hash = NULL,
+             portal_email_verification_expires_at = NULL
          WHERE id = $2 AND portal_password_hash IS NULL
          RETURNING id`,
         [passwordHash, createdCustomer.id],
@@ -462,13 +515,14 @@ router.post(
 
       if (upd.rows && upd.rows.length) {
         try {
+          const portalLoginUrl = resolvePortalLoginUrl(req, env.portalUrl)
           const sendRes = await mailer.sendPortalAccessEmail({
             to: normalizedEmail,
             customerName: createdCustomer.full_name,
             loginEmail: normalizedEmail,
             loginMobile: createdCustomer.mobile,
             temporaryPassword,
-            portalUrl: env.portalUrl,
+            portalUrl: portalLoginUrl,
           })
 
           if (sendRes && sendRes.skipped) {

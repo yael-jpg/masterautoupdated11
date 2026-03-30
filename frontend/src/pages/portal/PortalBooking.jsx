@@ -50,14 +50,6 @@ function PortalServicePicker({ services, value, onChange, vehicleSize, priceOver
 
   const selected = services.find((s) => s.id === Number(value))
 
-  const effectiveServicePrice = (svc) => {
-    if (!svc) return 0
-    const sizeKey = vehicleSize || 'medium'
-    const entry = getCatalogEntry(svc.code)
-    if (entry) return getEffectivePrice(entry.code, sizeKey, priceOverrides)
-    return Number(svc.base_price || 0)
-  }
-
   const openPanel = () => {
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect()
@@ -155,7 +147,6 @@ function PortalServicePicker({ services, value, onChange, vehicleSize, priceOver
                     onClick={() => pick(svc)}
                   >
                     <span className="portal-svc-item-name">{svc.name}</span>
-                    <span className="portal-svc-item-price">₱{Number(effectiveServicePrice(svc) || 0).toLocaleString()}</span>
                   </button>
                 </li>
               ))
@@ -185,7 +176,6 @@ function PortalServicePicker({ services, value, onChange, vehicleSize, priceOver
           <span className="portal-svc-trigger-selected">
             <span className="portal-svc-trigger-cat">{selected.category}</span>
             {selected.name}
-            <em>₱{Number(effectiveServicePrice(selected) || 0).toLocaleString()}</em>
           </span>
         ) : (
           <span className="portal-svc-trigger-placeholder">— General / No specific service —</span>

@@ -571,7 +571,7 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
                     ...models.map((m) => ({ value: m.name, label: m.name })),
                     { value: '__custom__', label: 'Other (type manually)' },
                   ]}
-                  value={models.some((m) => m.name === form.model) ? form.model : ''}
+                  value={form.model}
                   onChange={(val) => {
                     if (val === '__custom__') {
                       setForm((prev) => ({ ...prev, model: '', _customModel: true, variant: '', _customVariant: false }))
@@ -581,6 +581,7 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
                   }}
                   placeholder="Search model…"
                   required
+                  allowCustomValue
                 />
               ) : (
                 <>
@@ -620,7 +621,7 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
                     ...variants.map((v) => ({ value: v.name, label: v.name })),
                     { value: '__custom__', label: 'Other (type manually)' },
                   ]}
-                  value={variants.some((v) => v.name === form.variant) ? form.variant : ''}
+                  value={form.variant}
                   onChange={(val) => {
                     if (val === '__custom__') {
                       setForm((prev) => ({ ...prev, variant: '', _customVariant: true }))
@@ -630,6 +631,7 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
                   }}
                   placeholder={form.model ? 'Search variant…' : 'Select a model first'}
                   disabled={!form.model}
+                  allowCustomValue
                 />
               ) : (
                 <>

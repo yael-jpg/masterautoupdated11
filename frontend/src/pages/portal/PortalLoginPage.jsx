@@ -16,7 +16,7 @@ function decodeJwtPayload(jwt) {
 }
 
 export function PortalLoginPage({ onLogin }) {
-  // Slide view: 'portal' | 'register'
+  // Slide view: 'portal' | 'register' | 'verify'
   const [view, setView] = useState('portal')
 
   // Portal login state
@@ -34,11 +34,20 @@ export function PortalLoginPage({ onLogin }) {
   const [regLoading, setRegLoading] = useState(false)
   const [regError, setRegError] = useState('')
 
-  const trackOffset = view === 'portal' ? '0%' : '-50%'
+  // Verify email (OTP)
+  const [verifyEmail, setVerifyEmail] = useState('')
+  const [verifyCode, setVerifyCode] = useState('')
+  const [verifyLoading, setVerifyLoading] = useState(false)
+  const [verifyError, setVerifyError] = useState('')
+  const [verifyNotice, setVerifyNotice] = useState('')
+
+  const trackOffset = view === 'portal' ? '0%' : view === 'register' ? '-33.333%' : '-66.666%'
 
   const slideTo = (v) => {
     setPortalError('')
     setRegError('')
+    setVerifyError('')
+    setVerifyNotice('')
     setView(v)
   }
 
@@ -51,7 +60,14 @@ export function PortalLoginPage({ onLogin }) {
       setPortalSession(result.token, result.customer)
       onLogin(result.token, result.customer)
     } catch (err) {
-      setPortalError(err.message)
+      if (err?.requiresEmailVerification && err?.email) {
+        setVerifyEmail(String(err.email || '').trim())
+        setVerifyCode('')
+        slideTo('verify')
+        setVerifyNotice('Please enter the verification code sent to your email.')
+      } else {
+        setPortalError(err.message)
+      }
     } finally {
       setPortalLoading(false)
     }
@@ -60,6 +76,7 @@ export function PortalLoginPage({ onLogin }) {
   const handleRegister = async (e) => {
     e.preventDefault()
     setRegError('')
+    if (!regEmail.trim()) { setRegError('Email address is required.'); return }
     if (regPw !== regConfirm) { setRegError('Passwords do not match.'); return }
     if (regPw.length < 6) { setRegError('Password must be at least 6 characters.'); return }
 
@@ -67,16 +84,62 @@ export function PortalLoginPage({ onLogin }) {
     try {
       const result = await portalPost('/auth/register', {
         fullName: regName,
-        email: regEmail || undefined,
+        email: regEmail.trim(),
         mobile: regMobile,
         password: regPw,
       })
-      setPortalSession(result.token, result.customer)
-      onLogin(result.token, result.customer)
+
+      if (result?.requiresEmailVerification) {
+        setVerifyEmail(String(result.email || regEmail).trim())
+        setVerifyCode('')
+        slideTo('verify')
+        setVerifyNotice(result?.message || 'Verification code sent. Please check your email.')
+      } else {
+        // Backwards-compat fallback
+        setPortalSession(result.token, result.customer)
+        onLogin(result.token, result.customer)
+      }
     } catch (err) {
       setRegError(err.message)
     } finally {
       setRegLoading(false)
+    }
+  }
+
+  const handleVerifyEmail = async (e) => {
+    e.preventDefault()
+    setVerifyError('')
+    setVerifyNotice('')
+    const email = String(verifyEmail || '').trim()
+    const code = String(verifyCode || '').trim()
+    if (!email) { setVerifyError('Email address is required.'); return }
+    if (!code) { setVerifyError('Verification code is required.'); return }
+
+    setVerifyLoading(true)
+    try {
+      const result = await portalPost('/auth/verify-email', { email, code })
+      setPortalSession(result.token, result.customer)
+      onLogin(result.token, result.customer)
+    } catch (err) {
+      setVerifyError(err.message)
+    } finally {
+      setVerifyLoading(false)
+    }
+  }
+
+  const handleResendCode = async () => {
+    setVerifyError('')
+    setVerifyNotice('')
+    const email = String(verifyEmail || '').trim()
+    if (!email) { setVerifyError('Email address is required.'); return }
+    setVerifyLoading(true)
+    try {
+      const result = await portalPost('/auth/resend-verification', { email })
+      setVerifyNotice(result?.message || 'Verification code sent.')
+    } catch (err) {
+      setVerifyError(err.message)
+    } finally {
+      setVerifyLoading(false)
     }
   }
 
@@ -106,6 +169,7 @@ export function PortalLoginPage({ onLogin }) {
   // tabIndex helpers
   const tPortal = view === 'portal' ? 0 : -1
   const tRegister = view === 'register' ? 0 : -1
+  const tVerify = view === 'verify' ? 0 : -1
 
   return (
     <main className="auth-page">
@@ -138,7 +202,7 @@ export function PortalLoginPage({ onLogin }) {
             <div className="auth-card-rim" aria-hidden="true" />
 
             <div className="auth-slide-outer">
-              <div className="auth-slide-track" style={{ transform: `translateX(${trackOffset})` }}>
+              <div className="auth-slide-track auth-slide-track--3" style={{ transform: `translateX(${trackOffset})` }}>
 
                 {/* ══ Panel 1 — Portal Login ══ */}
                 <div className="auth-slide-panel">
@@ -248,7 +312,7 @@ export function PortalLoginPage({ onLogin }) {
 
                     <div className="field-group">
                       <label htmlFor="reg-email">
-                        Email Address <span style={{ color: 'rgba(189, 200, 218, 0.35)', fontWeight: 400 }}>(optional)</span>
+                        Email Address <span style={{ color: 'rgba(189, 200, 218, 0.35)', fontWeight: 400 }}>(required)</span>
                       </label>
                       <input
                         id="reg-email"
@@ -256,6 +320,7 @@ export function PortalLoginPage({ onLogin }) {
                         value={regEmail}
                         onChange={(e) => setRegEmail(e.target.value)}
                         placeholder="you@email.com"
+                        required
                         tabIndex={tRegister}
                       />
                     </div>
@@ -304,6 +369,64 @@ export function PortalLoginPage({ onLogin }) {
                         text="continue_with"
                       />
                     </div>
+                  </form>
+                </div>
+
+                {/* ══ Panel 3 — Verify Email (OTP) ══ */}
+                <div className="auth-slide-panel">
+                  <button type="button" className="auth-back-btn" onClick={() => slideTo('register')} tabIndex={tVerify}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="15 18 9 12 15 6" />
+                    </svg>
+                    Back
+                  </button>
+
+                  <p className="auth-kicker" style={{ marginTop: 8 }}>Email Verification</p>
+                  <h2>Enter Verification Code</h2>
+                  <p className="auth-help">We sent a code to <strong>{verifyEmail || regEmail}</strong>.</p>
+
+                  <form className="login-form" onSubmit={handleVerifyEmail}>
+                    <div className="field-group">
+                      <label htmlFor="verify-email">Email Address</label>
+                      <input
+                        id="verify-email"
+                        type="email"
+                        value={verifyEmail}
+                        onChange={(e) => setVerifyEmail(e.target.value)}
+                        placeholder="you@email.com"
+                        required
+                        tabIndex={tVerify}
+                      />
+                    </div>
+
+                    <div className="field-group">
+                      <label htmlFor="verify-code">Verification Code</label>
+                      <input
+                        id="verify-code"
+                        type="text"
+                        value={verifyCode}
+                        onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="6-digit code"
+                        inputMode="numeric"
+                        maxLength={6}
+                        required
+                        tabIndex={tVerify}
+                      />
+                    </div>
+
+                    {verifyNotice ? <p className="auth-help" style={{ marginTop: 8 }}>{verifyNotice}</p> : null}
+                    {verifyError ? <p className="form-error">{verifyError}</p> : null}
+
+                    <button type="submit" disabled={verifyLoading} className="btn-submit" tabIndex={tVerify}>
+                      {verifyLoading ? 'Verifying…' : 'Verify & Continue'}
+                    </button>
+
+                    <p className="auth-portal-register-hint" style={{ marginTop: 14 }}>
+                      Didn’t receive a code?{' '}
+                      <button type="button" className="auth-link" onClick={handleResendCode} disabled={verifyLoading} tabIndex={tVerify}>
+                        Resend code
+                      </button>
+                    </p>
                   </form>
                 </div>
 

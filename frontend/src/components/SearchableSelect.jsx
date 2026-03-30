@@ -20,6 +20,8 @@ export function SearchableSelect({
   disabled = false,
   required = false,
   grouped = false,
+  allowCustomValue = false,
+  customValueText = (q) => `Use "${q}"`,
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -35,7 +37,7 @@ export function SearchableSelect({
   const selectedOption = isMulti ? null : options.find((o) => o.value === value)
   const displayLabel = isMulti
     ? (value.length > 0 ? `${value.length} service${value.length !== 1 ? 's' : ''} selected` : '')
-    : (selectedOption?.label || '')
+    : (selectedOption?.label || (value ? String(value) : ''))
 
   // Filter options
   const q = query.toLowerCase()
@@ -54,17 +56,27 @@ export function SearchableSelect({
   // Flat list for keyboard nav
   const flatFiltered = groups.flatMap((g) => g.items)
 
+  const queryTrimmed = String(query || '').trim()
+  const canUseCustomValue = allowCustomValue && !disabled && !isMulti && queryTrimmed.length > 0
+  const hasExactMatch = canUseCustomValue
+    ? flatFiltered.some((o) => String(o.value).toLowerCase() === queryTrimmed.toLowerCase() || String(o.label).toLowerCase() === queryTrimmed.toLowerCase())
+    : false
+  const showCustomValueOption = canUseCustomValue && !hasExactMatch
+
   // Close on outside click
   useEffect(() => {
     function handleClickOutside(e) {
       if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        if (showCustomValueOption && (!value || String(value).trim() === '')) {
+          onChange(queryTrimmed)
+        }
         setOpen(false)
         setQuery('')
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [onChange, queryTrimmed, showCustomValueOption, value])
 
   // Scroll highlighted into view — only for keyboard navigation, not mouse hover
   useEffect(() => {
@@ -113,6 +125,8 @@ export function SearchableSelect({
       e.preventDefault()
       if (highlightIdx >= 0 && flatFiltered[highlightIdx]) {
         handleSelect(flatFiltered[highlightIdx].value)
+      } else if (showCustomValueOption) {
+        handleSelect(queryTrimmed)
       }
     } else if (e.key === 'Escape') {
       setOpen(false)
@@ -140,7 +154,7 @@ export function SearchableSelect({
             onChange={(e) => {
               setQuery(e.target.value)
               setHighlightFromKeyboard(false)
-              setHighlightIdx(0)
+              setHighlightIdx(allowCustomValue ? -1 : 0)
             }}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
@@ -159,7 +173,28 @@ export function SearchableSelect({
 
       {open && (
         <div className="searchable-select-dropdown">
-          {flatFiltered.length === 0 ? (
+          {showCustomValueOption && (
+            <div
+              className={`searchable-select-option${highlightIdx === 0 && highlightFromKeyboard ? ' highlighted' : ''}`}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                handleSelect(queryTrimmed)
+              }}
+              onMouseEnter={() => {
+                setHighlightFromKeyboard(false)
+                setHighlightIdx(-1)
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ fontWeight: 600 }}>{customValueText(queryTrimmed)}</div>
+                  <div style={{ fontSize: '0.82rem', color: 'rgba(189,200,218,0.55)', marginTop: '2px' }}>Not in the list</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {flatFiltered.length === 0 && !showCustomValueOption ? (
             <div className="searchable-select-empty">No matches found</div>
           ) : grouped ? (
             <div ref={listRef}>

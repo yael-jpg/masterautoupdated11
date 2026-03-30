@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './Portal.css'
 import '../../App.css'
-import { clearPortalSession, getPortalCustomer, getPortalToken } from '../../api/portalClient'
+import { clearPortalSession, getPortalCustomer, getPortalToken, portalGet } from '../../api/portalClient'
+import { NotificationCenter } from '../../components/NotificationCenter'
 import { PortalLoginPage } from './PortalLoginPage'
 import { PortalDashboard } from './PortalDashboard'
 import { PortalBooking } from './PortalBooking'
@@ -125,6 +126,17 @@ export function PortalApp() {
   const [initialServiceId, setInitialServiceId] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [notifications, setNotifications] = useState([])
+
+  const portalNotifWatchRef = useRef({
+    initialized: false,
+    apptStatusById: new Map(),
+    joStatusById: new Map(),
+    quotationStatusById: new Map(),
+    seenApptIds: new Set(),
+    seenJoIds: new Set(),
+    seenQuotationIds: new Set(),
+  })
 
   const handleLogin = (t, c) => {
     setToken(t)
@@ -152,6 +164,180 @@ export function PortalApp() {
     }
 
     if (pathname === '/portal/login') window.history.replaceState({}, '', '/portal')
+  }, [token, customer])
+
+  // ── Portal notifications (auto, no refresh needed) ───────────────────
+  useEffect(() => {
+    if (!token || !customer) return
+
+    let stopped = false
+    const intervalMs = 10000
+
+    const timeNow = () => new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
+    const cap = (list) => (list.length > 40 ? list.slice(0, 40) : list)
+
+    const addNotification = (n) => {
+      setNotifications((prev) => cap([{ id: `${Date.now()}-${Math.random()}`, read: false, time: timeNow(), ...n }, ...prev]))
+    }
+
+    const poll = async (isInitial = false) => {
+      try {
+        const watch = portalNotifWatchRef.current
+
+        const [appts, docs] = await Promise.all([
+          portalGet('/appointments'),
+          portalGet('/job-orders'),
+        ])
+
+        if (stopped) return
+
+        const apptRows = Array.isArray(appts) ? appts : []
+        const docRows = Array.isArray(docs) ? docs : []
+
+        const jobOrders = docRows.filter((d) => d?.doc_type === 'JobOrder')
+        const quotations = docRows.filter((d) => d?.doc_type === 'Quotation')
+
+        if (!watch.initialized || isInitial) {
+          watch.seenApptIds = new Set(apptRows.map((a) => a?.id).filter((id) => id != null))
+          watch.apptStatusById = new Map(apptRows.map((a) => [a?.id, a?.status]))
+
+          watch.seenJoIds = new Set(jobOrders.map((j) => j?.id).filter((id) => id != null))
+          watch.joStatusById = new Map(jobOrders.map((j) => [j?.id, j?.workflow_status]))
+
+          watch.seenQuotationIds = new Set(quotations.map((q) => q?.id).filter((id) => id != null))
+          watch.quotationStatusById = new Map(quotations.map((q) => [q?.id, q?.quotation_approval_status]))
+
+          watch.initialized = true
+          portalNotifWatchRef.current = watch
+          return
+        }
+
+        // Appointments: new or status change
+        for (const a of apptRows) {
+          if (a?.id == null) continue
+          const prevStatus = watch.apptStatusById.get(a.id)
+          const nextStatus = a?.status
+
+          if (!watch.seenApptIds.has(a.id)) {
+            watch.seenApptIds.add(a.id)
+            watch.apptStatusById.set(a.id, nextStatus)
+            addNotification({
+              title: 'New Appointment',
+              message: `${a?.service_name || 'Service'} • ${new Date(a?.schedule_start).toLocaleString('en-PH')}`,
+              details: {
+                type: 'appointment',
+                appointment_id: a.id,
+                status: nextStatus,
+                schedule_start: a?.schedule_start,
+                service_name: a?.service_name,
+                plate_number: a?.plate_number,
+              },
+            })
+          } else if (prevStatus && nextStatus && prevStatus !== nextStatus) {
+            watch.apptStatusById.set(a.id, nextStatus)
+            addNotification({
+              title: 'Appointment Update',
+              message: `${a?.service_name || 'Service'} • ${prevStatus} → ${nextStatus}`,
+              details: {
+                type: 'appointment',
+                appointment_id: a.id,
+                previous_status: prevStatus,
+                status: nextStatus,
+                schedule_start: a?.schedule_start,
+                service_name: a?.service_name,
+                plate_number: a?.plate_number,
+              },
+            })
+          }
+        }
+
+        // Job Orders: workflow_status changes
+        for (const jo of jobOrders) {
+          if (jo?.id == null) continue
+          const prevStatus = watch.joStatusById.get(jo.id)
+          const nextStatus = jo?.workflow_status
+
+          if (!watch.seenJoIds.has(jo.id)) {
+            watch.seenJoIds.add(jo.id)
+            watch.joStatusById.set(jo.id, nextStatus)
+            addNotification({
+              title: 'New Job Order',
+              message: `${jo?.service_package || 'Service'} • ${nextStatus || 'Pending'}`,
+              details: {
+                type: 'job-order',
+                job_order_id: jo.id,
+                reference_no: jo?.reference_no,
+                status: nextStatus,
+                plate_number: jo?.plate_number,
+              },
+            })
+          } else if (prevStatus && nextStatus && prevStatus !== nextStatus) {
+            watch.joStatusById.set(jo.id, nextStatus)
+            addNotification({
+              title: 'Job Status Update',
+              message: `${jo?.service_package || 'Service'} • ${prevStatus} → ${nextStatus}`,
+              details: {
+                type: 'job-order',
+                job_order_id: jo.id,
+                reference_no: jo?.reference_no,
+                previous_status: prevStatus,
+                status: nextStatus,
+                plate_number: jo?.plate_number,
+              },
+            })
+          }
+        }
+
+        // Quotations: approval status changes (Sent/Pending/Approved/etc)
+        for (const q of quotations) {
+          if (q?.id == null) continue
+          const prevStatus = watch.quotationStatusById.get(q.id)
+          const nextStatus = q?.quotation_approval_status
+
+          if (!watch.seenQuotationIds.has(q.id)) {
+            watch.seenQuotationIds.add(q.id)
+            watch.quotationStatusById.set(q.id, nextStatus)
+            addNotification({
+              title: 'New Quotation',
+              message: `${q?.service_package || 'Quotation'} • ${nextStatus || 'Pending'}`,
+              details: {
+                type: 'quotation',
+                quotation_id: q.id,
+                reference_no: q?.reference_no,
+                status: nextStatus,
+                plate_number: q?.plate_number,
+              },
+            })
+          } else if (prevStatus && nextStatus && prevStatus !== nextStatus) {
+            watch.quotationStatusById.set(q.id, nextStatus)
+            addNotification({
+              title: 'Quotation Update',
+              message: `${q?.reference_no || 'Quotation'} • ${prevStatus} → ${nextStatus}`,
+              details: {
+                type: 'quotation',
+                quotation_id: q.id,
+                reference_no: q?.reference_no,
+                previous_status: prevStatus,
+                status: nextStatus,
+                plate_number: q?.plate_number,
+              },
+            })
+          }
+        }
+
+        portalNotifWatchRef.current = watch
+      } catch (_) {
+        // Silent
+      }
+    }
+
+    poll(true)
+    const id = setInterval(() => poll(false), intervalMs)
+
+    return () => {
+      stopped = true
+      clearInterval(id)
+    }
   }, [token, customer])
 
   if (!token || !customer) return <PortalLoginPage onLogin={handleLogin} />
@@ -280,6 +466,13 @@ export function PortalApp() {
               </div>
             </div>
             <div className="portal-topbar-right">
+              <NotificationCenter
+                notifications={notifications}
+                onMarkAsRead={(id) => {
+                  setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
+                }}
+                onClearAll={() => setNotifications([])}
+              />
               <div
                 className="portal-topbar-user portal-topbar-user--clickable"
                 onClick={() => setActivePage('profile')}

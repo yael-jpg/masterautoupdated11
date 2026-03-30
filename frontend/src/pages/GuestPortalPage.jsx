@@ -386,6 +386,30 @@ function tierColor(_name) {
     return { text: '#c0c0c0', bg: 'rgba(255,255,255,0.06)', border: 'rgba(255,255,255,0.16)' }
 }
 
+function defaultServiceDescription(serviceName) {
+    const n = String(serviceName || '').toLowerCase()
+    if (!n) return 'Service details will be confirmed upon inspection. Request a quote to get recommendations and availability.'
+    if (n.includes('ppf') || n.includes('paint protection film')) {
+        return 'Paint protection film package designed to protect painted surfaces from chips, scratches, and stains.'
+    }
+    if (n.includes('ceramic') || n.includes('graphene')) {
+        return 'Protective coating service that enhances gloss and helps repel water, dirt, and contaminants.'
+    }
+    if (n.includes('tint')) {
+        return 'Window tint installation for heat and UV reduction, comfort, and privacy.'
+    }
+    if (n.includes('wash')) {
+        return 'Car wash service for exterior cleaning and basic upkeep.'
+    }
+    if (n.includes('detail')) {
+        return 'Detailing service for deeper cleaning and interior/exterior refresh.'
+    }
+    if (n.includes('engine')) {
+        return 'Engine bay cleaning and detailing service.'
+    }
+    return 'Service details will be confirmed upon inspection. Request a quote to get recommendations and availability.'
+}
+
 function ServiceCard({ baseName, variants, description, materialsNotes, onRequestQuote, priceOverrides, vehicleSize }) {
     const [expanded, setExpanded] = useState(false)
     const sorted = [...variants].sort((a, b) => SIZE_ORDER.indexOf(a.size ?? '') - SIZE_ORDER.indexOf(b.size ?? ''))
@@ -397,7 +421,6 @@ function ServiceCard({ baseName, variants, description, materialsNotes, onReques
 
     // Use catalog per-size prices if available, else fall back to DB base_price
     const catalogSizes = catalogSizePrices(representative?.code, priceOverrides)
-    const displayPriceFromCatalog = catalogDisplayPrice(representative?.code, priceOverrides)
 
     const chosenCatalogPrice = (() => {
         if (!representativeCatalog) return null
@@ -416,20 +439,6 @@ function ServiceCard({ baseName, variants, description, materialsNotes, onReques
     const hasCatalogSizes = catalogSizes && catalogSizes.length > 1
     const hasDbSizes = sorted.some(v => v.size)
     const hasSizes = hasCatalogSizes || hasDbSizes
-
-    // Headline price label on card
-    const priceStr = chosenCatalogPrice != null
-        ? fmt(chosenCatalogPrice)
-        : chosenDbPrice != null
-            ? fmt(chosenDbPrice)
-            : displayPriceFromCatalog
-                ? displayPriceFromCatalog
-                : (() => {
-            const prices = sorted.map(v => Number(v.base_price)).filter(Boolean)
-            if (!prices.length) return 'Contact for price'
-            const max = Math.max(...prices)
-            return fmt(max)
-                })()
 
     const toggleDetails = () => setExpanded(o => !o)
 
@@ -473,7 +482,6 @@ function ServiceCard({ baseName, variants, description, materialsNotes, onReques
                 <div className="gp-svc-card-top">
                     <div className="gp-svc-card-name">{baseName}</div>
                     <div className="gp-svc-card-right">
-                        <div className="gp-svc-card-price">{priceStr}</div>
                         <svg className={`gp-svc-card-chevron${expanded ? ' up' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                             <polyline points="6 9 12 15 18 9" />
                         </svg>
@@ -516,7 +524,7 @@ function ServiceCard({ baseName, variants, description, materialsNotes, onReques
 
                     {hasSizes && (
                         <div className="gp-svc-details-section">
-                            <div className="gp-svc-details-kicker">Sizes & Pricing</div>
+                            <div className="gp-svc-details-kicker">Sizes</div>
                             <div className="gp-svc-sizes-wrap">
                                 {sizeTiles.map(t => (
                                     <div
@@ -530,7 +538,6 @@ function ServiceCard({ baseName, variants, description, materialsNotes, onReques
                                         }}
                                     >
                                         <div className="gp-svc-size-name">{t.label}</div>
-                                        <div className="gp-svc-size-price">{fmt(t.price)}</div>
                                     </div>
                                 ))}
                                 <button
@@ -660,9 +667,16 @@ function ServicesTab({ onRequestQuote }) {
         if (!acc[normalizedCategory]) acc[normalizedCategory] = {}
         if (!acc[normalizedCategory][base]) acc[normalizedCategory][base] = { variants: [], description: null, materialsNotes: null }
         acc[normalizedCategory][base].variants.push({ ...svc, size })
-        if (svc.description && !acc[normalizedCategory][base].description) {
-            acc[normalizedCategory][base].description = svc.description
+        const nextDesc = (svc.description && String(svc.description).trim())
+            ? String(svc.description).trim()
+            : (svc.materials_notes && String(svc.materials_notes).trim())
+                ? String(svc.materials_notes).trim().split('\n')[0]
+                : defaultServiceDescription(base)
+
+        if (nextDesc && !acc[normalizedCategory][base].description) {
+            acc[normalizedCategory][base].description = nextDesc
         }
+
         if (svc.materials_notes && !acc[normalizedCategory][base].materialsNotes) {
             acc[normalizedCategory][base].materialsNotes = svc.materials_notes
         }
@@ -1194,10 +1208,10 @@ function QuotationTab({ prefillService }) {
                             placeholder="Enter vehicle model" />
                     </div>
                 )}
-                <div className="gp-form-section-label">Pricing & Services</div>
+                <div className="gp-form-section-label">Services</div>
                 <div className="gp-form-row">
                     <div className="gp-field">
-                        <label>Vehicle Size <span className="gp-field-hint-inline">(for pricing)</span></label>
+                        <label>Vehicle Size</label>
                         <GpSelect
                             value={form.vehicleSize}
                             onChange={v => set('vehicleSize', v)}
@@ -1225,21 +1239,14 @@ function QuotationTab({ prefillService }) {
                                 return fullCatalog
                                     .filter(s => !isBike || s.sizePrices[chosenSize])
                                     .map(s => {
-                                        const price = getEffectivePrice(s.code, chosenSize, priceOverrides)
                                         return {
                                             value: s.code,
                                             label: s.name,
                                             group: s.group,
-                                            sub: price > 0 ? fmt(price) : null,
                                         }
                                     })
                             })()}
                         />
-                        {selectedService && selectedServicePrice != null && (
-                            <div className="gp-field-hint">
-                                Estimated price: <strong>{fmt(selectedServicePrice)}</strong>
-                            </div>
-                        )}
                     </div>
                 </div>
                 <div className="gp-form-section-label">Preferred Schedule</div>

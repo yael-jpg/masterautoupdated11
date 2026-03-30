@@ -112,6 +112,16 @@ Frontend default URL: `http://localhost:5173`
 From workspace root:
 - `docker compose up --build`
 
+Mail testing (Docker):
+- The backend is configured (in `docker-compose.yml`) to send SMTP mail to the `mailhog` service.
+- Open the MailHog inbox at `http://localhost:8025` to view portal OTP verification emails and other notifications.
+- If you want real email delivery while using Docker, replace the backend service `SMTP_*` environment variables in `docker-compose.yml` with your real SMTP provider settings and restart.
+
+Mail testing (Non-Docker / Local):
+- You can also run a local mail inbox with `cd backend` → `npm run mail:dev`.
+- This starts **MailDev** on `http://localhost:8025` and an SMTP server on port `1025`.
+- If your backend SMTP host/port is set to `localhost:1025`, OTP emails will appear in that MailDev inbox (not in Gmail).
+
 Then initialize DB schema/seed inside backend container:
 - `docker compose exec backend npm run db:schema`
 - `docker compose exec backend npm run db:seed`

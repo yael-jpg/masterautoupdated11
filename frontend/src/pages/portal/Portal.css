@@ -2624,6 +2624,24 @@
     display: flex;
   }
 
+  /* Mobile: keep footer clean (stack user + button) */
+  .portal-sidebar-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .portal-sidebar-footer .portal-user-chip {
+    margin-bottom: 0;
+  }
+
+  .portal-sidebar-footer .portal-sidebar-logout {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+  }
+
   /* Always show full logo on mobile, hide letter logo */
   .portal-brand-logo {
     display: block !important;
