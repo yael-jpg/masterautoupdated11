@@ -448,8 +448,32 @@ router.patch(
     if (!current.length) return res.status(404).json({ message: 'Quotation not found' })
     const quot = current[0]
 
+    // Idempotent: setting the same status should succeed.
+    if (String(quot.status) === String(status)) {
+      return res.json(quot)
+    }
+
+    // Void path: moving a quotation to Not Approved is allowed even if the
+    // quotation is currently in a terminal status, but only when there is no
+    // active (non-deleted) Job Order linked to it.
+    if (status === 'Not Approved') {
+      const { rows: jos } = await db.query(
+        `SELECT id, job_order_no
+         FROM job_orders
+         WHERE quotation_id = $1
+           AND (status IS NULL OR status != 'Deleted')
+         LIMIT 1`,
+        [req.params.id],
+      )
+      if (jos.length) {
+        return res.status(409).json({
+          message: 'This quotation cannot be modified or deleted because it has a linked Job Order. Remove the Job Order first.',
+        })
+      }
+    }
+
     // Block mutations on terminal statuses unless it's a special path
-    if (QUOTATION_WORKFLOW.terminalStatuses.has(quot.status) && status !== 'Draft' && status !== 'Pending') {
+    if (QUOTATION_WORKFLOW.terminalStatuses.has(quot.status) && status !== 'Draft' && status !== 'Pending' && status !== 'Not Approved') {
       return res.status(409).json({ message: `Quotation is already in a terminal status (${quot.status}) and cannot be changed.` })
     }
 
