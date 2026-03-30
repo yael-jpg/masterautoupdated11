@@ -19,9 +19,10 @@ app.set('trust proxy', 1)
 app.use((req, res, next) => {
   try {
     const isProd = process.env.NODE_ENV === 'production'
-    const proto = String(req.headers['x-forwarded-proto'] || '').toLowerCase()
-    if (isProd && proto && proto !== 'https') {
-      return res.redirect(301, `https://${req.headers.host}${req.originalUrl}`)
+    // req.secure will be set correctly when `trust proxy` is enabled.
+    // Use a 308 redirect to preserve method/body for POST requests.
+    if (isProd && !req.secure && req.headers.host) {
+      return res.redirect(308, `https://${req.headers.host}${req.originalUrl}`)
     }
   } catch (_) {
     // ignore
