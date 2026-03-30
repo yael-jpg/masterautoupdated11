@@ -619,10 +619,17 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
       onConfirm: async () => {
         try {
           await apiDelete(`/appointments/${appointmentId}`, token)
-          await loadData()
+          setConfirmConfig((prev) => ({ ...prev, isOpen: false }))
+          pushToast('success', 'Booking deleted successfully.')
+          try {
+            await loadData()
+          } catch (_) {
+            // Silent — deletion already succeeded.
+          }
           setError('')
         } catch (deleteError) {
           setError(deleteError.message)
+          pushToast('error', deleteError.message || 'Failed to delete booking.')
         }
       }
     })
