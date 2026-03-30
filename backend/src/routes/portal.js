@@ -1768,32 +1768,68 @@ router.get(
 router.get(
   '/payments',
   asyncHandler(async (req, res) => {
-    const r = await db.query(
-      `SELECT p.id, p.amount, p.payment_type, p.reference_no,
-              p.is_deposit, p.created_at,
-              COALESCE(q.quotation_no, s.reference_no)   AS sale_reference_no,
-              CASE
-                WHEN p.quotation_id IS NOT NULL THEN
-                  (SELECT string_agg(svc->>'name', ', ')
-                   FROM jsonb_array_elements(q.services) AS svc)
-                ELSE s.service_package
-              END                                        AS service_package,
-              COALESCE(q.total_amount, s.total_amount)   AS total_amount,
-              v.make, v.model, v.plate_number,
-              COALESCE(
-                qps.total_paid,
-                (SELECT COALESCE(SUM(p2.amount),0) FROM payments p2 WHERE p2.sale_id = p.sale_id)
-              ) AS paid_total
-       FROM payments p
-       LEFT JOIN quotations q   ON q.id = p.quotation_id
-       LEFT JOIN quotation_payment_summary qps ON qps.quotation_id = p.quotation_id
-       LEFT JOIN sales s        ON s.id = p.sale_id
-       JOIN  vehicles v         ON v.id = COALESCE(q.vehicle_id, s.vehicle_id)
-       WHERE (COALESCE(q.customer_id, s.customer_id) = ANY($1::int[]) OR v.customer_id = ANY($1::int[]))
-       ORDER BY p.created_at DESC`,
-      [req.customerIds || [req.customerId]],
-    )
-    return res.json(r.rows)
+    const customerIds = req.customerIds || [req.customerId]
+
+    try {
+      const r = await db.query(
+        `SELECT p.id, p.amount, p.payment_type, p.reference_no,
+                p.is_deposit, p.created_at,
+                COALESCE(q.quotation_no, s.reference_no)   AS sale_reference_no,
+                CASE
+                  WHEN p.quotation_id IS NOT NULL THEN
+                    (SELECT string_agg(svc->>'name', ', ')
+                     FROM jsonb_array_elements(q.services) AS svc)
+                  ELSE s.service_package
+                END                                        AS service_package,
+                COALESCE(q.total_amount, s.total_amount)   AS total_amount,
+                v.make, v.model, v.plate_number,
+                COALESCE(
+                  qps.total_paid,
+                  (SELECT COALESCE(SUM(p2.amount),0) FROM payments p2 WHERE p2.sale_id = p.sale_id)
+                ) AS paid_total
+         FROM payments p
+         LEFT JOIN quotations q   ON q.id = p.quotation_id
+         LEFT JOIN quotation_payment_summary qps ON qps.quotation_id = p.quotation_id
+         LEFT JOIN sales s        ON s.id = p.sale_id
+         JOIN  vehicles v         ON v.id = COALESCE(q.vehicle_id, s.vehicle_id)
+         WHERE (COALESCE(q.customer_id, s.customer_id) = ANY($1::int[]) OR v.customer_id = ANY($1::int[]))
+         ORDER BY p.created_at DESC`,
+        [customerIds],
+      )
+      return res.json(r.rows)
+    } catch (e) {
+      const msg = String(e && e.message ? e.message : '')
+      const isMissingView = e && e.code === '42P01' && msg.includes('quotation_payment_summary')
+      if (!isMissingView) throw e
+
+      const r = await db.query(
+        `SELECT p.id, p.amount, p.payment_type, p.reference_no,
+                p.is_deposit, p.created_at,
+                COALESCE(q.quotation_no, s.reference_no)   AS sale_reference_no,
+                CASE
+                  WHEN p.quotation_id IS NOT NULL THEN
+                    (SELECT string_agg(svc->>'name', ', ')
+                     FROM jsonb_array_elements(q.services) AS svc)
+                  ELSE s.service_package
+                END                                        AS service_package,
+                COALESCE(q.total_amount, s.total_amount)   AS total_amount,
+                v.make, v.model, v.plate_number,
+                CASE
+                  WHEN p.quotation_id IS NOT NULL THEN
+                    (SELECT COALESCE(SUM(p3.amount),0) FROM payments p3 WHERE p3.quotation_id = p.quotation_id)
+                  ELSE
+                    (SELECT COALESCE(SUM(p2.amount),0) FROM payments p2 WHERE p2.sale_id = p.sale_id)
+                END AS paid_total
+         FROM payments p
+         LEFT JOIN quotations q   ON q.id = p.quotation_id
+         LEFT JOIN sales s        ON s.id = p.sale_id
+         JOIN  vehicles v         ON v.id = COALESCE(q.vehicle_id, s.vehicle_id)
+         WHERE (COALESCE(q.customer_id, s.customer_id) = ANY($1::int[]) OR v.customer_id = ANY($1::int[]))
+         ORDER BY p.created_at DESC`,
+        [customerIds],
+      )
+      return res.json(r.rows)
+    }
   }),
 )
 

@@ -480,9 +480,13 @@ export function PortalApp() {
             })
           } else if (prevStatus && nextStatus && prevStatus !== nextStatus) {
             watch.joStatusById.set(jo.id, nextStatus)
+            const isJoApproved = prevStatus === 'Pending JO Approval' && nextStatus === 'Pending'
+
             addNotification({
-              title: 'Job Status Update',
-              message: `${jo?.service_package || 'Service'} • ${prevStatus} → ${nextStatus}`,
+              title: isJoApproved ? 'Job Order Approved' : 'Job Status Update',
+              message: isJoApproved
+                ? `${jo?.service_package || 'Service'} • Approved`
+                : `${jo?.service_package || 'Service'} • ${prevStatus} → ${nextStatus}`,
               details: {
                 type: 'job-order',
                 job_order_id: jo.id,
