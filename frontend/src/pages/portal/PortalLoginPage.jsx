@@ -17,7 +17,14 @@ function decodeJwtPayload(jwt) {
 
 export function PortalLoginPage({ onLogin }) {
   // Slide view: 'portal' | 'register' | 'verify'
-  const [view, setView] = useState('portal')
+  const [view, setView] = useState(() => {
+    try {
+      const v = new URLSearchParams(window.location.search).get('view')
+      return v === 'register' ? 'register' : 'portal'
+    } catch {
+      return 'portal'
+    }
+  })
 
   // Portal login state
   const [portalId, setPortalId] = useState('')

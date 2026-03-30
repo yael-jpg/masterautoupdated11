@@ -453,6 +453,11 @@ export function LandingPage() {
             ceramic coating, paint protection film (PPF), window tinting, and detailing—performed
             with skilled workmanship and quality materials.
           </p>
+          <div className="lp-cta-btns">
+            <button className="lp-btn-w" onClick={() => { window.location.href = '/portal/login?view=register' }}>
+              Create Account
+            </button>
+          </div>
         </div>
       </section>
 
