@@ -12,6 +12,7 @@ export function TopBar({
   notifications,
   onMarkAsRead,
   onClearAllNotifications,
+  onOpenNotification,
 }) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
   const profileMenuRef = useRef(null)
@@ -65,6 +66,7 @@ export function TopBar({
           notifications={notifications}
           onMarkAsRead={onMarkAsRead}
           onClearAll={onClearAllNotifications}
+          onOpenNotification={onOpenNotification}
         />
         <div className="topbar-profile-menu" ref={profileMenuRef}>
           <button

@@ -33,24 +33,6 @@ const JO_STATUS_CLASS = {
   'Cancelled':   'badge badge-danger',
 }
 
-const Q_STATUS_CLASS = {
-  'Draft':        'badge badge-neutral',
-  'Pending':      'badge badge-warning',
-  'Sent':         'badge badge-info',
-  'Approved':     'badge badge-success',
-  'Not Approved': 'badge badge-danger',
-  'Cancelled':    'badge badge-danger',
-  'WITH BALANCE': 'badge badge-warning',
-}
-
-const APPROVAL_MSG = {
-  Approved:       { text: 'Quotation Approved — Work is authorized to proceed.', color: 'rgba(52,211,153,0.08)', border: 'rgba(52,211,153,0.22)', icon: '✓' },
-  'Not Approved': { text: 'Quotation Not Approved. Please contact the shop.', color: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.22)', icon: '✗' },
-  Sent:           { text: 'Quotation sent — awaiting your approval. Please contact the shop to confirm.', color: 'rgba(99,179,237,0.08)', border: 'rgba(99,179,237,0.22)', icon: '📨' },
-  Pending:        { text: 'Quotation is being prepared by the team.', color: 'rgba(251,191,36,0.08)', border: 'rgba(251,191,36,0.22)', icon: '⏳' },
-  Draft:          { text: 'Quotation is in draft state.', color: 'rgba(120,120,120,0.08)', border: 'rgba(120,120,120,0.18)', icon: '📝' },
-}
-
 // ── JO Progress stepper ──────────────────────────────────────
 function JOStepper({ status }) {
   if (status === 'Cancelled') {
@@ -119,11 +101,6 @@ function JobOrderCard({ job, materialsNotesByCode = {} }) {
             <span className="portal-record-ref">
               {job.reference_no}
             </span>
-            {job.quotation_no && (
-              <span className="portal-record-subref">
-                / {job.quotation_no}
-              </span>
-            )}
             <span className={badgeClass}>{joStatus}</span>
           </div>
           <div className="portal-record-title">
@@ -228,148 +205,10 @@ function JobOrderCard({ job, materialsNotesByCode = {} }) {
   )
 }
 
-// ── Quotation card ───────────────────────────────────────────
-function QuotationCard({ job, materialsNotesByCode = {} }) {
-  const [open, setOpen] = useState(false)
-  const qStatus = job.quotation_approval_status || 'Pending'
-  const badgeClass = Q_STATUS_CLASS[qStatus] || 'badge badge-neutral'
-  const info = APPROVAL_MSG[qStatus] || APPROVAL_MSG.Pending
-  const serviceCount = (job.items || []).length
-  const isConverted = !!job.linked_job_order_no
-
-  return (
-    <div className={`portal-section portal-record-card ${isConverted ? 'portal-record-card--converted' : ''}`}>
-      {/* Header */}
-      <div
-        className="portal-record-head"
-        onClick={() => setOpen((o) => !o)}
-      >
-        <div className="portal-record-main">
-          <div className="portal-record-toprow">
-            <span className="portal-record-kind portal-record-kind--muted">
-              Quotation
-            </span>
-            <span className="portal-record-ref portal-record-ref--muted">
-              {job.reference_no}
-            </span>
-            <span className={badgeClass}>{qStatus}</span>
-          </div>
-
-          {/* Vehicle + services summary row */}
-          <div className="portal-record-summary">
-            <div className="portal-record-summary-title">
-              {job.plate_number && (
-                <span className="portal-record-plate">{job.plate_number}</span>
-              )}
-              {[job.make, job.model, job.year].filter(Boolean).join(' ')}
-            </div>
-            {serviceCount > 0 && (
-              <span className="portal-record-summary-meta">
-                {serviceCount} service{serviceCount !== 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-
-          <div className="portal-record-meta portal-record-meta--dim">
-            {new Date(job.created_at).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })}
-          </div>
-        </div>
-
-        <div className="portal-record-side">
-          <div className="portal-record-amount portal-record-amount--muted">
-            ₱{Number(job.total_amount).toLocaleString()}
-          </div>
-          <div className="portal-record-togglehint">
-            {open ? '▲ Hide' : '▼ Details'}
-          </div>
-        </div>
-      </div>
-
-      {/* Converted-to-JO notice (always visible if applicable) */}
-      {isConverted && (
-        <div className="portal-banner portal-banner--success">
-          <span className="portal-banner-icon portal-banner-icon--sm">✓</span>
-          <span>
-            Converted to Job Order <span className="portal-record-ref">{job.linked_job_order_no}</span> — see Job Orders tab for progress.
-          </span>
-        </div>
-      )}
-
-      {/* Approval status banner (show when not yet a JO) */}
-      {!isConverted && (
-        <div className="portal-banner" style={{ background: info.color, borderColor: info.border }}>
-          <span className="portal-banner-icon">{info.icon}</span>
-          <span>{info.text}</span>
-        </div>
-      )}
-
-      {/* Expanded */}
-      {open && (
-        <div className="portal-record-body">
-
-          {/* Notes */}
-          {job.notes && (
-            <div className="portal-note-box">
-              📝 {job.notes}
-            </div>
-          )}
-
-          {/* Line items table */}
-          {(job.items || []).length > 0 && (
-            <>
-              <div className="portal-subhead">
-                Services Quoted
-              </div>
-              <div className="portal-table-wrap">
-                <table className="portal-table">
-                  <thead>
-                    <tr>
-                      <th>Service</th>
-                      <th>Qty</th>
-                      <th>Unit Price</th>
-                      <th>Subtotal</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {job.items.map((item, i) => (
-                      <tr key={i}>
-                        <td>
-                          <div>{item.name}</div>
-                          {(() => {
-                            const notes = materialsNotesByCode[normalizeServiceCode(item?.code)]
-                            const clean = String(notes || '').trim()
-                            return clean
-                              ? <div className="portal-record-meta portal-record-meta--dim" style={{ marginTop: 2 }}>Materials: {clean}</div>
-                              : null
-                          })()}
-                        </td>
-                        <td>{item.qty}</td>
-                        <td>₱{Number(item.price).toLocaleString()}</td>
-                        <td>₱{(Number(item.price) * Number(item.qty)).toLocaleString()}</td>
-                      </tr>
-                    ))}
-                    <tr className="portal-table-total-row">
-                      <td colSpan={3} className="portal-table-total-label">Total</td>
-                      <td className="portal-table-total-value portal-table-total-value--muted">
-                        ₱{Number(job.total_amount).toLocaleString()}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Main page ────────────────────────────────────────────────
 export function PortalJobStatus() {
   const [jobs, setJobs]       = useState([])
   const [loading, setLoading] = useState(true)
-  const [section, setSection] = useState('jobs')   // 'jobs' | 'quotations'
   const [joTab, setJoTab]     = useState('all')    // 'all' | 'active' | 'done'
 
   const [materialsNotesByCode, setMaterialsNotesByCode] = useState({})
@@ -426,7 +265,6 @@ export function PortalJobStatus() {
 
   // Split by doc_type
   const jobOrders  = jobs.filter((j) => j.doc_type === 'JobOrder')
-  const quotations = jobs.filter((j) => j.doc_type === 'Quotation')
 
   // JO sub-filters (use workflow_status — the jo.status column)
   const activeJOs = jobOrders.filter((j) => {
@@ -446,18 +284,15 @@ export function PortalJobStatus() {
     { key: 'done',   label: 'Completed',   count: doneJOs.length },
   ]
 
-  // Quotations needing attention
-  const pendingQ = quotations.filter((q) => q.quotation_approval_status === 'Pending' || q.quotation_approval_status === 'Sent')
-
   return (
     <>
       <div className="portal-hero">
-        <h2>Job Orders &amp; Quotations</h2>
-        <p>Track the progress of your vehicle services and quotation approvals in real time.</p>
+        <h2>Job Orders</h2>
+        <p>Track the progress of your vehicle services in real time.</p>
       </div>
 
       {/* Live alert strip */}
-      {(activeJOs.length > 0 || pendingQ.length > 0) && (
+      {activeJOs.length > 0 && (
         <div className="portal-alert-strip">
           {activeJOs.length > 0 && (
             <div className="portal-alert-pill portal-alert-pill--neutral">
@@ -465,105 +300,36 @@ export function PortalJobStatus() {
               {activeJOs.length} job{activeJOs.length !== 1 ? 's' : ''} in progress
             </div>
           )}
-          {pendingQ.length > 0 && (
-            <div
-              className="portal-alert-pill portal-alert-pill--warn portal-alert-pill--clickable"
-              onClick={() => setSection('quotations')}
-            >
-              <span className="portal-alert-dot" />
-              {pendingQ.length} quotation{pendingQ.length !== 1 ? 's' : ''} awaiting action →
-            </div>
-          )}
         </div>
       )}
 
-      {/* ── Top-level section switcher ── */}
+      {/* Sub-tabs */}
       <div className="portal-tabs portal-tabs--block">
-        <button
-          onClick={() => setSection('jobs')}
-          className={`portal-tab-btn ${section === 'jobs' ? 'active' : ''}`}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-          </svg>
-          Job Orders
-          {jobOrders.length > 0 && (
-            <span className="portal-tab-count">
-              {jobOrders.length}
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => setSection('quotations')}
-          className={`portal-tab-btn ${section === 'quotations' ? 'active' : ''}`}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-          </svg>
-          Quotations
-          {quotations.length > 0 && (
-            <span className="portal-tab-count">
-              {quotations.length}
-            </span>
-          )}
-        </button>
+        {JO_TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setJoTab(t.key)}
+            className={`portal-tab-btn portal-tab-btn--sm ${joTab === t.key ? 'active' : ''}`}
+          >
+            {t.label}
+            {t.count > 0 && (
+              <span className="portal-tab-count">
+                {t.count}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
-      {/* ── JOB ORDERS section ─────────────────────────────── */}
-      {section === 'jobs' && (
-        <>
-          {/* Sub-tabs */}
-          <div className="portal-tabs portal-tabs--block">
-            {JO_TABS.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setJoTab(t.key)}
-                className={`portal-tab-btn portal-tab-btn--sm ${joTab === t.key ? 'active' : ''}`}
-              >
-                {t.label}
-                {t.count > 0 && (
-                  <span className="portal-tab-count">
-                    {t.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {joVisible.length === 0 ? (
-            <div className="portal-empty">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-              </svg>
-              <p>No job orders in this category</p>
-            </div>
-          ) : (
-            joVisible.map((job) => <JobOrderCard key={job.id} job={job} materialsNotesByCode={materialsNotesByCode} />)
-          )}
-        </>
-      )}
-
-      {/* ── QUOTATIONS section ──────────────────────────────── */}
-      {section === 'quotations' && (
-        <>
-          {quotations.length === 0 ? (
-            <div className="portal-empty">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
-              </svg>
-              <p>No quotations found</p>
-              <p style={{ fontSize: 12, marginTop: 6, color: 'rgba(189,200,218,0.30)' }}>
-                When the shop creates a quotation for your vehicle, it will appear here.
-              </p>
-            </div>
-          ) : (
-            quotations.map((job) => <QuotationCard key={job.id} job={job} materialsNotesByCode={materialsNotesByCode} />)
-          )}
-        </>
+      {joVisible.length === 0 ? (
+        <div className="portal-empty">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          <p>No job orders in this category</p>
+        </div>
+      ) : (
+        joVisible.map((job) => <JobOrderCard key={job.id} job={job} materialsNotesByCode={materialsNotesByCode} />)
       )}
     </>
   )

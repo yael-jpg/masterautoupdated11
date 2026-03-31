@@ -23,6 +23,105 @@ function getCatalogEntry(dbCode) {
   return code ? SERVICE_CATALOG.find((c) => c.code === code) : null
 }
 
+function normalizePortalServiceCategory(category, name) {
+  const raw = String(category || '').trim()
+  if (!raw) return raw
+  if (/^ppf$/i.test(raw)) return 'PPF Services'
+  if (/^ppf\s*services?$/i.test(raw)) return 'PPF Services'
+  if (/^detailing$/i.test(raw)) return 'Detailing Services'
+  if (/^detailing\s*services?$/i.test(raw)) return 'Detailing Services'
+  // Fallback heuristic in case category data is inconsistent.
+  if (/\bppf\b/i.test(String(name || '')) && raw.toLowerCase() !== 'ppf services') return 'PPF Services'
+  return raw
+}
+
+function isTint(name) {
+  return String(name || '').toLowerCase().includes('tint')
+}
+
+function isDetailing(name) {
+  return String(name || '').toLowerCase().includes('detail')
+}
+
+function isExteriorDetail(name) {
+  const n = String(name || '').toLowerCase()
+  return n.includes('exterior') && n.includes('detail')
+}
+
+function isInteriorDetail(name) {
+  const n = String(name || '').toLowerCase()
+  return n.includes('interior') && n.includes('detail')
+}
+
+function PortalProcessPanel({ title, subtitle, steps }) {
+  if (!steps?.length) return null
+
+  const PALETTE = ['#7aa8f8', '#7aa8f8', '#7aa8f8', '#a888ff', '#5ce4e0', '#5eda98']
+  const pickColor = (i) => PALETTE[i] || '#94a3b8'
+
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        padding: '13px 16px',
+        borderRadius: 12,
+        border: '1px solid rgba(255,255,255,0.10)',
+        background: 'rgba(255,255,255,0.03)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 11 }}>
+        <span style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 24, height: 24, borderRadius: 7,
+          background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)',
+          color: '#c0c0c0', flexShrink: 0,
+        }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </span>
+        <div>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: '#c0c0c0', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{title}</div>
+          {subtitle && <div style={{ fontSize: 11, color: 'rgba(189,200,218,0.50)', marginTop: 1 }}>{subtitle}</div>}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {steps.map((s, i) => {
+          const dayColor = s?.dayColor || pickColor(i)
+          return (
+            <div key={s.num} style={{ display: 'flex', gap: 12, position: 'relative' }}>
+              {i < steps.length - 1 && (
+                <div style={{ position: 'absolute', left: 11, top: 24, bottom: 0, width: 1, background: 'rgba(255,255,255,0.07)' }} />
+              )}
+              <div style={{
+                width: 23, height: 23, borderRadius: '50%', flexShrink: 0,
+                background: 'rgba(10,13,30,0.85)', border: `1px solid ${dayColor}55`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 10, fontWeight: 800, color: dayColor, zIndex: 1, marginTop: 1,
+              }}>{s.num}</div>
+              <div style={{ paddingBottom: i < steps.length - 1 ? 11 : 0, flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f2' }}>{s.name}</span>
+                  {s.timing && (
+                    <span style={{
+                      fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+                      background: `${dayColor}18`, border: `1px solid ${dayColor}40`,
+                      color: dayColor, letterSpacing: '0.03em', whiteSpace: 'nowrap',
+                    }}>{s.timing}</span>
+                  )}
+                </div>
+                {s.note && <div style={{ fontSize: 11.5, color: 'rgba(189,200,218,0.45)', marginTop: 2, fontStyle: 'italic' }}>{s.note}</div>}
+                {s.warning && <div style={{ fontSize: 11.5, color: 'rgba(248,113,113,0.95)', marginTop: 2, fontWeight: 700 }}>{s.warning}</div>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── Service Picker (portal-themed two-panel) ────────────────────────
 function PortalServicePicker({ services, value, onChange, vehicleSize, priceOverrides }) {
   const [open, setOpen] = useState(false)
@@ -32,7 +131,12 @@ function PortalServicePicker({ services, value, onChange, vehicleSize, priceOver
   const triggerRef = useRef(null)
   const panelRef = useRef(null)
 
-  const categories = ['All', ...Array.from(new Set(services.map((s) => s.category).filter(Boolean))).sort()]
+  const normalizedServices = services.map((s) => ({
+    ...s,
+    category: normalizePortalServiceCategory(s.category, s.name),
+  }))
+
+  const categories = ['All', ...Array.from(new Set(normalizedServices.map((s) => s.category).filter(Boolean))).sort()]
 
   const isServiceAvailableForSize = (svc) => {
     const entry = getCatalogEntry(svc?.code)
@@ -42,13 +146,13 @@ function PortalServicePicker({ services, value, onChange, vehicleSize, priceOver
     return Number(p || 0) > 0
   }
 
-  const filtered = services.filter((s) => {
+  const filtered = normalizedServices.filter((s) => {
     const matchSearch = !search || s.name.toLowerCase().includes(search.toLowerCase())
     const matchCat = activeCategory === 'All' || s.category === activeCategory
     return matchSearch && matchCat && isServiceAvailableForSize(s)
   })
 
-  const selected = services.find((s) => s.id === Number(value))
+  const selected = normalizedServices.find((s) => s.id === Number(value))
 
   const openPanel = () => {
     if (triggerRef.current) {
@@ -127,8 +231,8 @@ function PortalServicePicker({ services, value, onChange, vehicleSize, priceOver
                   {cat}
                   <span className="portal-svc-cat-count">
                     {cat === 'All'
-                      ? services.length
-                      : services.filter((s) => s.category === cat).length}
+                      ? normalizedServices.length
+                      : normalizedServices.filter((s) => s.category === cat).length}
                   </span>
                 </button>
               </li>
@@ -206,8 +310,7 @@ export function PortalBooking({ initialServiceId = '' }) {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(null)
   const [error, setError] = useState('')
-  const [showPayment, setShowPayment] = useState(false)
-  const [payment, setPayment] = useState({ method: 'gcash', amount: '', ref: '' })
+  const [showConfirm, setShowConfirm] = useState(false)
   const [pendingBook, setPendingBook] = useState(null)
 
   useEffect(() => {
@@ -299,7 +402,7 @@ export function PortalBooking({ initialServiceId = '' }) {
     }
     setError('')
 
-    // Calculate scheduleEnd for multi-day services
+    // Calculate scheduleEnd for multi-day services (used by admin during approval)
     let scheduleEnd = null
     if (form.scheduleStart) {
       if (isCoating(selectedService?.name)) {
@@ -312,11 +415,20 @@ export function PortalBooking({ initialServiceId = '' }) {
         end.setDate(end.getDate() + 6)
         end.setHours(15, 0, 0, 0)
         scheduleEnd = end.toISOString()
+      } else if (isTint(selectedService?.name) || isDetailing(selectedService?.name)) {
+        const end = new Date(form.scheduleStart)
+        end.setDate(end.getDate() + 4)
+        end.setHours(15, 0, 0, 0)
+        scheduleEnd = end.toISOString()
+      } else if (selectedService) {
+        const end = new Date(form.scheduleStart)
+        end.setDate(end.getDate() + 1)
+        end.setHours(15, 0, 0, 0)
+        scheduleEnd = end.toISOString()
       }
     }
 
-    // Store pending booking data and show payment modal
-    const minDown = selectedService ? Math.ceil(selectedServicePrice * 0.5) : 0
+    // Store pending booking data and show confirmation modal
     setPendingBook({
       vehicleId: Number(form.vehicleId),
       branch: String(form.branch || '').trim(),
@@ -327,31 +439,16 @@ export function PortalBooking({ initialServiceId = '' }) {
       scheduleEnd,
       notes: form.notes,
     })
-    setPayment({ method: 'gcash', amount: String(minDown), ref: '' })
-    setShowPayment(true)
+    setShowConfirm(true)
   }
 
-  const handleConfirmPayment = async () => {
-    const minDown = selectedService ? Math.ceil(selectedServicePrice * 0.5) : 0
-    const amt = Number(payment.amount)
-    if (selectedService && (isNaN(amt) || amt < minDown)) {
-      setError(`Minimum down payment is ₱${minDown.toLocaleString()}.`)
-      return
-    }
-    if (payment.method !== 'cash' && !payment.ref.trim()) {
-      setError('Please enter a reference number for your payment.')
-      return
-    }
+  const handleConfirmSchedule = async () => {
+    if (!pendingBook) return
     setError('')
     setLoading(true)
     try {
-      const result = await portalPost('/appointments/book', {
-        ...pendingBook,
-        downPaymentAmount: selectedService ? amt : null,
-        downPaymentMethod: payment.method,
-        downPaymentRef: payment.method !== 'cash' ? payment.ref.trim() : null,
-      })
-      setShowPayment(false)
+      const result = await portalPost('/appointments/book', pendingBook)
+      setShowConfirm(false)
       setSuccess({
         quotationNo: result?.quotationNo || null,
         branch: pendingBook?.branch || null,
@@ -360,11 +457,6 @@ export function PortalBooking({ initialServiceId = '' }) {
         vehicleSize: form.vehicleSize || 'medium',
         serviceUnitPrice: selectedService ? selectedServicePrice : null,
         scheduleStart: new Date(pendingBook.scheduleStart),
-        payment: {
-          amount: selectedService ? amt : null,
-          method: payment.method,
-          ref: payment.ref.trim(),
-        },
       })
       setForm({
         vehicleId: vehicles.length === 1 ? String(vehicles[0].id) : '',
@@ -386,7 +478,7 @@ export function PortalBooking({ initialServiceId = '' }) {
     return (
       <>
         <div className="portal-hero">
-          <h2>Request Quotation</h2>
+          <h2>Request Schedule</h2>
           <p>Select your vehicle, preferred service, and schedule.</p>
         </div>
 
@@ -396,8 +488,8 @@ export function PortalBooking({ initialServiceId = '' }) {
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </div>
-          <h3>Quotation Request Sent!</h3>
-          <p>We’ll review and send/approve your quotation before scheduling.</p>
+          <h3>Schedule Request Sent!</h3>
+          <p>We’ll review your request and confirm your schedule.</p>
 
           <div className="portal-booking-success-details">
             {success.quotationNo && (
@@ -438,21 +530,10 @@ export function PortalBooking({ initialServiceId = '' }) {
                 {success.scheduleStart.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true })}
               </span>
             </div>
-            {success.payment?.amount && (
-              <div className="portal-booking-success-row">
-                <span className="label">Down Payment</span>
-                <span className="value" style={{ color: '#5eda98', fontWeight: 600 }}>
-                  ₱{Number(success.payment.amount).toLocaleString()}
-                  {' · '}
-                  {{ gcash: 'GCash', card: 'Credit/Debit Card', bank: 'Bank Transfer', cash: 'Pay on Arrival (Cash)' }[success.payment.method] || success.payment.method}
-                  {success.payment.ref && ` · Ref: ${success.payment.ref}`}
-                </span>
-              </div>
-            )}
           </div>
 
           <div style={{ marginTop: 10, fontSize: 12, color: 'rgba(189,200,218,0.55)', textAlign: 'center' }}>
-            You can track this under <strong>Job Orders &amp; Quotations → Quotations</strong>.
+            You can track this under <strong>Appointments</strong>.
           </div>
 
           <button
@@ -471,7 +552,7 @@ export function PortalBooking({ initialServiceId = '' }) {
   return (
     <>
       <div className="portal-hero">
-        <h2>Request Quotation</h2>
+        <h2>Request Schedule</h2>
         <p>Select your vehicle, preferred service, and schedule. We'll confirm within 24 hours.</p>
       </div>
 
@@ -565,6 +646,55 @@ export function PortalBooking({ initialServiceId = '' }) {
               priceOverrides={priceOverrides}
             />
 
+            {/* Service process / installation steps (shown when a service is picked) */}
+            {selectedService && (() => {
+              const svcName = selectedService?.name
+              const showCoating = isCoating(svcName)
+              const showPpf = isPPF(svcName)
+              const showTint = isTint(svcName)
+              const showDetailing = isDetailing(svcName)
+              if (!showCoating && !showPpf && !showTint && !showDetailing) return null
+
+              const tintSteps = [
+                { num: 1, name: 'Vehicle inspection & glass cleaning', timing: 'Day 1' },
+                { num: 2, name: 'Tint film application', timing: 'Day 2' },
+                { num: 3, name: 'Curing stage', timing: 'Day 3', warning: 'Do not roll down windows during curing' },
+                { num: 4, name: 'Final check & release', timing: 'Day 3/4' },
+              ]
+              const extSteps = [
+                { num: 1, name: 'Initial vehicle checking', timing: 'Day 1', note: 'paint defects, damages, etc.' },
+                { num: 2, name: 'Decontamination', timing: 'Day 1' },
+                { num: 3, name: 'Exterior detailing', timing: 'Day 1–3', note: "varies based on the car's condition" },
+              ]
+              const intSteps = [
+                { num: 1, name: 'Initial vehicle checking', timing: 'Day 1', note: 'interior — dust, dirt, etc.' },
+                { num: 2, name: 'Chair & matting removal', timing: 'Day 1' },
+                { num: 3, name: 'Vacuum & vacmaster', timing: 'Day 2', note: 'deep vacuum of seats and carpets' },
+                { num: 4, name: 'Drying stage & reinstallation', timing: 'Day 3–4', note: 'reinstall all chairs and carpets' },
+              ]
+
+              return (
+                <>
+                  {showCoating && <CoatingProcess />}
+                  {showPpf && <PPFProcess />}
+                  {showTint && (
+                    <PortalProcessPanel
+                      title="Window Tint Process"
+                      subtitle="Usually 3–4 days"
+                      steps={tintSteps}
+                    />
+                  )}
+                  {showDetailing && (
+                    <PortalProcessPanel
+                      title={isExteriorDetail(svcName) ? 'Exterior Detailing Process' : isInteriorDetail(svcName) ? 'Interior Detailing Process' : 'Detailing Process'}
+                      subtitle="Usually 1–4 days"
+                      steps={isExteriorDetail(svcName) ? extSteps : isInteriorDetail(svcName) ? intSteps : [...extSteps.slice(0, 2), ...intSteps.slice(0, 2)]}
+                    />
+                  )}
+                </>
+              )
+            })()}
+
             {selectedService?.materials_notes && String(selectedService.materials_notes).trim() && (
               <div
                 style={{
@@ -632,13 +762,7 @@ export function PortalBooking({ initialServiceId = '' }) {
             </small>
           </div>
 
-          {/* Service process (kept separate so the top row stays compact) */}
-          {(isCoating(selectedService?.name) || isPPF(selectedService?.name)) && (
-            <div style={{ alignSelf: 'start' }}>
-              {isCoating(selectedService?.name) && <CoatingProcess />}
-              {isPPF(selectedService?.name) && <PPFProcess />}
-            </div>
-          )}
+          {/* Service process moved under the Service picker */}
 
           {/* Notes */}
           <div className="portal-form-group" style={{ gridColumn: '1 / -1' }}>
@@ -716,7 +840,7 @@ export function PortalBooking({ initialServiceId = '' }) {
               disabled={loading || vehicles.length === 0}
               style={{ maxWidth: 220 }}
             >
-              {loading ? 'Booking…' : 'Confirm Appointment'}
+              {loading ? 'Submitting…' : 'Confirm Schedule'}
             </button>
             <span style={{ fontSize: 12, color: 'rgba(189,200,218,0.40)' }}>
               📞 Need to cancel or reschedule? Call us directly.
@@ -726,99 +850,50 @@ export function PortalBooking({ initialServiceId = '' }) {
         </form>
       </div>
 
-      {/* ─── Down Payment Modal ─── */}
-      {showPayment && pendingBook && (() => {
-        const minDown = selectedService ? Math.ceil(selectedServicePrice * 0.5) : 0
-        const amt = Number(payment.amount)
-        const methodLabels = { gcash: 'GCash', card: 'Credit/Debit Card', bank: 'Bank Transfer', cash: 'Pay on Arrival (Cash)' }
+      {/* ─── Confirm Schedule (Walk-in Payment) Modal ─── */}
+      {showConfirm && pendingBook && (() => {
         return createPortal(
-          <div className="portal-pay-overlay" onClick={(e) => { if (e.target === e.currentTarget) { setShowPayment(false); setError('') } }}>
+          <div className="portal-pay-overlay" onClick={(e) => { if (e.target === e.currentTarget) { setShowConfirm(false); setError('') } }}>
             <div className="portal-pay-modal">
               <div className="portal-pay-header">
-                <h3>Down Payment</h3>
-                <button type="button" className="portal-pay-close" onClick={() => { setShowPayment(false); setError('') }} aria-label="Close">
+                <h3>Confirm Schedule</h3>
+                <button type="button" className="portal-pay-close" onClick={() => { setShowConfirm(false); setError('') }} aria-label="Close">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
               </div>
 
-              {/* Service summary */}
-              {selectedService && (
-                <div className="portal-pay-summary">
-                  <span className="portal-pay-summary-label">Service</span>
-                  <span className="portal-pay-summary-name">{selectedService.name}</span>
-                  <span className="portal-pay-summary-price">₱{Number(selectedServicePrice || 0).toLocaleString()}</span>
-                  <span className="portal-pay-summary-label" style={{ marginTop: 6 }}>Required Down Payment (min. 50%)</span>
-                  <span className="portal-pay-summary-min">₱{minDown.toLocaleString()}</span>
-                </div>
-              )}
+              {/* Summary */}
+              <div className="portal-pay-summary">
+                <span className="portal-pay-summary-label">Branch</span>
+                <span className="portal-pay-summary-name">{String(pendingBook.branch || '')}</span>
 
-              {/* Amount input */}
-              {selectedService && (
-                <div className="portal-pay-field">
-                  <label>Down Payment Amount <span className="portal-required">*</span></label>
-                  <div className="portal-pay-amount-wrap">
-                    <span className="portal-pay-peso">₱</span>
-                    <input
-                      type="number"
-                      min={minDown}
-                      max={selectedServicePrice}
-                      step="1"
-                      value={payment.amount}
-                      onChange={(e) => setPayment((p) => ({ ...p, amount: e.target.value }))}
-                      className="portal-pay-amount-input"
-                    />
+                {selectedService && (
+                  <>
+                    <span className="portal-pay-summary-label" style={{ marginTop: 10 }}>Service</span>
+                    <span className="portal-pay-summary-name">{selectedService.name}</span>
+                    <span className="portal-pay-summary-price">₱{Number(selectedServicePrice || 0).toLocaleString()}</span>
+                  </>
+                )}
+
+                <span className="portal-pay-summary-label" style={{ marginTop: 10 }}>Payment</span>
+                <div className="portal-pay-summary-notes">
+                  <div className="portal-pay-summary-note">
+                    Payment will be made at the selected branch (walk-in) when you bring your vehicle.
                   </div>
-                  {!isNaN(amt) && amt > 0 && amt < minDown && (
-                    <small className="portal-pay-warn">Minimum is ₱{minDown.toLocaleString()}</small>
-                  )}
                 </div>
-              )}
 
-              {/* Payment method */}
-              <div className="portal-pay-field">
-                <label>Payment Method <span className="portal-required">*</span></label>
-                <div className="portal-pay-methods">
-                  {Object.entries(methodLabels).map(([key, label]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      className={`portal-pay-method-btn${payment.method === key ? ' active' : ''}`}
-                      onClick={() => setPayment((p) => ({ ...p, method: key, ref: '' }))}
-                    >
-                      {key === 'gcash' && <span className="portal-pay-method-icon">📱</span>}
-                      {key === 'card' && <span className="portal-pay-method-icon">💳</span>}
-                      {key === 'bank' && <span className="portal-pay-method-icon">🏦</span>}
-                      {key === 'cash' && <span className="portal-pay-method-icon">💵</span>}
-                      {label}
-                    </button>
-                  ))}
+                <span className="portal-pay-summary-label" style={{ marginTop: 10 }}>Approval</span>
+                <div className="portal-pay-summary-notes">
+                  <div className="portal-pay-summary-subnote">
+                    We will email you once the schedule is approved.
+                  </div>
                 </div>
               </div>
-
-              {/* Reference number (hidden for cash) */}
-              {payment.method !== 'cash' && (
-                <div className="portal-pay-field">
-                  <label>Reference / Confirmation Number <span className="portal-required">*</span></label>
-                  <input
-                    type="text"
-                    placeholder={payment.method === 'gcash' ? 'e.g. 1234567890' : payment.method === 'card' ? 'Last 4 digits or auth code' : 'Bank transaction ref'}
-                    value={payment.ref}
-                    onChange={(e) => setPayment((p) => ({ ...p, ref: e.target.value }))}
-                    className="portal-pay-ref-input"
-                  />
-                </div>
-              )}
-
-              {payment.method === 'cash' && (
-                <p className="portal-pay-cash-note">
-                  💡 Cash payment will be collected when you drop off your vehicle. Please bring the exact amount.
-                </p>
-              )}
 
               {error && <div className="portal-login-error" style={{ marginTop: 8 }}>{error}</div>}
 
               <div className="portal-pay-actions">
-                <button type="button" className="portal-pay-back-btn" onClick={() => { setShowPayment(false); setError('') }}>
+                <button type="button" className="portal-pay-back-btn" onClick={() => { setShowConfirm(false); setError('') }}>
                   ← Back
                 </button>
                 <button
@@ -826,9 +901,9 @@ export function PortalBooking({ initialServiceId = '' }) {
                   className="portal-submit-btn"
                   style={{ flex: 1 }}
                   disabled={loading}
-                  onClick={handleConfirmPayment}
+                  onClick={handleConfirmSchedule}
                 >
-                  {loading ? 'Booking…' : 'Confirm & Book'}
+                  {loading ? 'Submitting…' : 'Confirm Schedule'}
                 </button>
               </div>
             </div>

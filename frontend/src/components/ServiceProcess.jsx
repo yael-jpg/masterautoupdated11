@@ -83,22 +83,22 @@ const COATING_STEPS = [
 export function CoatingProcess() {
   return (
     <div style={{
-      background: 'rgba(58,109,232,0.04)', border: '1px solid rgba(58,109,232,0.16)',
+      background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.10)',
       borderRadius: 12, padding: '13px 16px', marginTop: 10,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 11 }}>
         <span style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           width: 24, height: 24, borderRadius: 7,
-          background: 'rgba(58,109,232,0.14)', border: '1px solid rgba(58,109,232,0.28)',
-          color: '#7aa8f8', flexShrink: 0,
+          background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)',
+          color: '#c0c0c0', flexShrink: 0,
         }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
           </svg>
         </span>
         <div>
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: '#7aa8f8', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Service Process</div>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: '#c0c0c0', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Service Process</div>
           <div style={{ fontSize: 11, color: 'rgba(189,200,218,0.50)', marginTop: 1 }}>Usually 2 – 3 days</div>
         </div>
       </div>

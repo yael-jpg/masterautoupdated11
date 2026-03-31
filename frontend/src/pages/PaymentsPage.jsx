@@ -9,6 +9,7 @@ import { ConfirmModal } from '../components/ConfirmModal'
 import { PaymentStatusBadge } from '../components/PaymentStatusBadge'
 import { OverpaymentResolutionModal } from '../components/OverpaymentResolutionModal'
 import { SearchableSelect } from '../components/SearchableSelect'
+import { onConfigUpdated } from '../utils/events'
 
 export function PaymentsPage({ token, user }) {
   const isSuperAdmin = user?.role === 'SuperAdmin'
@@ -45,8 +46,13 @@ export function PaymentsPage({ token, user }) {
   })
 
   useEffect(() => {
-    apiGet('/config/category/payment', token)
-      .then((entries) => {
+    let cancelled = false
+
+    const loadPaymentConfig = async () => {
+      try {
+        const entries = await apiGet('/config/category/payment', token)
+        if (cancelled) return
+
         const get = (key) => entries.find((e) => e.key === key)?.value ?? null
         const parseMethods = (v) => {
           if (Array.isArray(v)) return v
@@ -62,8 +68,21 @@ export function PaymentsPage({ token, user }) {
           enableOnlinePayment: get('enable_online_payment') === true || get('enable_online_payment') === 'true',
           requireDownpaymentBeforePrint: get('require_downpayment_before_print') !== false && get('require_downpayment_before_print') !== 'false',
         })
-      })
-      .catch(() => {})
+      } catch {
+        // ignore
+      }
+    }
+
+    loadPaymentConfig()
+    const off = onConfigUpdated((e) => {
+      const cat = e?.detail?.category
+      if (!cat || cat === 'payment') loadPaymentConfig()
+    })
+
+    return () => {
+      cancelled = true
+      off()
+    }
   }, [token])
 
   // Overpayment resolution state

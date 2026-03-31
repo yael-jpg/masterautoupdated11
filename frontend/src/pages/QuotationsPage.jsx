@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiDelete, apiGet, apiPatch, apiPost, pushToast } from '../api/client'
 import { SectionCard } from '../components/SectionCard'
 import { Modal } from '../components/Modal'
@@ -8,6 +8,7 @@ import { SERVICE_CATALOG, VEHICLE_SIZE_OPTIONS, formatCurrency, getCatalogGroups
 import { SearchableSelect } from '../components/SearchableSelect'
 import { CustomerAutocomplete } from '../components/CustomerAutocomplete'
 import { normalizeEmailClient } from '../utils/validationClient'
+import { onConfigUpdated } from '../utils/events'
 
 import './QuotationsPage.css'
 import './CrmPage.css'
@@ -63,8 +64,11 @@ function StatusBadge({ status }) {
   return <span className={`status-badge ${meta.cls}`}>{meta.label}</span>
 }
 
-function ServiceLineEditor({ items, onItemsChange, vehicleSize, priceOverrides = {}, customCatalog = [], materialsNotesByCode = {} }) {
-  const fullCatalog = [...SERVICE_CATALOG, ...customCatalog.filter((s) => s.enabled !== false)]
+function ServiceLineEditor({ items, onItemsChange, vehicleSize, priceOverrides = {}, nameOverrides = {}, customCatalog = [], materialsNotesByCode = {} }) {
+  const fullCatalog = [
+    ...SERVICE_CATALOG.map(s => ({ ...s, name: nameOverrides[s.code] || s.name })),
+    ...customCatalog.filter((s) => s.enabled !== false)
+  ]
   const [addCode, setAddCode] = useState('')
 
   const addItem = () => {
@@ -280,16 +284,26 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
 
   // Branch locations from configuration
   const [branchLocations, setBranchLocations] = useState(['Cubao', 'Manila'])
-  useEffect(() => {
-    apiGet('/config/category/booking', token)
-      .then((arr) => {
-        const entries = Array.isArray(arr) ? arr : []
-        const raw = entries.find((e) => e.key === 'branch_locations')?.value ?? null
-        const parsed = Array.isArray(raw) ? raw : (() => { try { return raw ? JSON.parse(raw) : null } catch { return null } })()
-        if (Array.isArray(parsed) && parsed.length > 0) setBranchLocations(parsed)
-      })
-      .catch(() => { })
+  const loadBranchLocations = useCallback(async () => {
+    try {
+      const arr = await apiGet('/config/category/booking', token)
+      const entries = Array.isArray(arr) ? arr : []
+      const raw = entries.find((e) => e.key === 'branch_locations')?.value ?? null
+      const parsed = Array.isArray(raw) ? raw : (() => { try { return raw ? JSON.parse(raw) : null } catch { return null } })()
+      if (Array.isArray(parsed) && parsed.length > 0) setBranchLocations(parsed)
+    } catch {
+      // ignore
+    }
   }, [token])
+
+  useEffect(() => {
+    loadBranchLocations()
+    const off = onConfigUpdated((e) => {
+      const cat = e?.detail?.category
+      if (!cat || cat === 'booking') loadBranchLocations()
+    })
+    return off
+  }, [loadBranchLocations])
 
   // Balance guard state
   const [balanceWarning, setBalanceWarning] = useState(null)  // { balances, totalOutstanding, canOverride }
@@ -309,63 +323,105 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
 
   // VAT rate from configuration
   const [vatRate, setVatRate] = useState(0)
-  useEffect(() => {
-    apiGet('/config', token).then((res) => {
+  const loadVatRate = useCallback(async () => {
+    try {
+      const res = await apiGet('/config', token)
       const data = res.data || res
       const businessEntries = data?.business || []
       const entry = Array.isArray(businessEntries)
         ? businessEntries.find((e) => e.key === 'tax_vat_rate')
         : null
       if (entry) setVatRate(Number(entry.value) || 0)
-    }).catch(() => { })
+    } catch {
+      // ignore
+    }
   }, [token])
+
+  useEffect(() => {
+    loadVatRate()
+    const off = onConfigUpdated((e) => {
+      const cat = e?.detail?.category
+      if (!cat || cat === 'business') loadVatRate()
+    })
+    return off
+  }, [loadVatRate])
 
   // Service price overrides + active vehicle sizes + custom services from Settings > Quotations
   const [priceOverrides, setPriceOverrides] = useState({})
   const [activeSizes, setActiveSizes] = useState(VEHICLE_SIZE_OPTIONS)
   const [customServices, setCustomServices] = useState([])
+  const [serviceNameOverrides, setServiceNameOverrides] = useState({})
   const [leadPreview, setLeadPreview] = useState(null)
   const leadSourceRef = useRef(null)
   const [leadScheduleHintsByQuotationId, setLeadScheduleHintsByQuotationId] = useState({})
   const processingLeadRef = useRef(null)
-  useEffect(() => {
-    apiGet('/config/category/quotations', token)
-      .then((rows) => {
-        const arr = Array.isArray(rows) ? rows : []
-        const pricesRow = arr.find((r) => r.key === 'service_prices')
-        if (pricesRow?.value) {
-          try { setPriceOverrides(typeof pricesRow.value === 'string' ? JSON.parse(pricesRow.value) : pricesRow.value) } catch { }
-        }
-        const sizesRow = arr.find((r) => r.key === 'vehicle_sizes')
-        if (sizesRow?.value) {
-          try {
-            const parsed = typeof sizesRow.value === 'string' ? JSON.parse(sizesRow.value) : sizesRow.value
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setActiveSizes(parsed.filter((s) => s.enabled !== false))
-            }
-          } catch { }
-        }
-        const svcRow = arr.find((r) => r.key === 'custom_services')
-        if (svcRow?.value) {
-          try {
-            const parsed = typeof svcRow.value === 'string' ? JSON.parse(svcRow.value) : svcRow.value
-            if (Array.isArray(parsed)) setCustomServices(parsed)
-          } catch { }
-        }
-      })
-      .catch(() => { })
+  const loadQuotationConfig = useCallback(async () => {
+    try {
+      const rows = await apiGet('/config/category/quotations', token)
+      const arr = Array.isArray(rows) ? rows : []
+      const pricesRow = arr.find((r) => r.key === 'service_prices')
+      if (pricesRow?.value) {
+        try { setPriceOverrides(typeof pricesRow.value === 'string' ? JSON.parse(pricesRow.value) : pricesRow.value) } catch { }
+      }
+      const sizesRow = arr.find((r) => r.key === 'vehicle_sizes')
+      if (sizesRow?.value) {
+        try {
+          const parsed = typeof sizesRow.value === 'string' ? JSON.parse(sizesRow.value) : sizesRow.value
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setActiveSizes(parsed.filter((s) => s.enabled !== false))
+          }
+        } catch { }
+      }
+      const svcRow = arr.find((r) => r.key === 'custom_services')
+      if (svcRow?.value) {
+        try {
+          const parsed = typeof svcRow.value === 'string' ? JSON.parse(svcRow.value) : svcRow.value
+          if (Array.isArray(parsed)) setCustomServices(parsed)
+        } catch { }
+      }
+      const nameRow = arr.find((r) => r.key === 'service_name_overrides')
+      if (nameRow?.value) {
+        try {
+          const parsed = typeof nameRow.value === 'string' ? JSON.parse(nameRow.value) : nameRow.value
+          if (parsed && typeof parsed === 'object') setServiceNameOverrides(parsed)
+        } catch { }
+      }
+    } catch {
+      // ignore
+    }
   }, [token])
+
+  useEffect(() => {
+    loadQuotationConfig()
+    const off = onConfigUpdated((e) => {
+      const cat = e?.detail?.category
+      if (!cat || cat === 'quotations') loadQuotationConfig()
+    })
+    return off
+  }, [loadQuotationConfig])
 
   // Services Process from configuration
   const [servicesProcess, setServicesProcess] = useState({})
-  useEffect(() => {
-    apiGet('/config/category/services_process', token).then((res) => {
+  const loadServicesProcess = useCallback(async () => {
+    try {
+      const res = await apiGet('/config/category/services_process', token)
       const arr = Array.isArray(res) ? res : []
       const mapped = {}
-      arr.forEach(e => { mapped[e.key] = e.value })
+      arr.forEach((e) => { mapped[e.key] = e.value })
       setServicesProcess(mapped)
-    }).catch(() => { })
+    } catch {
+      // ignore
+    }
   }, [token])
+
+  useEffect(() => {
+    loadServicesProcess()
+    const off = onConfigUpdated((e) => {
+      const cat = e?.detail?.category
+      if (!cat || cat === 'services_process') loadServicesProcess()
+    })
+    return off
+  }, [loadServicesProcess])
 
   // ── Data loading ─────────────────────────────────────────────────────────
 
@@ -373,7 +429,14 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
     setLoading(true)
     try {
       const res = await apiGet('/quotations', token, { page: pg, limit: 10, search: srch, status: st, tab })
-      setQuotations(res.data)
+      const raw = Array.isArray(res?.data) ? res.data : []
+      const filtered = raw.filter((q) => {
+        const notes = String(q?.notes || '')
+        const isPortal = notes.includes('[PORTAL BOOKING REQUEST]')
+        const createdByNull = q?.created_by === null || q?.created_by === undefined
+        return !(isPortal && createdByNull)
+      })
+      setQuotations(filtered)
       setPagination(res.pagination)
       setPage(res.pagination.page)
     } catch (e) {
@@ -889,7 +952,9 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
       </tr>`
     }).join('')
 
-    const html = `<!DOCTYPE html>
+  const cleanNotes = (q.notes || '').split('[PORTAL BOOKING REQUEST]')[0].trim()
+
+  const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -1001,7 +1066,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
     </div>
   </div>
 
-  ${q.notes ? `<div class="section-title">Notes</div><div class="notes-box">${escapeHtml(q.notes)}</div>` : ''}
+  ${cleanNotes ? `<div class="section-title">Notes</div><div class="notes-box">${escapeHtml(cleanNotes)}</div>` : ''}
 
 </body>
 </html>`
@@ -1424,6 +1489,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
                 items={form.items}
                 vehicleSize={form.vehicleSize}
                 priceOverrides={priceOverrides}
+                nameOverrides={serviceNameOverrides}
                 customCatalog={customServices}
                 onItemsChange={(items) => setForm((p) => ({ ...p, items }))}
                 materialsNotesByCode={materialsNotesByCode}

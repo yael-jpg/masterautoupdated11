@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiGet, apiPut, apiPost, apiPatch, apiDelete, pushToast } from '../api/client'
 import { SERVICE_CATALOG, VEHICLE_SIZE_OPTIONS, getCatalogGroups } from '../data/serviceCatalog'
 import './SettingsPage.css'
 import CampaignsModal from './CampaignsModal'
 import PromoEmailModal from './PromoEmailModal'
+import { emitConfigUpdated, emitVehicleMakesUpdated } from '../utils/events'
 
 // ── Payment methods tag editor ───────────────────────────────────────────────
 const PRESET_PAYMENT_METHODS = ['Cash', 'GCash', 'Credit Card', 'Debit Card', 'Bank Transfer', 'PayMaya', 'Check']
@@ -188,6 +189,7 @@ function OperatingHoursEditor({ value, onChange, disabled }) {
 const TABS = [
   { key: 'general',         label: 'General',           icon: '⚙️' },
   { key: 'business',        label: 'Business',          icon: '🏢' },
+  { key: 'crm',             label: 'CRM',               icon: '🎯' },
   { key: 'vehicle',         label: 'Vehicles',          icon: '🚗' },
   { key: 'services',        label: 'Services',          icon: '🛠️' },
   { key: 'quotations',      label: 'Quotations',        icon: '📋' },
@@ -206,6 +208,7 @@ const TABS = [
 const CATEGORY_LABELS = {
   general:          'General Settings',
   business:         'Business Information',
+  crm:              'CRM Configuration',
   vehicle:          'Vehicle Configuration',
   booking:          'Booking Rules',
   payment:          'Payment Configuration',
@@ -224,6 +227,7 @@ const CATEGORY_LABELS = {
 const CATEGORY_DESCRIPTIONS = {
   general:          'Configure system-wide display and locale settings.',
   business:         'Manage your business identity, contact details, and tax rate.',
+  crm:              'Manage customer classifications, lead sources, and interaction methods.',
   vehicle:          'Control vehicle classification and plate validation behaviour.',
   booking:          'Define the rules that govern how appointments are created and managed.',
   payment:          'Control payment methods, minimums, and refund policies.',
@@ -282,6 +286,25 @@ const FIELD_SCHEMA = {
       fields: [
         { key: 'tax_vat_rate',      label: 'VAT Rate (%)',    type: 'number', min: 0, max: 100, step: 0.01, desc: 'Applied to taxable transactions.' },
         { key: 'operating_hours',   label: 'Operating Hours', type: 'operating-hours', desc: 'Define your business schedule by day-group.' },
+      ],
+    },
+  ],
+  crm: [
+    {
+      section: 'Classification',
+      desc: 'Define how customers are tagged and categorized.',
+      fields: [
+        { key: 'customer_types',   label: 'Customer Types',     type: 'tag-list', defaultValue: JSON.stringify(['Retail', 'Dealer', 'Corporate', 'VIP']), placeholder: 'Add type…', desc: 'e.g. Retail, Dealer, Corporate, VIP' },
+        { key: 'lead_sources',     label: 'Lead Sources',       type: 'tag-list', defaultValue: JSON.stringify(['Walk-in', 'Facebook', 'Referral', 'Google', 'Other']), placeholder: 'Add source…', desc: 'e.g. Walk-in, Facebook, Referral' },
+        { key: 'contact_methods',  label: 'Contact Methods',    type: 'tag-list', defaultValue: JSON.stringify(['Call', 'SMS', 'Email', 'WhatsApp']), placeholder: 'Add method…', desc: 'e.g. Mobile, Email, WhatsApp, Viber' },
+      ],
+    },
+    {
+      section: 'Notifications',
+      desc: 'Automation for customer follow-ups.',
+      fields: [
+        { key: 'enable_birthday_greetings', label: 'Automated Birthday Greetings', type: 'toggle', defaultValue: 'false' },
+        { key: 'enable_service_reminders',   label: 'Automated Service Reminders',  type: 'toggle', defaultValue: 'false' },
       ],
     },
   ],
@@ -428,8 +451,6 @@ const FIELD_SCHEMA = {
       fields: [
         { key: 'admin_session_token_ttl_minutes',  label: 'Admin Session Token Expiry (minutes)',  type: 'number', min: 1, max: 525600, step: 1, desc: 'Example: 600 = 10 hours.' },
         { key: 'portal_session_token_ttl_minutes', label: 'Portal Session Token Expiry (minutes)', type: 'number', min: 1, max: 525600, step: 1, desc: 'Example: 43200 = 30 days.' },
-        { key: 'force_hashed_admin_login',         label: 'Force Hashed Admin Login',             type: 'toggle', desc: 'When enabled, staff/admin login uses challenge-response only (no plaintext password fallback). Enable after accounts are upgraded.' },
-        { key: 'force_hashed_portal_login',        label: 'Force Hashed Portal Login',            type: 'toggle', desc: 'When enabled, portal login uses challenge-response only (no plaintext password fallback). Enable after accounts are upgraded.' },
       ],
     },
     {
@@ -630,6 +651,10 @@ export function SettingsPage({ token, user }) {
   const isAdmin = ['Admin', 'SuperAdmin'].includes(user?.role)
   const isSuperAdmin = user?.role === 'SuperAdmin'
 
+  const configRef = useRef({})
+  const draftRef = useRef({})
+  const autoSaveTimersRef = useRef(new Map())
+
   const [activeTab, setActiveTab]         = useState('general')
   const [config, setConfig]               = useState({})
   const [draft, setDraft]                 = useState({})
@@ -646,6 +671,119 @@ export function SettingsPage({ token, user }) {
   const [newMakeName, setNewMakeName] = useState('')
   const [newMakeCategory, setNewMakeCategory] = useState('')
   const [showCampaigns, setShowCampaigns] = useState(false)
+
+  useEffect(() => {
+    configRef.current = config
+  }, [config])
+
+  useEffect(() => {
+    draftRef.current = draft
+  }, [draft])
+
+  useEffect(() => {
+    return () => {
+      try {
+        for (const t of autoSaveTimersRef.current.values()) clearTimeout(t)
+        autoSaveTimersRef.current.clear()
+      } catch {
+        // ignore
+      }
+    }
+  }, [])
+
+  const normalizeConfigValue = (v) => {
+    if (v === undefined || v === null) return ''
+    if (typeof v === 'object') {
+      try { return JSON.stringify(v) } catch { return String(v) }
+    }
+    return String(v)
+  }
+
+  const getConfigValue = (cfg, category, key) => {
+    const entries = cfg?.[category]
+    if (Array.isArray(entries)) return entries.find((e) => e.key === key)?.value
+    if (entries && typeof entries === 'object') return entries[key]?.value
+    return undefined
+  }
+
+  const updateConfigValue = (cfg, category, key, value) => {
+    const next = { ...(cfg || {}) }
+    const entries = next[category]
+    if (Array.isArray(entries)) {
+      const idx = entries.findIndex((e) => e.key === key)
+      if (idx >= 0) {
+        const updatedEntry = { ...entries[idx], value }
+        next[category] = [...entries.slice(0, idx), updatedEntry, ...entries.slice(idx + 1)]
+      } else {
+        next[category] = [...entries, { key, value }]
+      }
+      return next
+    }
+    if (entries && typeof entries === 'object') {
+      next[category] = {
+        ...entries,
+        [key]: { ...(entries[key] || {}), value },
+      }
+      return next
+    }
+    next[category] = [{ key, value }]
+    return next
+  }
+
+  const isCategoryDirty = (category, nextDraft, cfg) => {
+    const categoryDraft = nextDraft?.[category] || {}
+    for (const [k, v] of Object.entries(categoryDraft)) {
+      const saved = getConfigValue(cfg, category, k)
+      if (normalizeConfigValue(saved) !== normalizeConfigValue(v)) return true
+    }
+    return false
+  }
+
+  const scheduleAutoSave = useCallback((category, key, value, nextDraft) => {
+    if (!isAdmin) return
+    const timerKey = `${category}:${key}`
+
+    try {
+      const existing = autoSaveTimersRef.current.get(timerKey)
+      if (existing) clearTimeout(existing)
+    } catch {
+      // ignore
+    }
+
+    const t = setTimeout(async () => {
+      try {
+        const saved = getConfigValue(configRef.current, category, key)
+        if (normalizeConfigValue(saved) === normalizeConfigValue(value)) {
+          // Nothing to save (or already saved)
+          setDirtyCategories((prev) => {
+            const next = new Set(prev)
+            if (!isCategoryDirty(category, nextDraft || draftRef.current, configRef.current)) next.delete(category)
+            return next
+          })
+          return
+        }
+
+        await apiPut(`/config/${category}/${key}`, token, { value })
+        setConfig((prev) => {
+          const nextCfg = updateConfigValue(prev, category, key, value)
+          configRef.current = nextCfg
+          return nextCfg
+        })
+
+        emitConfigUpdated({ source: 'autosave', category, key })
+
+        setDirtyCategories((prev) => {
+          const next = new Set(prev)
+          if (!isCategoryDirty(category, nextDraft || draftRef.current, configRef.current)) next.delete(category)
+          return next
+        })
+      } catch (e) {
+        pushToast('error', e.message)
+      }
+    }, 900)
+
+    autoSaveTimersRef.current.set(timerKey, t)
+  }, [isAdmin, token])
 
   // ── Promo Codes state ────────────────────────────────────────────────────
   const [promoCodes, setPromoCodes]           = useState([])
@@ -675,6 +813,8 @@ export function SettingsPage({ token, user }) {
   const [quotPrices, setQuotPrices]         = useState({})
   const [quotPricesDirty, setQuotPricesDirty] = useState(false)
   const [quotPricesSaving, setQuotPricesSaving] = useState(false)
+  const [quotServiceNames, setQuotServiceNames] = useState({})
+  const [quotServiceNamesDirty, setQuotServiceNamesDirty] = useState(false)
   const [quotSizes, setQuotSizes] = useState(() =>
     VEHICLE_SIZE_OPTIONS.map((s) => ({ ...s, enabled: true }))
   )
@@ -735,6 +875,7 @@ export function SettingsPage({ token, user }) {
       setNewMakeName('')
       setNewMakeCategory('')
       await loadVehicleMakes()
+      emitVehicleMakesUpdated({ source: 'settings', action: 'add' })
     } catch (err) {
       pushToast('error', err.message || 'Failed to add brand')
     } finally {
@@ -751,6 +892,7 @@ export function SettingsPage({ token, user }) {
       await apiPatch(`/vehicle-makes/${id}`, token, { is_active: !current })
       pushToast('success', 'Make updated')
       await loadVehicleMakes()
+      emitVehicleMakesUpdated({ source: 'settings', action: 'toggle', id })
     } catch (e) {
       pushToast('error', e.message)
     }
@@ -830,18 +972,32 @@ export function SettingsPage({ token, user }) {
         if (Array.isArray(parsed)) setQuotCustomServices(parsed)
       } catch {}
     }
+    const nameEntry = entries.find((e) => e.key === 'service_name_overrides')
+    if (nameEntry?.value) {
+      try {
+        const parsed = typeof nameEntry.value === 'string' ? JSON.parse(nameEntry.value) : nameEntry.value
+        if (parsed && typeof parsed === 'object') setQuotServiceNames(parsed)
+      } catch {}
+    }
   }, [config.quotations])
 
   async function handleSaveQuotationPrices() {
     setQuotPricesSaving(true)
     try {
       await apiPut('/config/quotations/service_prices', token, { value: JSON.stringify(quotPrices) })
+      if (quotServiceNamesDirty) {
+        await apiPut('/config/quotations/service_name_overrides', token, { value: JSON.stringify(quotServiceNames) })
+        setQuotServiceNamesDirty(false)
+      }
       if (quotCustomSvcDirty) {
         await apiPut('/config/quotations/custom_services', token, { value: JSON.stringify(quotCustomServices) })
         setQuotCustomSvcDirty(false)
       }
       pushToast('success', 'Service pricing saved')
       setQuotPricesDirty(false)
+      emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'service_prices' })
+      if (quotServiceNamesDirty) emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'service_name_overrides' })
+      if (quotCustomSvcDirty) emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'custom_services' })
       await loadConfig()
     } catch (e) {
       pushToast('error', e.message)
@@ -856,6 +1012,7 @@ export function SettingsPage({ token, user }) {
       await apiPut('/config/quotations/vehicle_sizes', token, { value: JSON.stringify(quotSizes) })
       pushToast('success', 'Vehicle sizes saved')
       setQuotSizesDirty(false)
+      emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'vehicle_sizes' })
       await loadConfig()
     } catch (e) {
       pushToast('error', e.message)
@@ -870,6 +1027,7 @@ export function SettingsPage({ token, user }) {
       await apiPut('/config/quotations/custom_services', token, { value: JSON.stringify(quotCustomServices) })
       pushToast('success', 'Custom services saved')
       setQuotCustomSvcDirty(false)
+      emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'custom_services' })
       await loadConfig()
     } catch (e) {
       pushToast('error', e.message)
@@ -883,11 +1041,21 @@ export function SettingsPage({ token, user }) {
 
   // ── Draft change handlers ────────────────────────────────────────────────
   function handleChange(category, key, value) {
-    setDraft((prev) => ({
-      ...prev,
-      [category]: { ...(prev[category] || {}), [key]: value },
-    }))
-    setDirtyCategories((prev) => new Set(prev).add(category))
+    const current = draftRef.current || {}
+    const nextCategory = { ...(current[category] || {}), [key]: value }
+    const nextDraft = { ...current, [category]: nextCategory }
+
+    draftRef.current = nextDraft
+    setDraft(nextDraft)
+
+    setDirtyCategories((prev) => {
+      const next = new Set(prev)
+      if (isCategoryDirty(category, nextDraft, configRef.current)) next.add(category)
+      else next.delete(category)
+      return next
+    })
+
+    scheduleAutoSave(category, key, value, nextDraft)
   }
 
   function handleToggle(category, key, current) {
@@ -923,6 +1091,10 @@ export function SettingsPage({ token, user }) {
         await apiPut(`/config/${category}/${key}`, token, { value })
       }
 
+      if (updates.length > 0) {
+        emitConfigUpdated({ source: 'settings', category, keys: updates.map((u) => u.key) })
+      }
+
       pushToast('success', `${CATEGORY_LABELS[category]} saved successfully`)
       setDirtyCategories((prev) => {
         const next = new Set(prev)
@@ -946,6 +1118,7 @@ export function SettingsPage({ token, user }) {
     try {
       await apiPost(`/config/${category}/reset`, token, {})
       pushToast('success', `${CATEGORY_LABELS[category]} reset to defaults`)
+      emitConfigUpdated({ source: 'settings', category, action: 'reset' })
       setDirtyCategories((prev) => {
         const next = new Set(prev)
         next.delete(category)
@@ -1956,7 +2129,30 @@ export function SettingsPage({ token, user }) {
                           <tbody>
                             {services.map((service) => (
                               <tr key={service.code} style={{ '&:hover': { background: 'rgba(255,255,255,0.02)' } }}>
-                                <td style={{ padding: '5px 12px', color: '#d0d8e8', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: 13 }}>{service.name}</td>
+                                <td style={{ padding: '5px 12px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                  <input
+                                    className="settings-input"
+                                    value={quotServiceNames[service.code] ?? service.name}
+                                    readOnly={!isSuperAdmin}
+                                    disabled={!isSuperAdmin}
+                                    onChange={(e) => {
+                                      setQuotServiceNames((prev) => ({ ...prev, [service.code]: e.target.value }))
+                                      setQuotServiceNamesDirty(true)
+                                      setQuotPricesDirty(true)
+                                    }}
+                                    style={{
+                                      width: '100%',
+                                      minWidth: '140px',
+                                      background: 'rgba(255,255,255,0.04)',
+                                      border: quotServiceNames[service.code] ? '1px solid rgba(255,255,255,0.35)' : '1px solid rgba(255,255,255,0.12)',
+                                      borderRadius: 4,
+                                      color: quotServiceNames[service.code] ? '#7dd3fc' : '#d0d8e8',
+                                      fontSize: 13,
+                                      padding: '4px 8px',
+                                      transition: 'all 0.2s ease',
+                                    }}
+                                  />
+                                </td>
                                 {enabledSizes.map((sz) => {
                                   const hasSize = service.sizePrices[sz.key] !== undefined
                                   const override = quotPrices[service.code]?.[sz.key]
@@ -2038,7 +2234,32 @@ export function SettingsPage({ token, user }) {
                             <tbody>
                               {services.map((service) => (
                                 <tr key={service.code}>
-                                  <td style={{ padding: '5px 12px', color: '#c0c8d8', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: 13 }}>{service.name}</td>
+                                  <td style={{ padding: '5px 12px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                    <input
+                                      className="settings-input"
+                                      value={service.name}
+                                      readOnly={!isSuperAdmin}
+                                      disabled={!isSuperAdmin}
+                                      onChange={(e) => {
+                                        setQuotCustomServices((prev) => 
+                                          prev.map((s) => s.code === service.code ? { ...s, name: e.target.value } : s)
+                                        )
+                                        setQuotCustomSvcDirty(true)
+                                        setQuotPricesDirty(true)
+                                      }}
+                                      style={{
+                                        width: '100%',
+                                        minWidth: '140px',
+                                        background: 'rgba(255,255,255,0.04)',
+                                        border: '1px solid rgba(255,255,255,0.12)',
+                                        borderRadius: 4,
+                                        color: '#d0d8e8',
+                                        fontSize: 13,
+                                        padding: '4px 8px',
+                                        transition: 'all 0.2s ease',
+                                      }}
+                                    />
+                                  </td>
                                   {enabledSizes.map((sz) => {
                                     const override = quotPrices[service.code]?.[sz.key]
                                     const defaultVal = service.sizePrices?.[sz.key] ?? 0

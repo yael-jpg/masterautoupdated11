@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { portalGet } from '../../api/portalClient'
+import { ApptDetailModal } from './ApptDetailModal'
 
 const STATUS_DOT = {
   Scheduled: '#c8c8c8',
@@ -20,6 +21,7 @@ export function PortalDashboard({ customer, onNavigate }) {
   const [appointments, setAppointments] = useState([])
   const [vehicles, setVehicles] = useState([])
   const [loading, setLoading] = useState(true)
+  const [selectedAppt, setSelectedAppt] = useState(null)
 
   useEffect(() => {
     let stopped = false
@@ -93,6 +95,15 @@ export function PortalDashboard({ customer, onNavigate }) {
 
   // Recent vehicles list (appointments, latest 5)
   const recentRows = appointments.slice(0, 5)
+
+  const markCancelled = (appointmentId) => {
+    const nowIso = new Date().toISOString()
+    setAppointments((prev) => prev.map((a) => (
+      a.id === appointmentId
+        ? { ...a, cancel_request_status: 'PENDING', cancel_requested_at: nowIso }
+        : a
+    )))
+  }
 
   if (loading) {
     return (
@@ -207,7 +218,17 @@ export function PortalDashboard({ customer, onNavigate }) {
           ) : (
             <div className="portal-stack">
               {recentRows.map((a) => (
-                <div className="portal-dash-vehicle-row" key={a.id}>
+                <div
+                  className="portal-dash-vehicle-row is-clickable"
+                  key={a.id}
+                  role="button"
+                  tabIndex={0}
+                  title="Click to view details"
+                  onClick={() => setSelectedAppt(a)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') setSelectedAppt(a)
+                  }}
+                >
                   <div className="portal-dash-vr-date">
                     {new Date(a.schedule_start).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </div>
@@ -235,6 +256,13 @@ export function PortalDashboard({ customer, onNavigate }) {
 
       </div>{/* end portal-dash-body */}
 
+      {selectedAppt && (
+        <ApptDetailModal
+          appt={selectedAppt}
+          onClose={() => setSelectedAppt(null)}
+          onCancelled={markCancelled}
+        />
+      )}
     </div>
   )
 }

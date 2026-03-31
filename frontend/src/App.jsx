@@ -6,7 +6,6 @@ import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
 import { DashboardHome } from './pages/DashboardHome'
 import { CRMPage } from './pages/CrmPage'
-import { VehiclesPage } from './pages/VehiclesPage'
 import { SalesPage } from './pages/SalesPage'
 import { ServicesPage } from './pages/ServicesPage'
 import { PaymentsPage } from './pages/PaymentsPage'
@@ -21,7 +20,7 @@ import { OnlineQuotationRequestsPage } from './pages/OnlineQuotationRequestsPage
 import { SettingsPage } from './pages/SettingsPage'
 import { apiDownload, buildApiUrl, loginRequest, pushToast } from './api/client'
 import { ToastViewport } from './components/ToastViewport'
-import { computeNewPortalCancellations, computeNewPortalCancellationRequests, computeNewPortalQuotationBookings, createPortalBookingWatchState } from './utils/portalBookingWatcher'
+import { computeNewPortalBookings, computeNewPortalCancellations, computeNewPortalCancellationRequests, computeNewPortalQuotationBookings, createPortalBookingWatchState } from './utils/portalBookingWatcher'
 import { getJwtExpMs } from './utils/jwt'
 
 function SessionExpiredOverlay({ message, onResignIn }) {
@@ -65,9 +64,11 @@ function App() {
   const [networkBusy, setNetworkBusy] = useState(false)
   const [toasts, setToasts] = useState([])
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth <= 1024)
-  const [preselectedCustomerId, setPreselectedCustomerId] = useState(null)
+  const [crmAutoOpenCustomerId, setCrmAutoOpenCustomerId] = useState(null)
+  const [crmAutoOpenRegisterVehicle, setCrmAutoOpenRegisterVehicle] = useState(false)
   const [pendingQuotation, setPendingQuotation] = useState(null)
   const [preselectedBooking, setPreselectedBooking] = useState(null)
+  const [openAppointmentId, setOpenAppointmentId] = useState(null)
   const [fromQuotation, setFromQuotation] = useState(null)
   const [openJobOrderId, setOpenJobOrderId] = useState(null)
   const [notifications, setNotifications] = useState([
@@ -79,6 +80,8 @@ function App() {
       read: false,
     },
   ])
+  const notifiedPortalAppointmentIdsRef = useRef(new Set())
+  const [onlineLeadCount, setOnlineLeadCount] = useState(0)
 
   // ── Admin notification sound ─────────────────────────────────────────
   // Notes:
@@ -191,6 +194,18 @@ function App() {
   const customerWatchRef = useRef({ initialized: false, lastSeenIso: null, seenIds: new Set() })
   const vehicleWatchRef = useRef({ initialized: false, lastSeenId: null, seenIds: new Set() })
 
+  // Stabilize the global "Syncing data…" indicator so it doesn't flicker on fast requests.
+  // - show only if requests last longer than a short delay
+  // - once shown, keep visible for a minimum duration
+  // - when requests hit 0, wait briefly before hiding (prevents rapid hide/show loops)
+  const networkBusyUiRef = useRef({
+    isShown: false,
+    shownAtMs: 0,
+    lastActive: 0,
+    showTimer: null,
+    hideTimer: null,
+  })
+
   // Keep staff login URL clean:
   // - Logged out → always show /admin/login (even if user opens /admin)
   // - Logged in  → show /admin (if user is on /admin/login)
@@ -213,13 +228,26 @@ function App() {
     if (!session.token) return
 
     let stopped = false
-    const intervalMs = 7000
+    const intervalMs = 5000
 
     // Reset per-login session state
     portalWatchRef.current = createPortalBookingWatchState()
     onlineQuotationWatchRef.current = { initialized: false, lastSeenIso: null, seenIds: new Set() }
     customerWatchRef.current = { initialized: false, lastSeenIso: null, seenIds: new Set() }
     vehicleWatchRef.current = { initialized: false, lastSeenId: null, seenIds: new Set() }
+    notifiedPortalAppointmentIdsRef.current = new Set()
+
+    const fetchOnlineLeadCount = async () => {
+      try {
+        const leadParams = new URLSearchParams({ page: '1', limit: '1', status: 'New' })
+        const { url, headers } = buildApiUrl(`/online-quotation-requests?${leadParams.toString()}`, session.token)
+        const res = await fetch(url, { headers })
+        if (res.ok) {
+          const result = await res.json().catch(() => ({}))
+          setOnlineLeadCount(result?.pagination?.total || 0)
+        }
+      } catch (_) {}
+    }
 
     const addOnlineBookingRequestNotification = (quotation) => {
       const customerText = quotation?.customer_name || 'Customer'
@@ -239,7 +267,7 @@ function App() {
       setNotifications((prev) => [
         {
           id: `${Date.now()}-${Math.random()}`,
-          title: 'Portal Quotation Request',
+          title: 'Portal Schedule Request',
           message: `${customerText} • ${plateText} • ${serviceText} • Ref: ${quotationNo}`,
           details: {
             type: 'quotation',
@@ -344,6 +372,33 @@ function App() {
       ])
     }
 
+    const addOnlineScheduleRequestNotification = (appointment) => {
+      const customerText = appointment?.customer_name || 'Customer'
+      const plateText = appointment?.plate_number ? ` • ${appointment.plate_number}` : ''
+      const rawService = appointment?.all_services || appointment?.service_name
+      const serviceText = rawService ? ` • ${rawService}` : ''
+      const time = new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
+
+      setNotifications((prev) => [
+        {
+          id: `${Date.now()}-${Math.random()}`,
+          title: 'Portal Schedule Request',
+          message: `${customerText}${plateText}${serviceText}`,
+          details: {
+            type: 'appointment',
+            appointment_id: appointment?.id,
+            customer_name: appointment?.customer_name,
+            plate_number: appointment?.plate_number,
+            service_name: appointment?.service_name,
+            schedule_start: appointment?.schedule_start,
+          },
+          time,
+          read: false,
+        },
+        ...prev,
+      ])
+    }
+
     const poll = async (isInitial = false) => {
       try {
         // NEW: Portal booking requests create quotations (not appointments)
@@ -367,9 +422,68 @@ function App() {
 
         if (newQuotationRows.length > 0) {
           newQuotationRows.forEach((q) => {
-            addOnlineBookingRequestNotification(q)
+            // Portal schedule requests now create appointments; notifications should come from appointments.
             window.dispatchEvent(new CustomEvent('ma:quotations-updated', { detail: { source: 'portal', quotationId: q.id } }))
           })
+        }
+
+        // Poll for new portal schedule requests (appointments created by portal)
+        try {
+          const apptParams = new URLSearchParams({
+            page: '1',
+            limit: '10',
+            tab: 'active',
+            sortBy: 'createdAt',
+            sortDir: 'desc',
+          })
+          const { url: apptUrl, headers: apptHeaders } = buildApiUrl(`/appointments?${apptParams.toString()}`, session.token)
+          const apptRes = await fetch(apptUrl, { headers: apptHeaders })
+          if (!apptRes.ok) throw new Error('appointment poll failed')
+          const apptResult = await apptRes.json().catch(() => ({}))
+          const apptRows = apptResult?.data || []
+
+          // Ensure Requested portal schedules always notify at least once per login session.
+          // This prevents missed notifications if the watcher baseline/diff fails for any reason.
+          const isPortalRow = (r) => {
+            if (!r) return false
+            const source = String(r.booking_source || '').toLowerCase()
+            if (source === 'portal') return true
+            const notes = String(r.notes || '')
+            return notes.includes('[PORTAL BOOKING REQUEST]')
+          }
+          const isRequested = (r) => String(r?.status || '').toLowerCase() === 'requested'
+          const notifiedSet = notifiedPortalAppointmentIdsRef.current
+          apptRows
+            .filter((r) => isPortalRow(r) && isRequested(r))
+            .forEach((r) => {
+              const id = r?.id
+              if (id === undefined || id === null) return
+              if (notifiedSet.has(id)) return
+              notifiedSet.add(id)
+              addOnlineScheduleRequestNotification(r)
+              window.dispatchEvent(
+                new CustomEvent('ma:appointments-updated', {
+                  detail: { source: 'portal', appointmentId: id, status: r?.status },
+                }),
+              )
+            })
+
+          const { nextState: nextStateAfterAppts, newRows: newApptRows } = computeNewPortalBookings(
+            portalWatchRef.current,
+            apptRows,
+            new Date(),
+          )
+          portalWatchRef.current = nextStateAfterAppts
+
+          newApptRows.forEach((appt) => {
+            if (appt?.id !== undefined && appt?.id !== null) {
+              notifiedPortalAppointmentIdsRef.current.add(appt.id)
+            }
+            addOnlineScheduleRequestNotification(appt)
+            window.dispatchEvent(new CustomEvent('ma:appointments-updated', { detail: { source: 'portal', appointmentId: appt.id, status: appt.status } }))
+          })
+        } catch (_) {
+          // Silent
         }
 
         // Poll for new portal cancellation requests (pending approval)
@@ -444,6 +558,12 @@ function App() {
           if (!leadRes.ok) throw new Error('online quotation poll failed')
           const leadResult = await leadRes.json().catch(() => ({}))
           const leadRows = Array.isArray(leadResult?.data) ? leadResult.data : []
+          const totalCount = leadResult?.pagination?.total || 0
+          setOnlineLeadCount((prev) => {
+            // Only update if different to avoid redundant re-renders
+            if (prev !== totalCount) return totalCount
+            return prev
+          })
 
           const watch = onlineQuotationWatchRef.current
 
@@ -707,15 +827,77 @@ function App() {
       if (!stopped) poll(false)
     }, intervalMs)
 
+    const onlineUpdateHandler = (e) => {
+      // If the update came from staff (promote/delete/status change), refresh the count immediately.
+      if (e?.detail?.source === 'staff' && !stopped) {
+        fetchOnlineLeadCount()
+      }
+    }
+    window.addEventListener('ma:online-quotation-requests-updated', onlineUpdateHandler)
+
     return () => {
       stopped = true
       clearInterval(timer)
+      window.removeEventListener('ma:online-quotation-requests-updated', onlineUpdateHandler)
     }
   }, [session.token])
 
   useEffect(() => {
     const handleNetwork = (event) => {
-      setNetworkBusy((event.detail?.activeRequests || 0) > 0)
+      const active = Number(event?.detail?.activeRequests || 0)
+      const ui = networkBusyUiRef.current
+      const now = Date.now()
+
+      ui.lastActive = active
+
+      const showDelayMs = 250
+      const minVisibleMs = 700
+      const hideDelayMs = 300
+
+      const clearTimer = (key) => {
+        const t = ui[key]
+        if (t) clearTimeout(t)
+        ui[key] = null
+      }
+
+      if (active > 0) {
+        // If we're about to show, don't also hide.
+        clearTimer('hideTimer')
+
+        // Already shown: keep it.
+        if (ui.isShown) return
+
+        // Only show if the request(s) are not just a quick blip.
+        if (!ui.showTimer) {
+          ui.showTimer = setTimeout(() => {
+            ui.showTimer = null
+            // Requests might have finished during the delay.
+            if (Number(ui.lastActive || 0) <= 0) return
+            ui.isShown = true
+            ui.shownAtMs = Date.now()
+            setNetworkBusy(true)
+          }, showDelayMs)
+        }
+        return
+      }
+
+      // active === 0
+      clearTimer('showTimer')
+      if (!ui.isShown) return
+
+      const elapsed = now - (ui.shownAtMs || now)
+      const remainingMin = Math.max(minVisibleMs - elapsed, 0)
+      const delay = Math.max(remainingMin, hideDelayMs)
+
+      // Avoid rapid hide/show loops between back-to-back requests.
+      if (!ui.hideTimer) {
+        ui.hideTimer = setTimeout(() => {
+          ui.hideTimer = null
+          ui.isShown = false
+          ui.shownAtMs = 0
+          setNetworkBusy(false)
+        }, delay)
+      }
     }
 
     const handleToast = (event) => {
@@ -767,6 +949,17 @@ function App() {
       window.removeEventListener('ma:network', handleNetwork)
       window.removeEventListener('ma:toast', handleToast)
       window.removeEventListener('ma:session-expired', handleSessionExpired)
+
+      // Cleanup any pending timers
+      const ui = networkBusyUiRef.current
+      if (ui?.showTimer) clearTimeout(ui.showTimer)
+      if (ui?.hideTimer) clearTimeout(ui.hideTimer)
+      if (ui) {
+        ui.showTimer = null
+        ui.hideTimer = null
+        ui.isShown = false
+        ui.shownAtMs = 0
+      }
     }
   }, [])
 
@@ -851,19 +1044,6 @@ function App() {
         ) 
       },
       { 
-        key: 'vehicles',
-        group: 'master',
-        label: 'Vehicles',
-        icon: (
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"></path>
-            <circle cx="7" cy="17" r="2"></circle>
-            <circle cx="17" cy="17" r="2"></circle>
-            <path d="M5 17h12"></path>
-          </svg>
-        ) 
-      },
-      { 
         key: 'services',
         group: 'master',
         label: 'Services',
@@ -884,6 +1064,7 @@ function App() {
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
           </svg>
         ),
+        badge: onlineLeadCount > 0 ? onlineLeadCount : null,
       },
       {
         key: 'quotations',
@@ -995,32 +1176,44 @@ function App() {
         ),
       }] : []),
     ],
-    [session.user?.role],
+    [session.user?.role, onlineLeadCount],
   )
 
   const pageMap = {
     dashboard: <DashboardHome token={session.token} onNavigate={setActiveKey} />,
-    crm: <CRMPage token={session.token} user={session.user} onAfterSave={(newCustomer) => {
-      setPreselectedCustomerId(newCustomer.id)
-      setActiveKey('vehicles')
+    crm: <CRMPage
+      token={session.token}
+      user={session.user}
+      autoOpenCustomerId={crmAutoOpenCustomerId}
+      autoOpenRegisterVehicle={crmAutoOpenRegisterVehicle}
+      onAutoOpenConsumed={() => setCrmAutoOpenCustomerId(null)}
+      onAutoOpenRegisterVehicleConsumed={() => setCrmAutoOpenRegisterVehicle(false)}
+      onAfterSave={(newCustomer) => {
+        // After registering a customer, immediately open their details in CRM and show the Register Vehicle modal.
+        setCrmAutoOpenCustomerId(newCustomer.id)
+        setCrmAutoOpenRegisterVehicle(true)
+        setActiveKey('crm')
     }} onNewQuotation={(customer) => {
       setPendingQuotation({ customerId: customer.id })
       setActiveKey('quotations')
-    }} onRegisterVehicle={(customer) => {
-      setPreselectedCustomerId(customer.id)
-      setActiveKey('vehicles')
-    }} />,
-    vehicles: <VehiclesPage token={session.token} user={session.user} preselectedCustomerId={preselectedCustomerId} onPreselectedConsumed={() => setPreselectedCustomerId(null)} onAfterVehicleSave={(vehicle) => {
-      const v = vehicle && (vehicle.data || vehicle) ? (vehicle.data || vehicle) : vehicle
-      if (v && v.id) {
-        setPendingQuotation({ customerId: v.customer_id || v.customerId || v.customerId, vehicleId: v.id })
-        setActiveKey('quotations')
-      }
     }} />,
     sales: <SalesPage token={session.token} />,
     services: <ServicesPage token={session.token} />,
     payments: <PaymentsPage token={session.token} user={session.user} />,
-    scheduling: <SchedulingPage token={session.token} user={session.user} preselectedBooking={preselectedBooking} onPreselectedBookingConsumed={() => setPreselectedBooking(null)} onNavigateToJobOrder={(joId) => { setOpenJobOrderId(joId); setActiveKey('job-orders') }} />,
+    scheduling: (
+      <SchedulingPage
+        token={session.token}
+        user={session.user}
+        preselectedBooking={preselectedBooking}
+        onPreselectedBookingConsumed={() => setPreselectedBooking(null)}
+        openAppointmentId={openAppointmentId}
+        onOpenAppointmentConsumed={() => setOpenAppointmentId(null)}
+        onNavigateToJobOrder={(joId) => {
+          setOpenJobOrderId(joId)
+          setActiveKey('job-orders')
+        }}
+      />
+    ),
     admin: session.user?.role === 'SuperAdmin' ? <AdminPage token={session.token} user={session.user} /> : <DashboardHome token={session.token} onNavigate={setActiveKey} />,
     quotations: <QuotationsPage token={session.token} user={session.user} preselectedQuotation={pendingQuotation} onPreselectedConsumed={() => setPendingQuotation(null)} onRequestCreateBooking={(payload) => {
       // payload: { quotationId, customerId, vehicleId }
@@ -1122,6 +1315,46 @@ function App() {
     )
   }
 
+  const handleOpenNotification = async (notification) => {
+    const type = notification?.details?.type
+    if (type !== 'quotation' && type !== 'appointment') return false
+
+    if (type === 'appointment') {
+      const appointmentId = notification?.details?.appointment_id
+      if (!appointmentId) return false
+      setOpenAppointmentId(appointmentId)
+      setActiveKey('scheduling')
+      return true
+    }
+
+    const quotationId = notification?.details?.quotation_id
+    if (!quotationId) return false
+
+    try {
+      let customerId = notification?.details?.customer_id
+      let vehicleId = notification?.details?.vehicle_id
+
+      if (!customerId || !vehicleId) {
+        const { url, headers } = buildApiUrl(`/quotations/${quotationId}`, session.token)
+        const res = await fetch(url, { headers })
+        if (res.ok) {
+          const q = await res.json().catch(() => null)
+          customerId = customerId || q?.customer_id
+          vehicleId = vehicleId || q?.vehicle_id
+        }
+      }
+
+      if (!customerId || !vehicleId) return false
+
+      setPreselectedBooking({ quotationId, customerId, vehicleId })
+      setActiveKey('scheduling')
+      return true
+    } catch (err) {
+      pushToast('error', err?.message || 'Failed to open notification')
+      return false
+    }
+  }
+
   const handleClearAllNotifications = () => {
     setNotifications([])
   }
@@ -1186,6 +1419,7 @@ function App() {
             notifications={notifications}
             onMarkAsRead={handleMarkAsRead}
             onClearAllNotifications={handleClearAllNotifications}
+            onOpenNotification={handleOpenNotification}
           />
           <div className="dashboard-content">{pageMap[activeKey]}</div>
         </section>

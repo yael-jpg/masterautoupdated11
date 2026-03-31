@@ -4,16 +4,7 @@ import { pushToast } from '../../api/client'
 import { Modal } from '../../components/Modal'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { SearchableSelect } from '../../components/SearchableSelect'
-
-const IMG_BASE = 'http://localhost:5000'
-const PHOTO_TYPES = ['before', 'after', 'damage', 'general']
-const TYPE_LABEL  = { before: 'Before', after: 'After', damage: 'Damage', general: 'General' }
-const TYPE_COLOR  = {
-  before:  { bg: 'rgba(160,184,200,0.14)', text: '#a0b8c8' },
-  after:   { bg: 'rgba(34,197,94,0.14)',  text: '#86efac' },
-  damage:  { bg: 'rgba(239,68,68,0.14)',  text: '#fca5a5' },
-  general: { bg: 'rgba(255,255,255,0.07)', text: '#e2e2e2' },
-}
+import { onVehicleMakesUpdated } from '../../utils/events'
 
 function OwnerSelect({ me }) {
   const label = me?.full_name || me?.fullName || 'My Account'
@@ -33,50 +24,9 @@ function OwnerSelect({ me }) {
   )
 }
 
-function LightboxModal({ photo, onClose }) {
-  useEffect(() => {
-    const handler = (e) => e.key === 'Escape' && onClose()
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [onClose])
-
-  return (
-    <div onClick={onClose} className="portal-lightbox-overlay">
-      <div onClick={(e) => e.stopPropagation()} className="portal-lightbox-panel">
-        <img
-          src={`${IMG_BASE}${photo.file_url}`}
-          alt={photo.tag || photo.photo_type}
-          className="portal-lightbox-image"
-        />
-        <div className="portal-lightbox-meta">
-          <span
-            className="portal-lightbox-pill"
-            style={{
-              '--pill-bg': TYPE_COLOR[photo.photo_type]?.bg || TYPE_COLOR.general.bg,
-              '--pill-text': TYPE_COLOR[photo.photo_type]?.text || TYPE_COLOR.general.text,
-            }}
-          >
-            {TYPE_LABEL[photo.photo_type] || photo.photo_type}
-          </span>
-          {photo.tag && <span className="portal-lightbox-tag">{photo.tag}</span>}
-          <span className="portal-lightbox-date">
-            {new Date(photo.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
-          </span>
-        </div>
-        <button
-          onClick={onClose}
-          className="portal-lightbox-close"
-        >×</button>
-      </div>
-    </div>
-  )
-}
-
 function VehicleDetail({ vehicleId }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [photoTab, setPhotoTab] = useState('all')
-  const [lightbox, setLightbox] = useState(null)
 
   useEffect(() => {
     setLoading(true)
@@ -97,10 +47,18 @@ function VehicleDetail({ vehicleId }) {
     )
   }
 
-  const { photos = [], serviceRecords = [], error: detailError } = data || {}
-  const tabFilter = photoTab === 'all' ? photos : photos.filter((p) => p.photo_type === photoTab)
-  const availableTabs = ['all', ...PHOTO_TYPES.filter((t) => photos.some((p) => p.photo_type === t))]
-  const damageRecords = serviceRecords.filter((r) => r.damage_notes)
+  const {
+    plate_number,
+    make,
+    model,
+    year,
+    variant,
+    color,
+    odometer,
+    conduction_sticker,
+    vin_chassis,
+    error: detailError,
+  } = data || {}
 
   if (detailError) {
     return (
@@ -112,118 +70,58 @@ function VehicleDetail({ vehicleId }) {
 
   return (
     <div className="portal-vehicle-detail-panel">
-      {/* ── Photos section ── */}
       <div className="portal-vd-section-title">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
-          <polyline points="21 15 16 10 5 21"/>
+          <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2" />
+          <circle cx="7" cy="17" r="2" /><circle cx="17" cy="17" r="2" />
         </svg>
-        Photos
-        <span className="portal-vd-count">{photos.length}</span>
+        Vehicle Details
       </div>
 
-      {photos.length === 0 ? (
-        <p className="portal-vd-empty">No photos uploaded yet.</p>
-      ) : (
-        <>
-          {/* Tab filter */}
-          <div className="portal-vd-tabs">
-            {availableTabs.map((t) => (
-              <button
-                key={t}
-                onClick={() => setPhotoTab(t)}
-                className={`portal-vd-tab${photoTab === t ? ' portal-vd-tab--active' : ''}`}
-                style={photoTab === t ? {
-                  '--tab-bg': t === 'all' ? '#e2e2e2' : TYPE_COLOR[t]?.bg,
-                  '--tab-text': t === 'all' ? '#141414' : TYPE_COLOR[t]?.text,
-                  '--tab-border': t === 'all' ? '#e2e2e2' : TYPE_COLOR[t]?.text,
-                } : undefined}
-              >
-                {t === 'all' ? `All (${photos.length})` : `${TYPE_LABEL[t]} (${photos.filter((p) => p.photo_type === t).length})`}
-              </button>
-            ))}
+      <div className="portal-info-box portal-info-box--row">
+        {plate_number && (
+          <div className="portal-info-item">
+            <span className="portal-info-label">Plate:</span>
+            <span className="portal-info-value">{plate_number}</span>
           </div>
-
-          {/* Photo grid */}
-          <div className="portal-photo-grid">
-            {tabFilter.map((photo) => {
-              const badgeType = PHOTO_TYPES.includes(photo.photo_type) ? photo.photo_type : 'general'
-              return (
-                <div
-                  key={photo.id}
-                  className="portal-photo-thumb"
-                  onClick={() => setLightbox(photo)}
-                >
-                  <img
-                    src={`${IMG_BASE}${photo.file_url}`}
-                    alt={photo.tag || photo.photo_type}
-                    loading="lazy"
-                  />
-                  <span className={`portal-photo-type-badge portal-photo-type-badge--${badgeType}`}>
-                    {TYPE_LABEL[photo.photo_type] || photo.photo_type}
-                  </span>
-                  {photo.tag && (
-                    <div className="portal-photo-tag">{photo.tag}</div>
-                  )}
-                </div>
-              )
-            })}
+        )}
+        {(year || make || model) && (
+          <div className="portal-info-item">
+            <span className="portal-info-label">Vehicle:</span>
+            <span className="portal-info-value">{[year, make, model].filter(Boolean).join(' ')}</span>
           </div>
-        </>
-      )}
-
-      {/* ── Service & Damage Records section ── */}
-      <div className="portal-vd-section-title portal-vd-section-title--mt">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-        </svg>
-        Service &amp; Damage Records
-        <span className="portal-vd-count">{serviceRecords.length}</span>
-        {damageRecords.length > 0 && (
-          <span className="portal-vd-damage-pill">
-            {damageRecords.length} damage
-          </span>
+        )}
+        {variant && (
+          <div className="portal-info-item">
+            <span className="portal-info-label">Variant:</span>
+            <span className="portal-info-value">{variant}</span>
+          </div>
+        )}
+        {color && (
+          <div className="portal-info-item">
+            <span className="portal-info-label">Color:</span>
+            <span className="portal-info-value">{color}</span>
+          </div>
+        )}
+        {odometer != null && (
+          <div className="portal-info-item">
+            <span className="portal-info-label">Odometer:</span>
+            <span className="portal-info-value">{Number(odometer).toLocaleString()} km</span>
+          </div>
+        )}
+        {conduction_sticker && (
+          <div className="portal-info-item">
+            <span className="portal-info-label">Conduction:</span>
+            <span className="portal-info-value">{conduction_sticker}</span>
+          </div>
+        )}
+        {vin_chassis && (
+          <div className="portal-info-item">
+            <span className="portal-info-label">VIN/Chassis:</span>
+            <span className="portal-info-value">{vin_chassis}</span>
+          </div>
         )}
       </div>
-
-      {serviceRecords.length === 0 ? (
-        <p className="portal-vd-empty portal-vd-empty--tight">No service records found.</p>
-      ) : (
-        <div className="portal-vd-records-list">
-          {serviceRecords.map((r) => (
-            <div key={r.id} className={`portal-damage-record${r.damage_notes ? '' : ' portal-service-record--plain'}`}>
-              <div className="portal-damage-header">
-                <span className="portal-damage-date">
-                  {new Date(r.service_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
-                </span>
-                {r.assigned_staff_name && (
-                  <span className="portal-damage-staff">By {r.assigned_staff_name}</span>
-                )}
-                {r.odometer_reading != null && (
-                  <span className="portal-damage-odo">{Number(r.odometer_reading).toLocaleString()} km</span>
-                )}
-              </div>
-              {r.service_description && (
-                <div className="portal-damage-service portal-damage-service--plain">
-                  {r.service_description}
-                </div>
-              )}
-              {r.damage_notes && (
-                <div className="portal-damage-notes">
-                  <span className="portal-damage-notes-label">⚠ Damage noted:</span>
-                  {r.damage_notes}
-                </div>
-              )}
-              {r.remarks && (
-                <div className="portal-damage-remarks">Remarks: {r.remarks}</div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {lightbox && <LightboxModal photo={lightbox} onClose={() => setLightbox(null)} />}
     </div>
   )
 }
@@ -296,6 +194,20 @@ function PortalVehicleRegisterModal({
       })
       .catch(() => {})
   }, [isOpen, localMakes.length])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const off = onVehicleMakesUpdated(() => {
+      portalGet('/vehicle-makes')
+        .then((data) => {
+          const unsafeNames = [/^all(\b|$)/i, /^all vehicles?/i]
+          const safeMakes = (Array.isArray(data) ? data : []).filter((m) => m?.name && !unsafeNames.some((rx) => rx.test(m.name)))
+          setLocalMakes(safeMakes)
+        })
+        .catch(() => {})
+    })
+    return off
+  }, [isOpen])
 
   // Load models when make changes
   useEffect(() => {

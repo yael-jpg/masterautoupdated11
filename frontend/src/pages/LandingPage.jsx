@@ -118,6 +118,84 @@ const FEATURED = [
   },
 ]
 
+function VideoGalleryModal({ src, onClose }) {
+  const videoRef = useRef(null)
+  const [loadError, setLoadError] = useState(false)
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const onKeyDown = e => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onClose])
+
+  useEffect(() => {
+    const node = videoRef.current
+    if (!node) return
+    let cancelled = false
+
+    const attemptPlay = () => {
+      if (cancelled) return
+      try {
+        node.load?.()
+      } catch {
+        // ignore
+      }
+      node.play?.().catch(() => {})
+    }
+
+    const rafId = requestAnimationFrame(() => {
+      attemptPlay()
+      setTimeout(attemptPlay, 120)
+    })
+
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(rafId)
+    }
+  }, [src])
+
+  return (
+    <div className="lp-vg-overlay" role="dialog" aria-modal="true">
+      <div className="lp-vg-backdrop" onClick={onClose} />
+      <div className="lp-vg-modal" onClick={e => e.stopPropagation()}>
+        <button className="lp-modal-x" onClick={onClose} aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        </button>
+        {loadError && (
+          <div className="lp-vg-error">
+            <div className="lp-vg-error-title">Video failed to load</div>
+            <div className="lp-vg-error-sub">
+              <a href={src} target="_blank" rel="noreferrer">Open video in new tab</a>
+            </div>
+          </div>
+        )}
+        <video
+          key={src}
+          ref={videoRef}
+          className="lp-vg-player"
+          src={src}
+          controls
+          autoPlay
+          muted
+          playsInline
+          preload="metadata"
+          onError={() => setLoadError(true)}
+          onLoadedData={() => setLoadError(false)}
+        />
+      </div>
+    </div>
+  )
+}
+
 function AuthModal({ prefillService, onClose }) {
   const [tab, setTab] = useState('register')
   const [reg, setReg] = useState({ fullName: '', email: '', mobile: '', address: '', password: '' })
@@ -293,7 +371,7 @@ function FanPanel({ svc, index, isActive, hasActive, onActivate }) {
       <div className="lp-fan-foot">
         <p className="lp-fan-short">{svc.short}</p>
         <button className="lp-fan-book" onClick={e => { e.stopPropagation(); window.location.href = '/guest' }}>
-          Online Quotation
+          Request Quotation
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
         </button>
       </div>
@@ -304,10 +382,14 @@ function FanPanel({ svc, index, isActive, hasActive, onActivate }) {
 export function LandingPage() {
   const [modal, setModal] = useState(null)
   const [fanActive, setFanActive] = useState(null)
-  const [hiwActive, setHiwActive] = useState(null)
+  const [videoModalSrc, setVideoModalSrc] = useState(null)
   const servicesRef = useRef(null)
   const fanRef = useRef(null)
-  const hiwRef = useRef(null)
+
+  const publicUrl = (path) => {
+    const base = String(import.meta.env.BASE_URL || '/').replace(/\/+$/, '/')
+    return `${base}${String(path || '').replace(/^\/+/, '')}`
+  }
 
   const scrollTo = r => r?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
@@ -315,7 +397,6 @@ export function LandingPage() {
   useEffect(() => {
     const handle = e => {
       if (fanRef.current && !fanRef.current.contains(e.target)) setFanActive(null)
-      if (hiwRef.current && !hiwRef.current.contains(e.target)) setHiwActive(null)
     }
     document.addEventListener('mousedown', handle)
     document.addEventListener('touchstart', handle)
@@ -339,7 +420,7 @@ export function LandingPage() {
             and Advanced Auto Coating
           </h1>
           <div className="lp-hero-btns">
-            <button className="lp-btn-o" onClick={() => window.location.href = '/guest'}>Online Quotation</button>
+            <button className="lp-btn-o" onClick={() => window.location.href = '/guest'}>Request Quotation</button>
           </div>
         </div>
 
@@ -374,45 +455,65 @@ export function LandingPage() {
 
       <section className="lp-how">
         <div className="lp-how-head">
-          <p className="lp-eyebrow light">Simple Process</p>
-          <h2 className="lp-how-h2">How It Works</h2>
+          <p className="lp-eyebrow light">Video Gallery</p>
+          <h2 className="lp-how-h2">Video Gallery</h2>
           <div className="lp-rule light" />
         </div>
-        <div ref={hiwRef} className={`lp-hiw-panels${hiwActive !== null ? ' has-active' : ''}`}>
+        <div className="lp-vg-panels">
           {[
             {
-              n: '01', t: 'Register',
-              d: 'Create your free account with just your mobile number in seconds.',
-              image: '/images/register.png',
+              n: '01',
+              t: 'Register',
+              video: publicUrl('videos/video1.mp4'),
             },
             {
-              n: '02', t: 'Book a Service',
-              d: 'Browse our services, pick your package, choose a date and pay online.',
-              image: '/images/bookservice.png',
+              n: '02',
+              t: 'Book a Service',
+              video: publicUrl('videos/video2.mp4'),
             },
             {
-              n: '03', t: 'Drop Off & Enjoy',
-              d: 'Bring your car in and let our experts deliver a showroom-quality finish.',
-              image: '/images/drop.png',
+              n: '03',
+              t: 'Drop Off & Enjoy',
+              video: publicUrl('videos/video3.mp4'),
+            },
+            {
+              n: '04',
+              t: 'Video',
+              video: publicUrl('videos/video4.mp4'),
+            },
+            {
+              n: '05',
+              t: 'Video',
+              video: publicUrl('videos/video5.mp4'),
             },
           ].map((s, i) => (
-            <div
+            <a
               key={s.n}
-              className={`lp-hiw-panel${hiwActive === i ? ' is-active' : ''}`}
-              style={{ '--i': i }}
-              onClick={() => setHiwActive(hiwActive === i ? null : i)}
+              className="lp-vg-reel"
+              href={s.video}
+              aria-label={`Open video: ${s.t}`}
+              onClick={e => {
+                e.preventDefault()
+                setVideoModalSrc(s.video)
+              }}
             >
-              <div className="lp-hiw-bg" style={{ backgroundImage: `url(${s.image})` }} />
-              <div className="lp-hiw-dim" />
-              <div className="lp-hiw-content">
-                <span className="lp-hiw-num">{s.n}</span>
-                <h3 className="lp-hiw-title">{s.t}</h3>
-                <p className="lp-hiw-desc">{s.d}</p>
-              </div>
-            </div>
+              <video
+                className="lp-vg-video"
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="metadata"
+                aria-hidden="true"
+              >
+                <source src={s.video} type="video/mp4" />
+              </video>
+            </a>
           ))}
         </div>
       </section>
+
+      {videoModalSrc && <VideoGalleryModal src={videoModalSrc} onClose={() => setVideoModalSrc(null)} />}
 
       <section className="lp-why">
         <div className="lp-wrap">

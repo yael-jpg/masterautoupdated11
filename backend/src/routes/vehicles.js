@@ -138,6 +138,30 @@ router.get(
   }),
 )
 
+// Get a single vehicle (with owner name)
+router.get(
+  '/:id',
+  param('id').isInt({ min: 1 }).withMessage('Invalid vehicle id'),
+  validateRequest,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params
+
+    const { rows } = await db.query(
+      `SELECT v.*, c.full_name AS customer_name
+       FROM vehicles v
+       LEFT JOIN customers c ON c.id = v.customer_id
+       WHERE v.id = $1`,
+      [id],
+    )
+
+    if (!rows.length) {
+      return res.status(404).json({ message: 'Vehicle not found' })
+    }
+
+    return res.json(rows[0])
+  }),
+)
+
 router.post(
   '/',
   body('customerId').isInt({ min: 1 }).withMessage('customerId is required'),

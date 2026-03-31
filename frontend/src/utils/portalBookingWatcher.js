@@ -1,12 +1,15 @@
 export function createPortalBookingWatchState() {
   return {
-    initialized: false,
+    appointmentsInitialized: false,
     lastSeenIso: null,
     seenIds: new Set(),
+    quotationsInitialized: false,
     lastSeenQuotationIso: null,
     seenQuotationIds: new Set(),
+    cancellationsInitialized: false,
     lastSeenCancelledIso: null,
     seenCancelledIds: new Set(),
+    cancelRequestsInitialized: false,
     lastSeenCancelRequestIso: null,
     seenCancelRequestIds: new Set(),
   }
@@ -31,31 +34,42 @@ export function computeNewPortalBookings(prevState, appointmentRows, now = new D
   const prev = prevState || createPortalBookingWatchState()
 
   const rows = Array.isArray(appointmentRows) ? appointmentRows : []
-  const portalRows = rows.filter((r) => r && r.booking_source === 'portal')
+  const portalRows = rows.filter((r) => {
+    if (!r) return false
+    const source = String(r.booking_source || '').toLowerCase()
+    if (source === 'portal') return true
+    const notes = String(r.notes || '')
+    return notes.includes('[PORTAL BOOKING REQUEST]')
+  })
 
   // Normalize to comparable ISO timestamps; ignore rows without created_at
   const portalWithIso = portalRows
     .map((r) => ({ row: r, createdIso: toIso(r.created_at) }))
     .filter((x) => x.createdIso)
 
-  if (!prev.initialized) {
+  if (!prev.appointmentsInitialized) {
+    // On first load establish a baseline, but surface *very recent* portal bookings
+    // so staff don't miss a request created just before login/refresh.
+    const graceMs = 10 * 60 * 1000
+    const graceCutoffIso = new Date(now.getTime() - graceMs).toISOString()
+
+    const recentRows = portalWithIso
+      .filter((x) => x.createdIso >= graceCutoffIso)
+      .sort((a, b) => new Date(a.createdIso) - new Date(b.createdIso))
+      .map((x) => x.row)
+
     const latest = portalWithIso
       .slice()
       .sort((a, b) => new Date(b.createdIso) - new Date(a.createdIso))[0]
 
     const nextState = {
-      initialized: true,
+      ...prev,
+      appointmentsInitialized: true,
       lastSeenIso: latest?.createdIso || now.toISOString(),
       seenIds: new Set(portalRows.map((r) => r.id).filter((id) => id !== undefined && id !== null)),
-      lastSeenQuotationIso: prev.lastSeenQuotationIso || null,
-      seenQuotationIds: prev.seenQuotationIds instanceof Set ? new Set(prev.seenQuotationIds) : new Set(),
-      lastSeenCancelledIso: prev.lastSeenCancelledIso || null,
-      seenCancelledIds: prev.seenCancelledIds instanceof Set ? new Set(prev.seenCancelledIds) : new Set(),
-      lastSeenCancelRequestIso: prev.lastSeenCancelRequestIso || null,
-      seenCancelRequestIds: prev.seenCancelRequestIds instanceof Set ? new Set(prev.seenCancelRequestIds) : new Set(),
     }
 
-    return { nextState, newRows: [] }
+    return { nextState, newRows: recentRows }
   }
 
   const lastSeenIso = prev.lastSeenIso || now.toISOString()
@@ -73,15 +87,10 @@ export function computeNewPortalBookings(prevState, appointmentRows, now = new D
   if (newRows.length === 0) {
     return {
       nextState: {
-        initialized: true,
+        ...prev,
+        appointmentsInitialized: true,
         lastSeenIso,
         seenIds,
-        lastSeenQuotationIso: prev.lastSeenQuotationIso || null,
-        seenQuotationIds: prev.seenQuotationIds instanceof Set ? new Set(prev.seenQuotationIds) : new Set(),
-        lastSeenCancelledIso: prev.lastSeenCancelledIso || null,
-        seenCancelledIds: prev.seenCancelledIds instanceof Set ? new Set(prev.seenCancelledIds) : new Set(),
-        lastSeenCancelRequestIso: prev.lastSeenCancelRequestIso || null,
-        seenCancelRequestIds: prev.seenCancelRequestIds instanceof Set ? new Set(prev.seenCancelRequestIds) : new Set(),
       },
       newRows: [],
     }
@@ -95,15 +104,10 @@ export function computeNewPortalBookings(prevState, appointmentRows, now = new D
 
   return {
     nextState: {
-      initialized: true,
+      ...prev,
+      appointmentsInitialized: true,
       lastSeenIso: newestIso,
       seenIds,
-      lastSeenQuotationIso: prev.lastSeenQuotationIso || null,
-      seenQuotationIds: prev.seenQuotationIds instanceof Set ? new Set(prev.seenQuotationIds) : new Set(),
-      lastSeenCancelledIso: prev.lastSeenCancelledIso || null,
-      seenCancelledIds: prev.seenCancelledIds instanceof Set ? new Set(prev.seenCancelledIds) : new Set(),
-      lastSeenCancelRequestIso: prev.lastSeenCancelRequestIso || null,
-      seenCancelRequestIds: prev.seenCancelRequestIds instanceof Set ? new Set(prev.seenCancelRequestIds) : new Set(),
     },
     newRows,
   }
@@ -132,7 +136,7 @@ export function computeNewPortalQuotationBookings(prevState, quotationRows, now 
     .map((r) => ({ row: r, createdIso: toIso(r.created_at) }))
     .filter((x) => x.createdIso)
 
-  if (!prev.initialized) {
+  if (!prev.quotationsInitialized) {
     // On first load we establish a baseline to avoid spamming old rows.
     // However, we still surface *very recent* portal requests so admins/staff
     // don't miss a new request that happened right before they opened the app.
@@ -149,15 +153,10 @@ export function computeNewPortalQuotationBookings(prevState, quotationRows, now 
       .sort((a, b) => new Date(b.createdIso) - new Date(a.createdIso))[0]
 
     const nextState = {
-      initialized: true,
-      lastSeenIso: prev.lastSeenIso || null,
-      seenIds: prev.seenIds instanceof Set ? new Set(prev.seenIds) : new Set(),
+      ...prev,
+      quotationsInitialized: true,
       lastSeenQuotationIso: latest?.createdIso || now.toISOString(),
       seenQuotationIds: new Set(portalRows.map((r) => r.id).filter((id) => id !== undefined && id !== null)),
-      lastSeenCancelledIso: prev.lastSeenCancelledIso || null,
-      seenCancelledIds: prev.seenCancelledIds instanceof Set ? new Set(prev.seenCancelledIds) : new Set(),
-      lastSeenCancelRequestIso: prev.lastSeenCancelRequestIso || null,
-      seenCancelRequestIds: prev.seenCancelRequestIds instanceof Set ? new Set(prev.seenCancelRequestIds) : new Set(),
     }
 
     return { nextState, newRows: recentRows }
@@ -179,7 +178,7 @@ export function computeNewPortalQuotationBookings(prevState, quotationRows, now 
     return {
       nextState: {
         ...prev,
-        initialized: true,
+        quotationsInitialized: true,
         lastSeenQuotationIso,
         seenQuotationIds,
       },
@@ -196,7 +195,7 @@ export function computeNewPortalQuotationBookings(prevState, quotationRows, now 
   return {
     nextState: {
       ...prev,
-      initialized: true,
+      quotationsInitialized: true,
       lastSeenQuotationIso: newestIso,
       seenQuotationIds,
     },
@@ -223,20 +222,17 @@ export function computeNewPortalCancellations(prevState, appointmentRows, now = 
     .map((r) => ({ row: r, cancelledIso: toIso(r.cancelled_at) }))
     .filter((x) => x.cancelledIso)
 
-  if (!prev.initialized) {
+  if (!prev.cancellationsInitialized) {
     const latest = portalCancelled
       .slice()
       .sort((a, b) => new Date(b.cancelledIso) - new Date(a.cancelledIso))[0]
 
     return {
       nextState: {
-        initialized: true,
-        lastSeenIso: prev.lastSeenIso || null,
-        seenIds: prev.seenIds instanceof Set ? new Set(prev.seenIds) : new Set(),
+        ...prev,
+        cancellationsInitialized: true,
         lastSeenCancelledIso: latest?.cancelledIso || now.toISOString(),
         seenCancelledIds: new Set(portalCancelled.map((x) => x.row?.id).filter((id) => id !== undefined && id !== null)),
-        lastSeenCancelRequestIso: prev.lastSeenCancelRequestIso || null,
-        seenCancelRequestIds: prev.seenCancelRequestIds instanceof Set ? new Set(prev.seenCancelRequestIds) : new Set(),
       },
       newRows: [],
     }
@@ -258,7 +254,7 @@ export function computeNewPortalCancellations(prevState, appointmentRows, now = 
     return {
       nextState: {
         ...prev,
-        initialized: true,
+        cancellationsInitialized: true,
         lastSeenCancelledIso,
         seenCancelledIds,
       },
@@ -275,7 +271,7 @@ export function computeNewPortalCancellations(prevState, appointmentRows, now = 
   return {
     nextState: {
       ...prev,
-      initialized: true,
+      cancellationsInitialized: true,
       lastSeenCancelledIso: newestIso,
       seenCancelledIds,
     },
@@ -297,18 +293,15 @@ export function computeNewPortalCancellationRequests(prevState, appointmentRows,
     .map((r) => ({ row: r, requestedIso: toIso(r.cancel_requested_at) }))
     .filter((x) => x.requestedIso)
 
-  if (!prev.initialized) {
+  if (!prev.cancelRequestsInitialized) {
     const latest = portalReq
       .slice()
       .sort((a, b) => new Date(b.requestedIso) - new Date(a.requestedIso))[0]
 
     return {
       nextState: {
-        initialized: true,
-        lastSeenIso: prev.lastSeenIso || null,
-        seenIds: prev.seenIds instanceof Set ? new Set(prev.seenIds) : new Set(),
-        lastSeenCancelledIso: prev.lastSeenCancelledIso || null,
-        seenCancelledIds: prev.seenCancelledIds instanceof Set ? new Set(prev.seenCancelledIds) : new Set(),
+        ...prev,
+        cancelRequestsInitialized: true,
         lastSeenCancelRequestIso: latest?.requestedIso || now.toISOString(),
         seenCancelRequestIds: new Set(portalReq.map((x) => x.row?.id).filter((id) => id !== undefined && id !== null)),
       },
@@ -332,7 +325,7 @@ export function computeNewPortalCancellationRequests(prevState, appointmentRows,
     return {
       nextState: {
         ...prev,
-        initialized: true,
+        cancelRequestsInitialized: true,
         lastSeenCancelRequestIso,
         seenCancelRequestIds,
       },
@@ -349,7 +342,7 @@ export function computeNewPortalCancellationRequests(prevState, appointmentRows,
   return {
     nextState: {
       ...prev,
-      initialized: true,
+      cancelRequestsInitialized: true,
       lastSeenCancelRequestIso: newestIso,
       seenCancelRequestIds,
     },

@@ -110,6 +110,7 @@ export function OnlineQuotationRequestsPage({ token, user: _user, onConvert }) {
     try {
       await apiPatch(`/online-quotation-requests/${id}/status`, token, { status })
       load(page, search, statusFilter)
+      window.dispatchEvent(new CustomEvent('ma:online-quotation-requests-updated', { detail: { source: 'staff', requestId: id } }))
       if (viewItem?.id === id) setViewItem(prev => ({ ...prev, status }))
       pushToast('success', `Status updated to ${status}`)
     } catch (e) {
@@ -126,6 +127,7 @@ export function OnlineQuotationRequestsPage({ token, user: _user, onConvert }) {
         try {
           await apiDelete(`/online-quotation-requests/${id}`, token)
           load(page, search, statusFilter)
+          window.dispatchEvent(new CustomEvent('ma:online-quotation-requests-updated', { detail: { source: 'staff', requestId: id } }))
           setConfirmCfg(p => ({ ...p, isOpen: false }))
           pushToast('success', 'Request deleted')
         } catch (e) {
@@ -322,6 +324,7 @@ export function OnlineQuotationRequestsPage({ token, user: _user, onConvert }) {
                 className="btn-approve-large" 
                 onClick={() => {
                    if (onConvert) onConvert(viewItem)
+                   window.dispatchEvent(new CustomEvent('ma:online-quotation-requests-updated', { detail: { source: 'staff', requestId: viewItem.id } }))
                    setViewItem(null)
                 }}
               >

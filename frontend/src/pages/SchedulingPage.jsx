@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { apiDelete, apiGet, apiPatch, apiPost, pushToast } from '../api/client'
@@ -10,8 +10,17 @@ import { ConfirmModal } from '../components/ConfirmModal'
 import { SERVICE_CATALOG } from '../data/serviceCatalog'
 import { PaymentStatusBadge } from '../components/PaymentStatusBadge'
 import { SearchableSelect } from '../components/SearchableSelect'
+import { onConfigUpdated } from '../utils/events'
 
-export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedBooking, onPreselectedBookingConsumed }) {
+export function SchedulingPage({
+  token,
+  user,
+  onNavigateToJobOrder,
+  preselectedBooking,
+  onPreselectedBookingConsumed,
+  openAppointmentId,
+  onOpenAppointmentConsumed,
+}) {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [rows, setRows] = useState([])
@@ -62,26 +71,36 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
 
   
 
-  useEffect(() => {
-    // Use /config/category/booking — public endpoint, works for all roles
-    apiGet('/config/category/booking', token)
-      .then((arr) => {
-        const entries = Array.isArray(arr) ? arr : []
-        const get = (key) => entries.find((e) => e.key === key)?.value ?? null
-        setBookingConfig({
-          allowCancelPartialPayment: get('allow_cancel_after_partial_payment') !== false && get('allow_cancel_after_partial_payment') !== 'false',
-          autoCompleteWhenPaid: get('auto_complete_when_paid') !== false && get('auto_complete_when_paid') !== 'false',
-          allowEditAfterApproval: get('allow_edit_after_approval') === true || get('allow_edit_after_approval') === 'true',
-          enableGuestBooking: get('enable_guest_booking') === true || get('enable_guest_booking') === 'true',
-          autoCancelUnpaidHours: parseInt(String(get('auto_cancel_unpaid_hours') || '0'), 10),
-        })
-        // branch_locations value may already be a parsed array (data_type='json') or a JSON string
-        const raw = get('branch_locations')
-        const parsed = Array.isArray(raw) ? raw : (() => { try { return raw ? JSON.parse(raw) : null } catch { return null } })()
-        if (Array.isArray(parsed) && parsed.length > 0) setBranchLocations(parsed)
+  const loadBookingConfig = useCallback(async () => {
+    try {
+      // Use /config/category/booking — public endpoint, works for all roles
+      const arr = await apiGet('/config/category/booking', token)
+      const entries = Array.isArray(arr) ? arr : []
+      const get = (key) => entries.find((e) => e.key === key)?.value ?? null
+      setBookingConfig({
+        allowCancelPartialPayment: get('allow_cancel_after_partial_payment') !== false && get('allow_cancel_after_partial_payment') !== 'false',
+        autoCompleteWhenPaid: get('auto_complete_when_paid') !== false && get('auto_complete_when_paid') !== 'false',
+        allowEditAfterApproval: get('allow_edit_after_approval') === true || get('allow_edit_after_approval') === 'true',
+        enableGuestBooking: get('enable_guest_booking') === true || get('enable_guest_booking') === 'true',
+        autoCancelUnpaidHours: parseInt(String(get('auto_cancel_unpaid_hours') || '0'), 10),
       })
-      .catch(() => {})
+      // branch_locations value may already be a parsed array (data_type='json') or a JSON string
+      const raw = get('branch_locations')
+      const parsed = Array.isArray(raw) ? raw : (() => { try { return raw ? JSON.parse(raw) : null } catch { return null } })()
+      if (Array.isArray(parsed) && parsed.length > 0) setBranchLocations(parsed)
+    } catch {
+      // ignore
+    }
   }, [token])
+
+  useEffect(() => {
+    loadBookingConfig()
+    const off = onConfigUpdated((e) => {
+      const cat = e?.detail?.category
+      if (!cat || cat === 'booking') loadBookingConfig()
+    })
+    return off
+  }, [loadBookingConfig])
 
   const [cancelModal, setCancelModal] = useState({
     isOpen: false,
@@ -99,17 +118,42 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
 
   // ── Service Duration helpers (auto end-date) ──────────────────────────────
   function getServiceDuration(servicesArr) {
-    if (!Array.isArray(servicesArr) || servicesArr.length === 0) return null
-    const hasPpf       = servicesArr.some(s => String(s.code||'').toLowerCase().startsWith('ppf-') || String(s.group||'').toLowerCase().includes('ppf') || String(s.name||'').toLowerCase().includes('ppf'))
-    const hasCoating   = servicesArr.some(s => {
+    // Accept either an array of services or a text label (e.g. "Detail + Tint").
+    let normalized = servicesArr
+    if (!Array.isArray(normalized)) {
+      if (typeof normalized === 'string' && normalized.trim()) {
+        // Some endpoints return services as a JSON string; try to parse first.
+        const raw = normalized.trim()
+        if ((raw.startsWith('[') && raw.endsWith(']')) || (raw.startsWith('{') && raw.endsWith('}'))) {
+          try {
+            const parsed = JSON.parse(raw)
+            if (Array.isArray(parsed)) normalized = parsed
+          } catch {
+            // fall back to text splitting below
+          }
+        }
+      }
+      if (!Array.isArray(normalized) && typeof normalized === 'string' && normalized.trim()) {
+        normalized = normalized
+          .split(/\s*(?:\||,|\+)\s*/g)
+          .map((name) => String(name || '').trim())
+          .filter(Boolean)
+          .map((name) => ({ name }))
+      } else {
+        return null
+      }
+    }
+    if (normalized.length === 0) return null
+    const hasPpf       = normalized.some(s => String(s.code||'').toLowerCase().startsWith('ppf-') || String(s.group||'').toLowerCase().includes('ppf') || String(s.name||'').toLowerCase().includes('ppf'))
+    const hasCoating   = normalized.some(s => {
       const code = String(s.code||'').toLowerCase()
       const name = String(s.name||'').toLowerCase()
       const group = String(s.group||'').toLowerCase()
       return code.includes('coat') || group.includes('coating') || name.includes('ceramic coating') || name.includes('graphene coating')
     })
-    const hasTint      = servicesArr.some(s => String(s.group||'').toLowerCase().includes('window tint') || String(s.code||'').toLowerCase().includes('tint') || String(s.name||'').toLowerCase().includes('tint'))
-    const hasExtDetail = servicesArr.some(s => String(s.code||'').toLowerCase() === 'detail-exterior' || String(s.name||'').toLowerCase().includes('exterior detail'))
-    const hasIntDetail = servicesArr.some(s => String(s.code||'').toLowerCase() === 'detail-interior' || String(s.name||'').toLowerCase().includes('interior detail'))
+    const hasTint      = normalized.some(s => String(s.group||'').toLowerCase().includes('window tint') || String(s.code||'').toLowerCase().includes('tint') || String(s.name||'').toLowerCase().includes('tint'))
+    const hasExtDetail = normalized.some(s => String(s.code||'').toLowerCase() === 'detail-exterior' || String(s.name||'').toLowerCase().includes('exterior detail'))
+    const hasIntDetail = normalized.some(s => String(s.code||'').toLowerCase() === 'detail-interior' || String(s.name||'').toLowerCase().includes('interior detail'))
     if (hasPpf)       return { days: 7, label: 'PPF Installation — 7 days' }
     if (hasCoating)   return { days: 3, label: 'Coating Service — 3 days' }
     if (hasTint)      return { days: 4, label: 'Window Tint — 3-4 days' }
@@ -191,13 +235,37 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
     }
   }, [preselectedBooking])
 
+  // If an appointmentId is provided (e.g., from Notifications), open the Edit modal for that booking.
+  useEffect(() => {
+    if (!token) return
+    if (!openAppointmentId) return
+
+    let cancelled = false
+    const run = async () => {
+      const local = rows.find((r) => Number(r?.id) === Number(openAppointmentId))
+      const appt = local || (await apiGet(`/appointments/${openAppointmentId}`, token))
+      if (cancelled || !appt) return
+      handleEdit(appt)
+      if (onOpenAppointmentConsumed) onOpenAppointmentConsumed()
+    }
+
+    run().catch((err) => {
+      pushToast('error', err?.message || 'Failed to open booking')
+      if (onOpenAppointmentConsumed) onOpenAppointmentConsumed()
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [token, openAppointmentId])
+
   // Auto-compute duration info whenever quotationId or sales list changes
   // (covers both the dropdown selection AND when modal opens from Quotations page)
   useEffect(() => {
     if (!form.quotationId || !sales.length) return
     const matched = sales.find(s => String(s.id) === String(form.quotationId))
     if (!matched) return
-    const servicesArr = Array.isArray(matched.services) ? matched.services : []
+    const servicesArr = Array.isArray(matched.services) ? matched.services : (matched?.service_package || '')
     const duration = getServiceDuration(servicesArr)
     setAutoEndInfo(duration)
     if (duration) {
@@ -396,7 +464,8 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
         apiGet('/customers', token, { page: 1, limit: 100 }),
         apiGet('/vehicles', token, { page: 1, limit: 100 }),
         apiGet('/services', token),
-        apiGet('/quotations', token, { page: 1, limit: 500, status: 'Approved' }),
+        // Include Pending portal quotations so Requested bookings can show duration/end-date before approval.
+        apiGet('/quotations', token, { page: 1, limit: 500 }),
       ])
       const syncedServices = await syncCatalogServices(serviceList)
       const syncedServicesById = syncedServices.reduce((acc, service) => {
@@ -562,14 +631,26 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
           ? matchedSale.services.map((s) => s.name).join(', ')
           : matchedSale.service_package || '')
       : (appointment.service_name || '')
+    const startLocal = formatDateForInput(appointment.schedule_start)
+    const existingEndLocal = formatDateForInput(appointment.schedule_end)
+    const duration = getServiceDuration(
+      Array.isArray(matchedSale?.services)
+        ? matchedSale.services
+        : (matchedSale?.service_package || appointment?.all_services || appointment?.service_name || ''),
+    )
+    const computedEndLocal = (!existingEndLocal && duration?.days && startLocal)
+      ? computeEndFromStart(startLocal, duration.days)
+      : existingEndLocal
+
+    setAutoEndInfo(duration)
     setForm({
       customerId: appointment.customer_id,
       vehicleId: appointment.vehicle_id,
       serviceId: appointment.service_id,
       quotationId: appointment.quotation_id || appointment.sale_id || '',
       saleServiceLabel: matchedLabel,
-      scheduleStart: formatDateForInput(appointment.schedule_start),
-      scheduleEnd: formatDateForInput(appointment.schedule_end),
+      scheduleStart: startLocal,
+      scheduleEnd: computedEndLocal,
       installerTeam: appointment.installer_team || '',
       status: appointment.status,
       notificationChannel: appointment.notification_channel || 'SMS',
@@ -580,7 +661,80 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
     setShowForm(true)
   }
 
+  const handleApproveScheduleRequest = (appointment) => {
+    if (!appointment?.id) return
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Approve Schedule Request',
+      message: 'Approve this portal schedule request and move it to Scheduled?',
+      variant: 'success',
+      onConfirm: async () => {
+        try {
+          // Ensure we have an estimated end date when scheduling.
+          const startLocal = formatDateForInput(appointment?.schedule_start)
+          const existingEndLocal = formatDateForInput(appointment?.schedule_end)
+          let computedEndLocal = existingEndLocal
+
+          if (!computedEndLocal && appointment?.quotation_id && startLocal) {
+            const matchedSale = sales.find(s => Number(s.id) === Number(appointment.quotation_id))
+            const servicesArr = Array.isArray(matchedSale?.services)
+              ? matchedSale.services
+              : (matchedSale?.service_package || appointment?.all_services || appointment?.service_name || '')
+            const duration = getServiceDuration(servicesArr)
+            if (duration?.days) computedEndLocal = computeEndFromStart(startLocal, duration.days)
+          }
+
+          // Final fallback: always set an end date when approving.
+          if (!computedEndLocal && startLocal) {
+            computedEndLocal = computeEndFromStart(startLocal, 1)
+          }
+
+          // If this request is linked to a portal-created quotation, approve it too.
+          if (appointment?.quotation_id) {
+            await apiPatch(`/quotations/${appointment.quotation_id}/status`, token, { status: 'Approved' })
+            window.dispatchEvent(new CustomEvent('ma:quotations-updated'))
+          }
+
+          await apiPatch(`/appointments/${appointment.id}`, token, {
+            status: 'Scheduled',
+            ...(computedEndLocal ? { scheduleEnd: computedEndLocal } : {}),
+          })
+          window.dispatchEvent(new CustomEvent('ma:appointments-updated'))
+          await loadData(page, search, statusFilter, sortBy, sortDir, dateFrom, dateTo)
+          setConfirmConfig((p) => ({ ...p, isOpen: false }))
+          pushToast('success', 'Schedule request approved.')
+        } catch (err) {
+          setConfirmConfig((p) => ({ ...p, isOpen: false }))
+          pushToast('error', err?.message || 'Failed to approve request')
+        }
+      },
+    })
+  }
+
+  const handleRejectScheduleRequest = (appointment) => {
+    if (!appointment?.id) return
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Reject Schedule Request',
+      message: 'Reject this portal schedule request and move it to History?',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await apiPatch(`/appointments/${appointment.id}`, token, { status: 'Cancelled' })
+          window.dispatchEvent(new CustomEvent('ma:appointments-updated', { detail: { source: 'portal', appointmentId: appointment.id, status: 'Cancelled' } }))
+          await loadData(page, search, statusFilter, sortBy, sortDir, dateFrom, dateTo)
+          setConfirmConfig((p) => ({ ...p, isOpen: false }))
+          pushToast('warning', 'Schedule request rejected (moved to History).')
+        } catch (err) {
+          setConfirmConfig((p) => ({ ...p, isOpen: false }))
+          pushToast('error', err?.message || 'Failed to reject request')
+        }
+      },
+    })
+  }
+
   const STATUS_BADGE_COLOR = {
+    'Requested':          '#94a3b8',
     'Scheduled':          '#94a3b8',
     'Checked-In':         '#94a3b8',
     'In Progress':        '#f59e0b',
@@ -610,17 +764,26 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
     )
   }
 
-  const handleDelete = (appointmentId) => {
+  const handleDelete = (appointment) => {
+    const isRequested = String(appointment?.status || '').toLowerCase() === 'requested'
+    if (isRequested) {
+      handleRejectScheduleRequest(appointment)
+      return
+    }
+
+    const appointmentId = appointment?.id
+    if (!appointmentId) return
+
     setConfirmConfig({
       isOpen: true,
-      title: 'Delete Booking',
-      message: 'Are you sure you want to permanently delete this booking? This action cannot be undone. Bookings with existing payments cannot be deleted.',
+      title: 'Delete Schedule',
+      message: 'Are you sure you want to permanently delete this schedule? This action cannot be undone. Schedules with existing payments cannot be deleted.',
       variant: 'danger',
       onConfirm: async () => {
         try {
           await apiDelete(`/appointments/${appointmentId}`, token)
           setConfirmConfig((prev) => ({ ...prev, isOpen: false }))
-          pushToast('success', 'Booking deleted successfully.')
+          pushToast('success', 'Schedule deleted successfully.')
           try {
             await loadData()
           } catch (_) {
@@ -629,7 +792,7 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
           setError('')
         } catch (deleteError) {
           setError(deleteError.message)
-          pushToast('error', deleteError.message || 'Failed to delete booking.')
+          pushToast('error', deleteError.message || 'Failed to delete schedule.')
         }
       }
     })
@@ -691,7 +854,7 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
   }
 
   // Status flow constants (mirrors workflowEngine.js APPOINTMENT_WORKFLOW)
-  const STATUS_ORDER = ['Scheduled', 'Checked-In', 'In Progress', 'For QA', 'Ready for Release', 'Paid', 'Released', 'Completed']
+  const STATUS_ORDER = ['Requested', 'Scheduled', 'Checked-In', 'In Progress', 'For QA', 'Ready for Release', 'Paid', 'Released', 'Completed']
 
   // Which roles can trigger each stage transition
   const APPT_STAGE_ROLES = {
@@ -1026,7 +1189,7 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
       >
         {/* ── Active / History tab switcher ── */}
         <div style={{ display: 'flex', gap: '0', marginBottom: '16px', borderBottom: '2px solid rgba(255,255,255,0.08)' }}>
-          {[{ key: 'active', label: 'Active Bookings' }, { key: 'history', label: 'History' }].map(({ key, label }) => {
+          {[{ key: 'active', label: 'Active Schedule' }, { key: 'history', label: 'History' }].map(({ key, label }) => {
             const isSelected = viewMode === key
             return (
               <button
@@ -1072,7 +1235,7 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
           {/* Status sub-filter — only shown on the Active tab */}
           {viewMode === 'active' && (
             <div className="toolbar-filters">
-              {['', 'Scheduled', 'Checked-In', 'In Progress', 'For QA', 'Ready for Release', 'Paid', 'Released'].map((s) => (
+              {['', 'Requested', 'Scheduled'].map((s) => (
                 <button
                   key={s || 'all'}
                   type="button"
@@ -1104,8 +1267,34 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
             const isAdmin = user?.role === 'SuperAdmin'
             const cancelReqPending = String(appointment?.cancel_request_status || '').toUpperCase() === 'PENDING'
             const canResolveCancelReq = user?.role === 'Admin' || user?.role === 'Manager' || user?.role === 'SuperAdmin'
+            const isRequested = String(currentStatus || '').toLowerCase() === 'requested'
+            const canApproveRequest = isRequested && (user?.role === 'Admin' || user?.role === 'Manager' || user?.role === 'SuperAdmin')
             return (
               <div className="row-actions">
+                {canApproveRequest && (
+                  <button
+                    type="button"
+                    className="btn-secondary btn-sm"
+                    style={{ color: '#10b981', borderColor: '#10b981', whiteSpace: 'nowrap' }}
+                    title="Approve schedule request"
+                    onClick={() => handleApproveScheduleRequest(appointment)}
+                  >
+                    Approve
+                  </button>
+                )}
+
+                {canApproveRequest && (
+                  <button
+                    type="button"
+                    className="btn-secondary btn-sm"
+                    style={{ color: '#ef4444', borderColor: '#ef4444', whiteSpace: 'nowrap' }}
+                    title="Reject schedule request"
+                    onClick={() => handleRejectScheduleRequest(appointment)}
+                  >
+                    Reject
+                  </button>
+                )}
+
                 {/* Start Job icon — creates JO, advances to In Progress */}
                 {canStartJob && (
                   <button
@@ -1252,8 +1441,8 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
                           type="button"
                           className={isDisabled ? 'btn-icon' : 'btn-icon action-danger'}
                           disabled={isDisabled}
-                          onClick={() => !isDisabled && handleDelete(appointment.id)}
-                          title={!isAdmin ? 'Access restricted — SuperAdmin only' : isPaid ? 'Deletion disabled — customer has already paid' : 'Delete booking'}
+                          onClick={() => !isDisabled && handleDelete(appointment)}
+                          title={!isAdmin ? 'Access restricted — SuperAdmin only' : isPaid ? 'Deletion disabled — customer has already paid' : String(appointment?.status || '').toLowerCase() === 'requested' ? 'Reject schedule request (move to History)' : 'Delete schedule'}
                           aria-label="Delete"
                           style={isDisabled ? { color: '#94a3b8', cursor: 'not-allowed', opacity: 0.45 } : undefined}
                         >
@@ -1346,7 +1535,7 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
           title={(() => {
             if (!editingId) return 'New Booking'
             const editingAppt = rows.find(r => r.raw?.id === editingId)?.raw
-            return editingAppt ? `Booking — ${editingAppt.customer_name}` : 'Edit Booking'
+            return editingAppt ? `Schedule — ${editingAppt.customer_name}` : 'Edit Schedule'
           })()}
         >
           {showForm && (
@@ -1579,7 +1768,9 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
                                    sv.name.toLowerCase().includes(selectedLabel.toLowerCase()))
                                 )
                               : null
-                            const duration = selectedSale ? getServiceDuration(Array.isArray(selectedSale.services) ? selectedSale.services : []) : null
+                            const duration = selectedSale
+                              ? getServiceDuration(Array.isArray(selectedSale.services) ? selectedSale.services : (selectedSale?.service_package || selectedLabel || ''))
+                              : null
                             setAutoEndInfo(duration)
                             setForm(prev => ({
                               ...prev,
@@ -1666,6 +1857,7 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
                           value={form.status}
                           onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value }))}
                         >
+                          <option>Requested</option>
                           <option>Scheduled</option>
                           <option>Checked-in</option>
                           <option>In progress</option>
@@ -1770,42 +1962,6 @@ export function SchedulingPage({ token, user, onNavigateToJobOrder, preselectedB
                       </div>
                     )
                   })()}
-
-                  {/* Notes — always editable, including for Completed bookings */}
-                  <div className="vf-section-divider" style={{ marginTop: 8 }}>
-                    <span className="vf-section-icon">📝</span>
-                    <span className="vf-section-label">Additional Information</span>
-                    <span className="vf-section-line" />
-                  </div>
-                  <div className="form-group full-width" style={{ marginTop: '8px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      Notes / Remarks
-                      {isCompletedEdit && (
-                        <span style={{
-                          fontSize: '0.7rem', fontWeight: 700, color: '#10b981',
-                          background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)',
-                          borderRadius: '4px', padding: '1px 6px', letterSpacing: '0.04em',
-                        }}>EDITABLE</span>
-                      )}
-                    </label>
-                    <textarea
-                      rows={3}
-                      placeholder="Optional notes or follow-up remarks..."
-                      value={form.notes}
-                      onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
-                      style={{
-                        width: '100%',
-                        background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '8px',
-                        padding: '10px 14px',
-                        color: '#f0f3f8',
-                        resize: 'vertical',
-                        fontSize: '0.9rem',
-                        boxSizing: 'border-box',
-                      }}
-                    />
-                  </div>
 
                   {/* Policy notices driven by Booking Rules config */}
                   {!editingId && bookingConfig.autoCancelUnpaidHours > 0 && (

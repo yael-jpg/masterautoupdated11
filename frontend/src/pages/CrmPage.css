@@ -68,6 +68,19 @@
   overflow: hidden;
   max-height: 560px;
 }
+
+/* History tabs (reuse .admin-tabs styles, but compact for modal) */
+.crm-history-tabs {
+  margin: 0 20px 8px;
+}
+.crm-history-tabs.admin-tabs {
+  margin-bottom: 8px;
+}
+.crm-history-tabs .admin-tab {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+}
 .crm-services-body {
   flex: 1;
   overflow-y: auto;
@@ -89,6 +102,9 @@
   border: 1px solid rgba(255,255,255,0.05);
   border-radius: 8px;
 }
+.crm-vehicle-item.is-clickable { cursor: pointer; }
+.crm-vehicle-item.is-clickable:hover { border-color: rgba(91,124,247,0.25); }
+.crm-vehicle-item.is-clickable:focus { outline: 2px solid rgba(91,124,247,0.45); outline-offset: 2px; }
 .crm-vehicle-item .plate { color: #fff; font-size: 0.88rem; }
 .vehicle-meta { color: #7a8fa3; font-size: 0.78rem; margin-top: 3px; }
 
@@ -185,6 +201,48 @@
   padding: 12px 20px 16px;
   border-top: 1px solid rgba(255,255,255,0.06);
   flex-shrink: 0;
+}
+
+/* ── Responsive (mobile) ──────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .crm-modal-inner {
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .crm-modal-left {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    padding: 16px 14px;
+  }
+
+  .crm-contact-list { gap: 12px; }
+  .crm-row-value { font-size: 0.85rem; }
+  .crm-address { font-size: 0.8rem; }
+
+  .crm-modal-right {
+    max-height: none;
+    padding-top: 10px;
+  }
+
+  .crm-history-tabs {
+    margin: 0 14px 8px;
+  }
+
+  .crm-services-body {
+    padding: 8px 14px 12px;
+  }
+
+  .crm-modal-actions {
+    padding: 12px 14px 14px;
+    flex-wrap: wrap;
+    justify-content: stretch;
+  }
+  .crm-modal-actions button {
+    flex: 1 1 0;
+    min-width: 140px;
+  }
 }
 
 /* ── Payment History ───────────────────────────────────── */

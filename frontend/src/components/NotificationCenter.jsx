@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-export function NotificationCenter({ notifications, onMarkAsRead, onClearAll }) {
+export function NotificationCenter({ notifications, onMarkAsRead, onClearAll, onOpenNotification }) {
   const [isOpen, setIsOpen] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
   const unreadCount = notifications.filter((n) => !n.read).length
@@ -105,7 +105,15 @@ export function NotificationCenter({ notifications, onMarkAsRead, onClearAll }) 
                   key={notification.id}
                   type="button"
                   className={`notification-item ${notification.read ? 'read' : 'unread'}`}
-                  onClick={() => {
+                  onClick={async () => {
+                    const handled = await onOpenNotification?.(notification)
+                    if (handled) {
+                      if (!notification.read) onMarkAsRead?.(notification.id)
+                      setSelectedId(null)
+                      setIsOpen(false)
+                      return
+                    }
+
                     setSelectedId(notification.id)
                     if (!notification.read) onMarkAsRead?.(notification.id)
                   }}

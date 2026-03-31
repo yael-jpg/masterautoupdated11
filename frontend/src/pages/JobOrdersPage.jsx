@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPatch, apiPost, apiDelete, pushToast } from '../api/client'
 import { SectionCard } from '../components/SectionCard'
 import { Modal } from '../components/Modal'
@@ -8,6 +8,7 @@ import { formatCurrency } from '../data/serviceCatalog'
 import { WorkflowStatusBadge } from '../components/WorkflowStatusBadge'
 import { WorkflowStepper } from '../components/WorkflowStepper'
 import { PaymentStatusBadge } from '../components/PaymentStatusBadge'
+import { onConfigUpdated } from '../utils/events'
 
 function normalizeServiceCode(code) {
   const raw = String(code || '').trim()
@@ -344,30 +345,40 @@ export function JobOrdersPage({ token, user, fromQuotation, onFromQuotationConsu
 
   useEffect(() => { load(1, search, filterStatus, viewMode) }, [token])
 
+  const loadRolesPresets = useCallback(async () => {
+    try {
+      const entries = await apiGet('/config/category/roles', token)
+      if (!Array.isArray(entries)) return
+
+      const workerEntry = entries.find((e) => e.key === 'assigned_workers')
+      if (workerEntry?.value) {
+        try {
+          const parsed = JSON.parse(workerEntry.value)
+          if (Array.isArray(parsed)) setWorkerPresets(parsed)
+        } catch { /* use empty array */ }
+      }
+
+      const preparedByEntry = entries.find((e) => e.key === 'prepared_by_names')
+      if (preparedByEntry?.value) {
+        try {
+          const parsed = JSON.parse(preparedByEntry.value)
+          if (Array.isArray(parsed)) setPreparedByPresets(parsed)
+        } catch { /* use empty array */ }
+      }
+    } catch {
+      // ignore
+    }
+  }, [token])
+
   // Load assigned workers & prepared by presets from configuration
   useEffect(() => {
-    apiGet('/config/category/roles', token)
-      .then((entries) => {
-        if (!Array.isArray(entries)) return
-
-        const workerEntry = entries.find((e) => e.key === 'assigned_workers')
-        if (workerEntry?.value) {
-          try {
-            const parsed = JSON.parse(workerEntry.value)
-            if (Array.isArray(parsed)) setWorkerPresets(parsed)
-          } catch { /* use empty array */ }
-        }
-
-        const preparedByEntry = entries.find((e) => e.key === 'prepared_by_names')
-        if (preparedByEntry?.value) {
-          try {
-            const parsed = JSON.parse(preparedByEntry.value)
-            if (Array.isArray(parsed)) setPreparedByPresets(parsed)
-          } catch { /* use empty array */ }
-        }
-      })
-      .catch(() => { })
-  }, [token])
+    loadRolesPresets()
+    const off = onConfigUpdated((e) => {
+      const cat = e?.detail?.category
+      if (!cat || cat === 'roles') loadRolesPresets()
+    })
+    return off
+  }, [loadRolesPresets])
 
   // Re-fetch when viewMode changes
   useEffect(() => { load(1, search, filterStatus, viewMode) }, [viewMode])

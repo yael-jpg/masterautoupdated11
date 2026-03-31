@@ -80,7 +80,7 @@ const NAV = [
   },
   {
     key: 'book',
-    label: 'Request Quotation',
+    label: 'Request Schedule',
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -134,7 +134,7 @@ const PAGE_TITLES = {
   appointments: 'Appointments',
   vehicles: 'Vehicles',
   services: 'Services',
-  book: 'Request Quotation',
+  book: 'Request Schedule',
   jobs: 'Job Status',
   receipts: 'Receipts & Payments',
   history: 'Service History',
@@ -256,6 +256,15 @@ export function PortalApp() {
     const timeNow = () => new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
     const cap = (list) => (list.length > 40 ? list.slice(0, 40) : list)
 
+    const isPortalBookingRequest = (row) => {
+      if (!row) return false
+      if (row.is_portal_request === true) return true
+      const source = String(row.booking_source || '').toLowerCase()
+      if (source === 'portal') return true
+      const notes = String(row.notes || '')
+      return notes.includes('[PORTAL BOOKING REQUEST]')
+    }
+
     const addNotification = (n) => {
       setNotifications((prev) => cap([{ id: `${Date.now()}-${Math.random()}`, read: false, time: timeNow(), ...n }, ...prev]))
     }
@@ -358,11 +367,12 @@ export function PortalApp() {
 
           const recentQuotations = quotations.filter((q) => q?.id != null && isRecent(q?.created_at)).sort(byCreatedAtAsc)
           for (const q of recentQuotations) {
+            const isPortalReq = isPortalBookingRequest(q)
             addNotification({
-              title: 'New Quotation',
+              title: isPortalReq ? 'New Request Schedule' : 'New Quotation',
               message: `${q?.service_package || 'Quotation'} • ${q?.quotation_approval_status || 'Pending'}`,
               details: {
-                type: 'quotation',
+                type: isPortalReq ? 'schedule-request' : 'quotation',
                 quotation_id: q.id,
                 reference_no: q?.reference_no,
                 status: q?.quotation_approval_status,
@@ -424,15 +434,16 @@ export function PortalApp() {
           if (a?.id == null) continue
           const prevStatus = watch.apptStatusById.get(a.id)
           const nextStatus = a?.status
+          const isPortalReq = isPortalBookingRequest(a) && String(nextStatus || '').toLowerCase() === 'requested'
 
           if (!watch.seenApptIds.has(a.id)) {
             watch.seenApptIds.add(a.id)
             watch.apptStatusById.set(a.id, nextStatus)
             addNotification({
-              title: 'New Appointment',
+              title: isPortalReq ? 'New Request Schedule' : 'New Schedule',
               message: `${a?.service_name || 'Service'} • ${new Date(a?.schedule_start).toLocaleString('en-PH')}`,
               details: {
-                type: 'appointment',
+                type: isPortalReq ? 'schedule-request' : 'appointment',
                 appointment_id: a.id,
                 status: nextStatus,
                 schedule_start: a?.schedule_start,
@@ -443,7 +454,7 @@ export function PortalApp() {
           } else if (prevStatus && nextStatus && prevStatus !== nextStatus) {
             watch.apptStatusById.set(a.id, nextStatus)
             addNotification({
-              title: 'Appointment Update',
+              title: 'Schedule Update',
               message: `${a?.service_name || 'Service'} • ${prevStatus} → ${nextStatus}`,
               details: {
                 type: 'appointment',
@@ -504,15 +515,16 @@ export function PortalApp() {
           if (q?.id == null) continue
           const prevStatus = watch.quotationStatusById.get(q.id)
           const nextStatus = q?.quotation_approval_status
+          const isPortalReq = isPortalBookingRequest(q)
 
           if (!watch.seenQuotationIds.has(q.id)) {
             watch.seenQuotationIds.add(q.id)
             watch.quotationStatusById.set(q.id, nextStatus)
             addNotification({
-              title: 'New Quotation',
+              title: isPortalReq ? 'New Request Schedule' : 'New Quotation',
               message: `${q?.service_package || 'Quotation'} • ${nextStatus || 'Pending'}`,
               details: {
-                type: 'quotation',
+                type: isPortalReq ? 'schedule-request' : 'quotation',
                 quotation_id: q.id,
                 reference_no: q?.reference_no,
                 status: nextStatus,
@@ -522,10 +534,10 @@ export function PortalApp() {
           } else if (prevStatus && nextStatus && prevStatus !== nextStatus) {
             watch.quotationStatusById.set(q.id, nextStatus)
             addNotification({
-              title: 'Quotation Update',
+              title: isPortalReq ? 'Schedule Update' : 'Quotation Update',
               message: `${q?.reference_no || 'Quotation'} • ${prevStatus} → ${nextStatus}`,
               details: {
-                type: 'quotation',
+                type: isPortalReq ? 'schedule-request' : 'quotation',
                 quotation_id: q.id,
                 reference_no: q?.reference_no,
                 previous_status: prevStatus,

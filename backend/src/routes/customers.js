@@ -5,6 +5,7 @@ const { asyncHandler } = require('../utils/asyncHandler')
 const { writeAuditLog } = require('../utils/auditLog')
 const { validateRequest } = require('../middleware/validateRequest')
 const { requireRole } = require('../middleware/auth')
+const { normalizeEmail, normalizeMobileDigits, normalizeMobileForStorage } = require('../utils/customerIdentity')
 
 const bcrypt = require('bcryptjs')
 const crypto = require('crypto')
@@ -481,21 +482,53 @@ router.post(
       bay,
     } = req.body
 
-    const { rows } = await db.query(
-      `INSERT INTO customers (
-        full_name, mobile, email, address, preferred_contact_method, customer_type, lead_source, bay
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING *`,
-      [fullName, mobile, email, address, preferredContactMethod, customerType, leadSource, bay || null],
-    )
+    const normalizedEmail = normalizeEmail(email)
+    const normalizedMobileDigits = normalizeMobileDigits(mobile)
+    const mobileForStorage = normalizeMobileForStorage(mobile)
+
+    if (normalizedMobileDigits) {
+      const dupMobile = await db.query(
+        "SELECT id FROM customers WHERE regexp_replace(mobile, '\\D', '', 'g') = $1 LIMIT 1",
+        [normalizedMobileDigits],
+      )
+      if (dupMobile.rows.length) {
+        return res.status(409).json({ message: 'A customer with this mobile number already exists.' })
+      }
+    }
+
+    if (normalizedEmail) {
+      const dupEmail = await db.query(
+        'SELECT id FROM customers WHERE LOWER(TRIM(email)) = $1 LIMIT 1',
+        [normalizedEmail],
+      )
+      if (dupEmail.rows.length) {
+        return res.status(409).json({ message: 'A customer with this email already exists.' })
+      }
+    }
+
+    let rows
+    try {
+      ;({ rows } = await db.query(
+        `INSERT INTO customers (
+          full_name, mobile, email, address, preferred_contact_method, customer_type, lead_source, bay
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING *`,
+        [fullName, mobileForStorage, normalizedEmail, address, preferredContactMethod, customerType, leadSource, bay || null],
+      ))
+    } catch (err) {
+      if (String(err?.code) === '23505') {
+        return res.status(409).json({ message: 'A customer with this email or mobile already exists.' })
+      }
+      throw err
+    }
 
     // Walk-in: auto-provision portal access and email a temporary password
     const createdCustomer = rows[0]
-    const normalizedEmail = String(email || '').trim()
+    const normalizedEmailStr = String(normalizedEmail || '').trim()
 
     // Admin/Staff-created customer: auto-provision portal access when an email is provided.
     // Do not overwrite existing portal accounts.
-    const shouldProvisionPortal = Boolean(req.user?.id) && Boolean(normalizedEmail)
+    const shouldProvisionPortal = Boolean(req.user?.id) && Boolean(normalizedEmailStr)
 
     if (shouldProvisionPortal) {
       const temporaryPassword = generateTemporaryPortalPassword()
@@ -517,9 +550,9 @@ router.post(
         try {
           const portalLoginUrl = resolvePortalLoginUrl(req, env.portalUrl)
           const sendRes = await mailer.sendPortalAccessEmail({
-            to: normalizedEmail,
+            to: normalizedEmailStr,
             customerName: createdCustomer.full_name,
-            loginEmail: normalizedEmail,
+            loginEmail: normalizedEmailStr,
             loginMobile: createdCustomer.mobile,
             temporaryPassword,
             portalUrl: portalLoginUrl,
@@ -534,7 +567,7 @@ router.post(
             action: 'PORTAL_ACCESS_PROVISIONED',
             entity: 'customers',
             entityId: createdCustomer.id,
-            meta: { email: normalizedEmail },
+            meta: { email: normalizedEmailStr },
           })
         } catch (err) {
           // If we fail to send the password, clear the portal access so the customer can self-register later.
@@ -548,7 +581,7 @@ router.post(
             action: 'PORTAL_ACCESS_EMAIL_FAILED',
             entity: 'customers',
             entityId: createdCustomer.id,
-            meta: { email: normalizedEmail, error: String(err.message || err) },
+            meta: { email: normalizedEmailStr, error: String(err.message || err) },
           })
         }
       }
@@ -588,20 +621,53 @@ router.patch(
       bay,
     } = req.body
 
-    const { rows } = await db.query(
-      `UPDATE customers
-       SET full_name = $1,
-           mobile = $2,
-           email = $3,
-           address = $4,
-           preferred_contact_method = $5,
-           customer_type = $6,
-           lead_source = $7,
-           bay = $8
-       WHERE id = $9
-       RETURNING *`,
-      [fullName, mobile, email, address, preferredContactMethod, customerType, leadSource, bay || null, id],
-    )
+    const customerId = Number(id)
+    const normalizedEmail = normalizeEmail(email)
+    const normalizedMobileDigits = normalizeMobileDigits(mobile)
+    const mobileForStorage = normalizeMobileForStorage(mobile)
+
+    if (normalizedMobileDigits) {
+      const dupMobile = await db.query(
+        "SELECT id FROM customers WHERE id <> $1 AND regexp_replace(mobile, '\\D', '', 'g') = $2 LIMIT 1",
+        [customerId, normalizedMobileDigits],
+      )
+      if (dupMobile.rows.length) {
+        return res.status(409).json({ message: 'A customer with this mobile number already exists.' })
+      }
+    }
+
+    if (normalizedEmail) {
+      const dupEmail = await db.query(
+        'SELECT id FROM customers WHERE id <> $1 AND LOWER(TRIM(email)) = $2 LIMIT 1',
+        [customerId, normalizedEmail],
+      )
+      if (dupEmail.rows.length) {
+        return res.status(409).json({ message: 'A customer with this email already exists.' })
+      }
+    }
+
+    let rows
+    try {
+      ;({ rows } = await db.query(
+        `UPDATE customers
+         SET full_name = $1,
+             mobile = $2,
+             email = $3,
+             address = $4,
+             preferred_contact_method = $5,
+             customer_type = $6,
+             lead_source = $7,
+             bay = $8
+         WHERE id = $9
+         RETURNING *`,
+        [fullName, mobileForStorage, normalizedEmail, address, preferredContactMethod, customerType, leadSource, bay || null, id],
+      ))
+    } catch (err) {
+      if (String(err?.code) === '23505') {
+        return res.status(409).json({ message: 'A customer with this email or mobile already exists.' })
+      }
+      throw err
+    }
 
     if (!rows.length) {
       return res.status(404).json({ message: 'Customer not found' })

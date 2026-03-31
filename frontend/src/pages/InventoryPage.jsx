@@ -3,6 +3,7 @@ import { apiGet, apiPost, apiPatch, apiDelete, pushToast } from '../api/client'
 import { WorkflowStatusBadge } from '../components/WorkflowStatusBadge'
 import { PaginationBar } from '../components/PaginationBar'
 import { ConfirmModal } from '../components/ConfirmModal'
+import { onConfigUpdated } from '../utils/events'
 
 const DEFAULT_CATEGORIES = ['All']
 
@@ -195,32 +196,40 @@ export function InventoryPage({ token }) {
   useEffect(() => { if (activeTab === 'releases') loadReleases() }, [activeTab, loadReleases])
   useEffect(() => { if (activeTab === 'adds') loadAdds() }, [activeTab, loadAdds])
 
+  const loadInventorySettings = useCallback(async () => {
+    try {
+      const arr = await apiGet('/config/category/inventory', token)
+      const entries = Array.isArray(arr) ? arr : []
+
+      const catEntry = entries.find((e) => e.key === 'inventory_categories')
+      if (catEntry?.value) {
+        try {
+          const parsed = typeof catEntry.value === 'string' ? JSON.parse(catEntry.value) : catEntry.value
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSettingsCategories(parsed)
+          }
+        } catch {}
+      }
+
+      const minQtyEntry = entries.find((e) => e.key === 'default_qty_minimum')
+      if (minQtyEntry && minQtyEntry.value !== undefined) {
+        const val = Number(minQtyEntry.value)
+        if (!Number.isNaN(val)) setDefaultMinQty(val)
+      }
+    } catch {
+      // ignore
+    }
+  }, [token])
+
   // 1. Categories and default rules from settings
   useEffect(() => {
-    apiGet('/config/category/inventory', token)
-      .then((arr) => {
-        const entries = Array.isArray(arr) ? arr : []
-        
-        // Settings Categories
-        const catEntry = entries.find((e) => e.key === 'inventory_categories')
-        if (catEntry?.value) {
-          try {
-            const parsed = typeof catEntry.value === 'string' ? JSON.parse(catEntry.value) : catEntry.value
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setSettingsCategories(parsed)
-            }
-          } catch {}
-        }
-
-        // Default Min Qty
-        const minQtyEntry = entries.find((e) => e.key === 'default_qty_minimum')
-        if (minQtyEntry && minQtyEntry.value !== undefined) {
-          const val = Number(minQtyEntry.value)
-          if (!Number.isNaN(val)) setDefaultMinQty(val)
-        }
-      })
-      .catch(() => {})
-  }, [token])
+    loadInventorySettings()
+    const off = onConfigUpdated((e) => {
+      const cat = e?.detail?.category
+      if (!cat || cat === 'inventory') loadInventorySettings()
+    })
+    return off
+  }, [loadInventorySettings])
 
   // 2. Load categories used in DB to merge with settings
   useEffect(() => {

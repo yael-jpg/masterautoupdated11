@@ -35,6 +35,7 @@ const ConfigurationService = require('../services/configurationService')
 const { sendPortalBookingRequestEmail, sendRawEmail } = require('../services/mailer')
 const { buildQuotationRequestStaffEmail } = require('../services/emailTemplates')
 const { randomB64url, deriveVerifierFromPassword, computeProof, timingSafeEqualB64url } = require('../utils/hashedLogin')
+const { normalizeEmail, normalizeMobileDigits, normalizeMobileForStorage } = require('../utils/customerIdentity')
 
 const googleClient = new OAuth2Client(env.googleClientId)
 
@@ -85,11 +86,9 @@ async function getHashedLoginIters() {
 }
 
 async function isForceHashedPortalLogin() {
-  try {
-    return Boolean(await ConfigurationService.get('system', 'force_hashed_portal_login'))
-  } catch {
-    return false
-  }
+  // Deprecated: forcing hashed-only login can lock out portal accounts that haven't been upgraded yet.
+  // We still support hashed login when the verifier exists, but we never force it.
+  return false
 }
 
 // In-memory replay protection for challenge tokens (best-effort; per-process).
@@ -260,30 +259,55 @@ router.post(
   asyncHandler(async (req, res) => {
     const mailer = require('../services/mailer')
     const fullName = String(req.body.fullName || '').trim()
-    const email = String(req.body.email || '').trim().toLowerCase()
-    const mobile = String(req.body.mobile || '').trim()
+    const email = normalizeEmail(req.body.email)
+    const mobileForStorage = normalizeMobileForStorage(req.body.mobile)
+    const mobileDigits = normalizeMobileDigits(req.body.mobile)
     const password = String(req.body.password || '')
 
-    // Reject if a portal account with this mobile already exists
-    const dup = await db.query(
-      'SELECT id FROM customers WHERE mobile = $1 AND portal_password_hash IS NOT NULL',
-      [mobile],
-    )
-    if (dup.rows.length > 0) {
-      return res
-        .status(409)
-        .json({ message: 'An account with this mobile already exists. Please log in.' })
+    if (!email) {
+      return res.status(400).json({ message: 'Valid email address is required' })
+    }
+    if (!mobileDigits) {
+      return res.status(400).json({ message: 'Valid mobile number is required' })
     }
 
-    // Reject if a portal account with this email already exists
-    const dupEmail = await db.query(
-      'SELECT id FROM customers WHERE email = $1 AND portal_password_hash IS NOT NULL',
+    // Locate an existing customer by normalized mobile (digits-only)
+    const existingByMobile = await db.query(
+      "SELECT id, email, portal_password_hash FROM customers WHERE regexp_replace(mobile, '\\D', '', 'g') = $1 ORDER BY id ASC LIMIT 1",
+      [mobileDigits],
+    )
+
+    // Locate an existing customer by normalized email (case-insensitive)
+    const existingByEmail = await db.query(
+      'SELECT id, mobile, portal_password_hash FROM customers WHERE LOWER(TRIM(email)) = $1 ORDER BY id ASC LIMIT 1',
       [email],
     )
-    if (dupEmail.rows.length > 0) {
-      return res
-        .status(409)
-        .json({ message: 'An account with this email already exists. Please log in.' })
+
+    // If the email exists and belongs to a different customer than the mobile match, reject.
+    if (existingByEmail.rows.length && existingByMobile.rows.length) {
+      const emailId = Number(existingByEmail.rows[0].id)
+      const mobileId = Number(existingByMobile.rows[0].id)
+      if (emailId && mobileId && emailId !== mobileId) {
+        return res.status(409).json({ message: 'This email is already used by another customer.' })
+      }
+    }
+
+    // If an email match exists (even without portal), and there's no mobile match, reject.
+    if (existingByEmail.rows.length && !existingByMobile.rows.length) {
+      return res.status(409).json({ message: 'This email is already used by another customer.' })
+    }
+
+    // If a mobile match exists and is already portal-enabled, reject.
+    if (existingByMobile.rows.length && existingByMobile.rows[0].portal_password_hash) {
+      return res.status(409).json({ message: 'An account with this mobile already exists. Please log in.' })
+    }
+
+    // If a mobile match exists but has a different non-empty email, reject (prevents hijacking).
+    if (existingByMobile.rows.length) {
+      const existingEmail = normalizeEmail(existingByMobile.rows[0].email)
+      if (existingEmail && existingEmail !== email) {
+        return res.status(409).json({ message: 'This mobile is already linked to a different email. Please contact support.' })
+      }
     }
 
     const hash = await bcrypt.hash(password, 10)
@@ -294,7 +318,7 @@ router.post(
 
     // If admin already created a customer record with this mobile, attach to it;
     // otherwise create a new customer record.
-    const existing = await db.query('SELECT id FROM customers WHERE mobile = $1', [mobile])
+    const existing = existingByMobile
     let customerId
     if (existing.rows.length > 0) {
       customerId = existing.rows[0].id
@@ -339,13 +363,13 @@ router.post(
            )
            VALUES ($1, $2, $3, $4, $5, $6, $7, 'Walk-in', 'Portal', NOW())
            RETURNING id`,
-          [fullName, mobile, email, hash, salt, verifier, iters],
+          [fullName, mobileForStorage, email, hash, salt, verifier, iters],
         )
         : await db.query(
           `INSERT INTO customers (full_name, mobile, email, portal_password_hash, customer_type, lead_source, created_at)
            VALUES ($1, $2, $3, $4, 'Walk-in', 'Portal', NOW())
            RETURNING id`,
-          [fullName, mobile, email, hash],
+          [fullName, mobileForStorage, email, hash],
         )
       customerId = ins.rows[0].id
     }
@@ -975,8 +999,8 @@ router.post(
     )
     if (!v.rows.length) return res.status(403).json({ message: 'Vehicle not found.' })
 
-    // Portal booking should NOT immediately create a Scheduling appointment.
-    // Instead, create a Quotation so it reflects in admin Quotations and portal.
+    // Create a Quotation for the portal request, and also create a Scheduling
+    // Appointment in status 'Requested' so admin/staff can review/approve in Scheduling.
 
     const BRANCH_CODES = { cubao: 'CBO', manila: 'MNL' }
     function getBranchCode(bay) {
@@ -1008,6 +1032,7 @@ router.post(
 
     const client = await db.pool.connect()
     let createdQuotation
+    let createdAppointment
     let resolvedService = null
     try {
       await client.query('BEGIN')
@@ -1095,6 +1120,73 @@ router.post(
       const { rows: qRows } = await client.query(insertSql, insertParams)
       createdQuotation = qRows[0]
 
+      // Create a matching appointment request so it appears in Scheduling
+      try {
+        const { rows: apptCols } = await client.query(
+          `SELECT column_name
+           FROM information_schema.columns
+           WHERE table_schema = 'public'
+             AND table_name = 'appointments'
+             AND column_name IN ('booking_source')`,
+        )
+        const hasBookingSource = apptCols.some((r) => r.column_name === 'booking_source')
+
+        const apptInsertSql = hasBookingSource
+          ? `INSERT INTO appointments (
+               customer_id, vehicle_id, service_id, schedule_start, schedule_end,
+               bay, installer_team, status, notification_channel, sale_id, quotation_id, notes, booking_source
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+             RETURNING id, status, created_at`
+          : `INSERT INTO appointments (
+               customer_id, vehicle_id, service_id, schedule_start, schedule_end,
+               bay, installer_team, status, notification_channel, sale_id, quotation_id, notes
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+             RETURNING id, status, created_at`
+
+        const apptParams = hasBookingSource
+          ? [
+              req.customerId,
+              vehicleId,
+              resolvedService?.id || serviceId || null,
+              scheduleStart,
+              scheduleEnd || null,
+              finalBranch,
+              null,
+              'Requested',
+              'SMS',
+              null,
+              createdQuotation?.id || null,
+              String(finalNotes || '').trim() || null,
+              'portal',
+            ]
+          : [
+              req.customerId,
+              vehicleId,
+              resolvedService?.id || serviceId || null,
+              scheduleStart,
+              scheduleEnd || null,
+              finalBranch,
+              null,
+              'Requested',
+              'SMS',
+              null,
+              createdQuotation?.id || null,
+              String(finalNotes || '').trim() || null,
+            ]
+
+        const { rows: apptRows } = await client.query(apptInsertSql, apptParams)
+        createdAppointment = apptRows[0]
+      } catch (err) {
+        // Best-effort: quotation creation should still succeed.
+        // But log so we can diagnose why Scheduling didn't get a row.
+        console.error('[portal] failed to create appointment for booking request', {
+          error: err?.message,
+          customerId: req.customerId,
+          vehicleId,
+          quotationId: createdQuotation?.id,
+        })
+      }
+
       await client.query('COMMIT')
     } catch (err) {
       await client.query('ROLLBACK')
@@ -1175,6 +1267,7 @@ router.post(
 
     return res.status(201).json({
       id: createdQuotation?.id,
+      appointmentId: createdAppointment?.id || null,
       quotationNo: createdQuotation?.quotation_no,
       message: 'Booking request submitted. A quotation has been created for approval.',
     })
@@ -1696,6 +1789,7 @@ router.get(
          q.services               AS services_json,
          q.total_amount,
          q.status                 AS quotation_approval_status,
+         (POSITION('[PORTAL BOOKING REQUEST]' IN COALESCE(q.notes, '')) > 0) AS is_portal_request,
          v.make, v.model, v.year, v.plate_number,
          a.status                 AS appointment_status,
          a.schedule_start, a.schedule_end, a.bay, a.installer_team
@@ -1720,6 +1814,7 @@ router.get(
          'Quotation'              AS doc_type,
          q.services               AS services_json,
          q.total_amount,
+         (POSITION('[PORTAL BOOKING REQUEST]' IN COALESCE(q.notes, '')) > 0) AS is_portal_request,
          NULL::text               AS workflow_status,
          NULL::text               AS appointment_status,
          NULL::timestamp          AS schedule_start,

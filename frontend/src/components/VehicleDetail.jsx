@@ -7,7 +7,7 @@ export function VehicleDetail({ vehicle, token, onClose, onOwnerClick }) {
   const [serviceHistory, setServiceHistory] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState('history')
+  const [activeTab, setActiveTab] = useState('info')
   const [showRecordForm, setShowRecordForm] = useState(false)
   const [showPhotoForm, setShowPhotoForm] = useState(false)
   const [editingRecord, setEditingRecord] = useState(null)
@@ -34,6 +34,11 @@ export function VehicleDetail({ vehicle, token, onClose, onOwnerClick }) {
   useEffect(() => {
     loadServiceHistory()
   }, [vehicle?.id, token])
+
+  useEffect(() => {
+    setActiveTab('info')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vehicle?.id])
 
   const loadServiceHistory = async () => {
     if (!vehicle?.id) return
@@ -231,12 +236,13 @@ export function VehicleDetail({ vehicle, token, onClose, onOwnerClick }) {
       <div className="vehicle-detail-header">
         <div className="vehicle-info">
           <h2>
-            {vehicle.plate_number} - {vehicle.make} {vehicle.model}
+            {vehicle.plate_number || '—'} - {[vehicle.make, vehicle.model].filter(Boolean).join(' ')}
           </h2>
-          <p className="vehicle-meta">
-            Year: {vehicle.year} | Color: {vehicle.color || 'N/A'} | Odometer:{' '}
-            {vehicle.odometer || 0} km
-          </p>
+          <div className="vehicle-meta">
+            <span>Year: {vehicle.year || 'N/A'}</span>
+            <span>Color: {vehicle.color || 'N/A'}</span>
+            <span>Odometer: {vehicle.odometer || 0} km</span>
+          </div>
           <button
             type="button"
             className="vehicle-customer"
@@ -259,17 +265,17 @@ export function VehicleDetail({ vehicle, token, onClose, onOwnerClick }) {
       <div className="vehicle-detail-tabs">
         <button
           type="button"
+          className={activeTab === 'info' ? 'active' : ''}
+          onClick={() => setActiveTab('info')}
+        >
+          Vehicle Info
+        </button>
+        <button
+          type="button"
           className={activeTab === 'history' ? 'active' : ''}
           onClick={() => setActiveTab('history')}
         >
           Service History
-        </button>
-        <button
-          type="button"
-          className={activeTab === 'records' ? 'active' : ''}
-          onClick={() => setActiveTab('records')}
-        >
-          Service Records & Damage
         </button>
         <button
           type="button"
@@ -278,9 +284,61 @@ export function VehicleDetail({ vehicle, token, onClose, onOwnerClick }) {
         >
           Photos
         </button>
+        <button
+          type="button"
+          className={activeTab === 'damage' ? 'active' : ''}
+          onClick={() => setActiveTab('damage')}
+        >
+          Damage
+        </button>
       </div>
 
       <div className="vehicle-detail-content">
+        {activeTab === 'info' && (
+          <div className="vehicle-info-tab">
+            <h3>Vehicle Information</h3>
+            <div className="vehicle-info-grid">
+              <div className="vehicle-info-card">
+                <div className="vehicle-info-row">
+                  <span className="vehicle-info-label">Plate Number</span>
+                  <span className="vehicle-info-value">{vehicle.plate_number || '—'}</span>
+                </div>
+                <div className="vehicle-info-row">
+                  <span className="vehicle-info-label">Make</span>
+                  <span className="vehicle-info-value">{vehicle.make || '—'}</span>
+                </div>
+                <div className="vehicle-info-row">
+                  <span className="vehicle-info-label">Model</span>
+                  <span className="vehicle-info-value">{vehicle.model || '—'}</span>
+                </div>
+                <div className="vehicle-info-row">
+                  <span className="vehicle-info-label">Variant</span>
+                  <span className="vehicle-info-value">{vehicle.variant || '—'}</span>
+                </div>
+              </div>
+
+              <div className="vehicle-info-card">
+                <div className="vehicle-info-row">
+                  <span className="vehicle-info-label">Year</span>
+                  <span className="vehicle-info-value">{vehicle.year || '—'}</span>
+                </div>
+                <div className="vehicle-info-row">
+                  <span className="vehicle-info-label">Color</span>
+                  <span className="vehicle-info-value">{vehicle.color || '—'}</span>
+                </div>
+                <div className="vehicle-info-row">
+                  <span className="vehicle-info-label">Odometer</span>
+                  <span className="vehicle-info-value">{(vehicle.odometer || 0).toLocaleString('en-PH')} km</span>
+                </div>
+                <div className="vehicle-info-row">
+                  <span className="vehicle-info-label">Body Type</span>
+                  <span className="vehicle-info-value">{vehicle.body_type || vehicle.bodyType || '—'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'history' && (
           <div className="service-history-tab">
             <h3>Complete Service History - Jobs, Dates, Packages & Staff</h3>
@@ -296,32 +354,42 @@ export function VehicleDetail({ vehicle, token, onClose, onOwnerClick }) {
                         <h4>{sale.service_package}</h4>
                         <span className="timeline-date">{formatDate(sale.service_date)}</span>
                       </div>
-                      <div className="timeline-details">
-                        <p>
-                          <strong>Reference:</strong> {sale.reference_no}
-                        </p>
-                        <p>
-                          <strong>Type:</strong> {sale.doc_type}
-                        </p>
-                        <p>
-                          <strong>Status:</strong>{' '}
-                          <span className={`status-badge status-${sale.workflow_status.toLowerCase()}`}>
-                            {sale.workflow_status}
+                      <div className="vh-details-grid">
+                        <div className="vh-details-row">
+                          <span className="vh-details-label">Reference</span>
+                          <span className="vh-details-value">{sale.reference_no || '—'}</span>
+                        </div>
+                        <div className="vh-details-row">
+                          <span className="vh-details-label">Type</span>
+                          <span className="vh-details-value">{sale.doc_type || '—'}</span>
+                        </div>
+                        <div className="vh-details-row">
+                          <span className="vh-details-label">Status</span>
+                          <span className="vh-details-value">
+                            <span className={`status-badge status-${String(sale.workflow_status || 'pending').toLowerCase().replace(/\s+/g, '-')}`}>
+                              {sale.workflow_status || 'PENDING'}
+                            </span>
                           </span>
-                        </p>
-                        <p>
-                          <strong>Amount:</strong> {formatCurrency(sale.total_amount)}
-                        </p>
-                        <p>
-                          <strong>Staff:</strong> {sale.created_by_name || 'N/A'}
-                        </p>
+                        </div>
+                        <div className="vh-details-row">
+                          <span className="vh-details-label">Amount</span>
+                          <span className="vh-details-value">{formatCurrency(sale.total_amount)}</span>
+                        </div>
+                        <div className="vh-details-row">
+                          <span className="vh-details-label">Staff</span>
+                          <span className="vh-details-value">{sale.created_by_name || 'N/A'}</span>
+                        </div>
                         {sale.add_ons && (
-                          <p>
-                            <strong>Add-ons:</strong>{' '}
-                            {typeof sale.add_ons === 'string'
-                              ? sale.add_ons
-                              : JSON.stringify(sale.add_ons)}
-                          </p>
+                          <div className="vh-details-row">
+                            <span className="vh-details-label">Add-ons</span>
+                            <span className="vh-details-value">
+                              {typeof sale.add_ons === 'string'
+                                ? sale.add_ons
+                                : Array.isArray(sale.add_ons)
+                                  ? sale.add_ons.filter(Boolean).join(', ')
+                                  : JSON.stringify(sale.add_ons)}
+                            </span>
+                          </div>
                         )}
                         {sale.items && sale.items.length > 0 && (
                           <div className="service-items">
@@ -345,10 +413,10 @@ export function VehicleDetail({ vehicle, token, onClose, onOwnerClick }) {
           </div>
         )}
 
-        {activeTab === 'records' && (
+        {activeTab === 'damage' && (
           <div className="service-records-tab">
             <div className="tab-header">
-              <h3>Service Records, Damage & Remarks</h3>
+              <h3>Damage & Notes</h3>
               <button
                 type="button"
                 className="btn-primary"

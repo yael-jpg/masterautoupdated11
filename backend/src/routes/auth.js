@@ -57,11 +57,9 @@ async function getHashedLoginIters() {
 }
 
 async function isForceHashedAdminLogin() {
-  try {
-    return Boolean(await ConfigurationService.get('system', 'force_hashed_admin_login'))
-  } catch {
-    return false
-  }
+  // Deprecated: forcing hashed-only login can lock out accounts that haven't been upgraded yet.
+  // We still support hashed login when the verifier exists, but we never force it.
+  return false
 }
 
 // In-memory replay protection for challenge tokens (best-effort; per-process).

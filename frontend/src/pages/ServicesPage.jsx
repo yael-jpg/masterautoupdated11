@@ -1,6 +1,7 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
 import { SectionCard } from '../components/SectionCard'
 import { apiGet, apiPatch, pushToast } from '../api/client'
+import { onConfigUpdated } from '../utils/events'
 import {
   SERVICE_CATALOG,
   VEHICLE_SIZE_OPTIONS,
@@ -112,6 +113,7 @@ export function ServicesPage({ token }) {
   const [activeTab, setActiveTab] = useState('price')
   const [activeGroup, setActiveGroup] = useState(groups[0])
   const [priceOverrides, setPriceOverrides] = useState({})
+  const [serviceNameOverrides, setServiceNameOverrides] = useState({})
 
   const [dbServices, setDbServices] = useState([])
   const [dbLoading, setDbLoading] = useState(false)
@@ -128,25 +130,44 @@ export function ServicesPage({ token }) {
     })
   }, [dbServices])
 
+  const loadQuotationOverrides = useCallback(async () => {
+    try {
+      const entries = await apiGet('/config/category/quotations')
+      const priceEntry = Array.isArray(entries)
+        ? entries.find((e) => e.key === 'service_prices')
+        : null
+      if (priceEntry?.value) {
+        try {
+          const parsed =
+            typeof priceEntry.value === 'string'
+              ? JSON.parse(priceEntry.value)
+              : priceEntry.value
+          if (parsed && typeof parsed === 'object') setPriceOverrides(parsed)
+        } catch {}
+      }
+      const nameEntry = Array.isArray(entries)
+        ? entries.find((e) => e.key === 'service_name_overrides')
+        : null
+      if (nameEntry?.value) {
+        try {
+          const parsed = typeof nameEntry.value === 'string' ? JSON.parse(nameEntry.value) : nameEntry.value
+          if (parsed && typeof parsed === 'object') setServiceNameOverrides(parsed)
+        } catch {}
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+
   // Load configured price overrides from Configuration > Quotations > Service Pricing
   useEffect(() => {
-    apiGet('/config/category/quotations')
-      .then((entries) => {
-        const priceEntry = Array.isArray(entries)
-          ? entries.find((e) => e.key === 'service_prices')
-          : null
-        if (priceEntry?.value) {
-          try {
-            const parsed =
-              typeof priceEntry.value === 'string'
-                ? JSON.parse(priceEntry.value)
-                : priceEntry.value
-            if (parsed && typeof parsed === 'object') setPriceOverrides(parsed)
-          } catch {}
-        }
-      })
-      .catch(() => {})
-  }, [])
+    loadQuotationOverrides()
+    const off = onConfigUpdated((e) => {
+      const cat = e?.detail?.category
+      if (!cat || cat === 'quotations') loadQuotationOverrides()
+    })
+    return off
+  }, [loadQuotationOverrides])
 
   useEffect(() => {
     if (activeTab !== 'materials') return
@@ -258,7 +279,7 @@ export function ServicesPage({ token }) {
                       <tbody>
                         {rows.map((service, idx) => (
                           <tr key={service.code} className={idx % 2 === 0 ? 'svc-row-even' : ''}>
-                            <td className="svc-td-service">{service.name}</td>
+                            <td className="svc-td-service">{serviceNameOverrides[service.code] || service.name}</td>
                             {VEHICLE_SIZE_OPTIONS.map((size) => {
                               const hasSize = service.sizePrices[size.key] !== undefined
                               if (!hasSize) {
@@ -353,7 +374,7 @@ export function ServicesPage({ token }) {
                       {SERVICE_CATALOG.filter((s) => s.group === activeGroup).map((s) => (
                         <div key={s.code} className="svc-process-service-chip">
                           <span className="svc-chip-dot" />
-                          {s.name}
+                          {serviceNameOverrides[s.code] || s.name}
                         </div>
                       ))}
                     </div>
@@ -435,7 +456,7 @@ export function ServicesPage({ token }) {
                                 color: 'inherit',
                               }}
                             >
-                              <div style={{ fontSize: 13, fontWeight: 600 }}>{svc.name}</div>
+                              <div style={{ fontSize: 13, fontWeight: 600 }}>{serviceNameOverrides[svc.code] || svc.name}</div>
                               <div style={{ fontSize: 12, opacity: 0.75 }}>{svc.category}</div>
                             </button>
                           )
@@ -468,7 +489,7 @@ export function ServicesPage({ token }) {
                             }}
                           >
                             <div style={{ minWidth: 0 }}>
-                              <div style={{ fontSize: 14, fontWeight: 700 }}>{selected.name}</div>
+                              <div style={{ fontSize: 14, fontWeight: 700 }}>{serviceNameOverrides[selected.code] || selected.name}</div>
                               <div style={{ fontSize: 12, opacity: 0.75 }}>{selected.category}</div>
                             </div>
                             <button

@@ -1141,7 +1141,7 @@ body {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  /* ── Tablet modals: large centered dialogs, not bottom sheets ── */
+  /* â”€â”€ Tablet modals: large centered dialogs, not bottom sheets â”€â”€ */
   .modal-overlay,
   .inv-modal-overlay {
     padding: 24px;
@@ -1170,7 +1170,7 @@ body {
     border-radius: 20px !important;
   }
 
-  /* ── Tablet Login — full-screen immersive 2-panel layout ── */
+  /* â”€â”€ Tablet Login â€” full-screen immersive 2-panel layout â”€â”€ */
   .auth-page {
     padding: 0;
     min-height: 100dvh;
@@ -1476,7 +1476,7 @@ body {
     grid-template-columns: 1fr;
   }
 
-  /* ── Mobile Login — single-panel, full-screen ── */
+  /* â”€â”€ Mobile Login â€” single-panel, full-screen â”€â”€ */
   .auth-page {
     padding: 0;
     min-height: 100dvh;
@@ -2121,7 +2121,7 @@ body {
     margin-left: 6px;
   }
 
-  /* Actions cell — no label, buttons in a row */
+  /* Actions cell â€” no label, buttons in a row */
   .qo-table td.col-actions,
   .qo-table td:last-child {
     justify-content: flex-start;
@@ -3473,7 +3473,7 @@ body {
   }
 }
 
-/* ── DataTable card mode: tablet ≤900px ────────────────────── */
+/* â”€â”€ DataTable card mode: tablet â‰¤900px â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @media (max-width: 900px) {
   .data-table {
     min-width: 100%;
@@ -3930,7 +3930,7 @@ body {
   margin: 0;
 }
 
-/* ── Client Management ── */
+/* â”€â”€ Client Management â”€â”€ */
 .adm-client-toolbar {
   display: flex;
   align-items: center;
@@ -4388,6 +4388,13 @@ body {
 .notification-list {
   max-height: 400px;
   overflow-y: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge legacy */
+}
+
+.notification-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .notification-empty {
@@ -5965,7 +5972,7 @@ body {
   padding: 0 4px;
 }
 
-/* ── Inventory KPI Strip ─────────────────────────────────────────────────── */
+/* â”€â”€ Inventory KPI Strip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .inv-kpi-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -7010,7 +7017,7 @@ body {
 }
 
 .svc-price-custom::after {
-  content: ' ✦';
+  content: ' âœ¦';
   font-size: 9px;
   opacity: 0.7;
   vertical-align: super;
@@ -7257,13 +7264,13 @@ body {
 
 @media (max-width: 1024px) {
 
-  /* Grid: no sidebar column — fixed overlay instead */
+  /* Grid: no sidebar column â€” fixed overlay instead */
   .dashboard-shell,
   .dashboard-shell.sidebar-collapsed {
     grid-template-columns: 1fr;
   }
 
-  /* Hide low-priority table columns at tablet — sidebar is now overlay so content is full width but columns are still tight */
+  /* Hide low-priority table columns at tablet â€” sidebar is now overlay so content is full width but columns are still tight */
   .data-table .col-priority-3 {
     display: none;
   }
@@ -7334,7 +7341,7 @@ body {
     align-items: flex-start;
   }
 
-  /* Backdrop behind drawer — inside shell stacking context so sidebar z-index:600 wins */
+  /* Backdrop behind drawer â€” inside shell stacking context so sidebar z-index:600 wins */
   .mobile-backdrop {
     display: block;
     position: fixed;
@@ -7983,9 +7990,9 @@ body {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    PORTAL DOWN PAYMENT MODAL
-═══════════════════════════════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 .portal-pay-overlay {
   position: fixed;
   inset: 0;
@@ -8000,8 +8007,8 @@ body {
 }
 
 .portal-pay-modal {
-  background: #1a2133;
-  border: 1px solid rgba(120, 160, 255, 0.18);
+  background: rgba(12, 12, 13, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 16px;
   width: 100%;
   max-width: 480px;
@@ -8024,7 +8031,7 @@ body {
   margin: 0;
   font-size: 17px;
   font-weight: 700;
-  color: #e8eeff;
+  color: #ffffff;
   letter-spacing: 0.3px;
 }
 
@@ -8044,7 +8051,7 @@ body {
 
 .portal-pay-close:hover {
   background: rgba(255, 255, 255, 0.12);
-  color: #e8eeff;
+  color: #ffffff;
 }
 
 .portal-pay-summary {
@@ -8070,7 +8077,7 @@ body {
 .portal-pay-summary-name {
   font-size: 14px;
   font-weight: 600;
-  color: #e8eeff;
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .portal-pay-summary-price {
@@ -8085,6 +8092,32 @@ body {
   color: #5eda98;
   letter-spacing: -0.5px;
   grid-column: 1 / -1;
+}
+
+.portal-pay-summary-note {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(189, 200, 218, 0.78);
+  letter-spacing: 0;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.portal-pay-summary-subnote {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(189, 200, 218, 0.60);
+  letter-spacing: 0;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.portal-pay-summary-notes {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
 }
 
 .portal-pay-field {
@@ -8103,14 +8136,14 @@ body {
   display: flex;
   align-items: center;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(120, 160, 255, 0.20);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
   overflow: hidden;
   transition: border-color 0.15s;
 }
 
 .portal-pay-amount-wrap:focus-within {
-  border-color: rgba(120, 160, 255, 0.55);
+  border-color: rgba(255, 255, 255, 0.28);
 }
 
 .portal-pay-peso {
@@ -8254,7 +8287,7 @@ body {
   }
 }
 
-/* ── Inventory Page Polished UI ────────────────────────────────────────── */
+/* â”€â”€ Inventory Page Polished UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .inv-container {
   display: flex;
@@ -8690,3 +8723,199 @@ body {
 .inv-movement-wrap::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
 }
+
+.inv-movement-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.inv-modal-box {
+  background: linear-gradient(180deg, #121212 0%, #080808 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  width: 100%;
+  max-width: 540px;
+  padding: 32px;
+  box-shadow: 0 32px 64px rgba(0, 0, 0, 0.7);
+}
+
+.inv-modal-box.wide {
+  max-width: 1000px;
+}
+
+.inv-modal-title {
+  font-size: 1.5rem;
+  margin: 0 0 8px;
+  color: #fff;
+}
+
+.inv-modal-sub {
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 24px;
+}
+
+.inv-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.inv-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.inv-field.full { grid-column: 1 / -1; }
+
+.inv-label {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  height: 34px;
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 6px;
+  line-height: 1.2;
+}
+
+.inv-input, .inv-select {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 12px 16px;
+  color: #fff;
+  font-size: 1rem;
+  transition: all 0.3s;
+}
+
+.inv-input:focus, .inv-select:focus {
+  outline: none;
+  border-color: #3385ff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.inv-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(0.85) sepia(100%) saturate(500%) hue-rotate(180deg);
+  opacity: 0.6;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.inv-input::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.inv-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.inv-cancel-btn {
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 24px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.inv-submit-btn {
+  background: #3385ff;
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.inv-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.inv-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.inv-detail-stat {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 16px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.inv-detail-stat-label {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.inv-detail-stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.inv-section-title {
+  font-size: 1.1rem;
+  margin-bottom: 16px;
+  color: #fff;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.inv-movement-wrap {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+}
+
+.inv-movement-wrap::-webkit-scrollbar {
+  width: 8px;
+}
+
+.inv-movement-wrap::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.inv-movement-wrap::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.inv-movement-wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+
+/* Error states for fields */
+.vf-field-error {
+  border-color: #ff4d4d !important;
+  box-shadow: 0 0 0 1px rgba(255, 77, 77, 0.28) !important;
+  background-color: rgba(255, 0, 0, 0.03) !important;
+}
+
+[data-theme='light'] .vf-field-error {
+  border-color: #ff4d4d !important;
+  background-color: rgba(255, 0, 0, 0.01) !important;
+}
+

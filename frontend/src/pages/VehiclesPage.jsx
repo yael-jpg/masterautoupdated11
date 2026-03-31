@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiDelete, apiGet, apiPatch, apiPost, pushToast } from '../api/client'
 import { DataTable } from '../components/DataTable'
 import { PaginationBar } from '../components/PaginationBar'
@@ -7,8 +7,9 @@ import { Modal } from '../components/Modal'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { VehicleDetail } from '../components/VehicleDetail'
 import { SearchableSelect } from '../components/SearchableSelect'
+import { onVehicleMakesUpdated } from '../utils/events'
 
-export function VehiclesPage({ token, user, preselectedCustomerId, onPreselectedConsumed, onAfterVehicleSave }) {
+export function VehiclesPage({ token, user, preselectedCustomerId, onPreselectedConsumed, onCancelRedirect, onAfterVehicleSave }) {
   const isSuperAdmin = user?.role === 'SuperAdmin'
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -19,6 +20,7 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0, limit: 10 })
   const [customers, setCustomers] = useState([])
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: () => { } })
   const [viewingVehicle, setViewingVehicle] = useState(null)
   const [viewingOwner, setViewingOwner] = useState(null)
@@ -30,8 +32,6 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
   const [form, setForm] = useState({
     customerId: '',
     plateNumber: '',
-    conductionSticker: '',
-    vinChassis: '',
     make: '',
     customMake: '',
     model: '',
@@ -42,15 +42,25 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
     bodyType: '',
   })
 
+  // Tracks whether the register modal was opened via CRM redirect.
+  const redirectedOpenRef = useRef(false)
+
+  const applySafeMakes = (makesResult) => {
+    const unsafeNames = [/^all(\b|$)/i, /^all vehicles?/i]
+    const safeMakes = (Array.isArray(makesResult) ? makesResult : []).filter((m) => {
+      if (!m || !m.name) return false
+      return !unsafeNames.some((rx) => rx.test(m.name))
+    })
+    setMakes(safeMakes)
+  }
+
   // Close modal helper
-  const handleCloseModal = () => {
+  const handleCloseModal = (reason = 'cancel') => {
     setShowForm(false)
     setEditingId(null)
     setForm({
       customerId: customers.length ? customers[0].id : '',
       plateNumber: '',
-      conductionSticker: '',
-      vinChassis: '',
       make: '',
       customMake: '',
       model: '',
@@ -62,6 +72,12 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
       _customModel: false,
       _customVariant: false,
     })
+    setFieldErrors({})
+
+    if (reason === 'cancel' && redirectedOpenRef.current) {
+      redirectedOpenRef.current = false
+      if (typeof onCancelRedirect === 'function') onCancelRedirect()
+    }
   }
 
   const loadData = async (nextPage = page, nextSearch = search) => {
@@ -78,14 +94,7 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
     const customerList = customerResult.data || customerResult
     setPagination(vehicleResult.pagination)
     setPage(vehicleResult.pagination.page)
-    // Filter out placeholder makes like 'All' or 'All Vehicles' that should
-    // not appear in the Register Vehicle make dropdown.
-    const unsafeNames = [/^all(\b|$)/i, /^all vehicles?/i]
-    const safeMakes = (Array.isArray(makesResult) ? makesResult : []).filter(m => {
-      if (!m || !m.name) return false
-      return !unsafeNames.some((rx) => rx.test(m.name))
-    })
-    setMakes(safeMakes)
+    applySafeMakes(makesResult)
 
     setRows(
       vehicles.map((vehicle) => {
@@ -99,7 +108,6 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
           key: `vehicle-${vehicle.id}`,
           cells: [
             plateLabel,
-            vehicle.conduction_sticker || '-',
             `${vehicle.make} ${vehicle.model} ${vehicle.year || ''}`,
             vehicle.color || '-',
             vehicle.odometer || 0,
@@ -116,13 +124,21 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
     }
   }
 
+  useEffect(() => {
+    if (!token) return
+    const off = onVehicleMakesUpdated(() => {
+      apiGet('/vehicle-makes', token)
+        .then((res) => applySafeMakes(res))
+        .catch(() => {})
+    })
+    return off
+  }, [token])
+
   const handleEdit = (vehicle) => {
     setEditingId(vehicle.id)
     setForm({
       customerId: vehicle.customer_id,
       plateNumber: vehicle.plate_number,
-      conductionSticker: vehicle.conduction_sticker || '',
-      vinChassis: vehicle.vin_chassis || '',
       make: vehicle.custom_make ? 'Other' : vehicle.make,
       customMake: vehicle.custom_make || '',
       model: vehicle.model,
@@ -131,7 +147,6 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
       color: vehicle.color || '',
       odometer: vehicle.odometer || 0,
       bodyType: vehicle.body_type || '',
-      _customModel: false,
     })
     setShowForm(true)
   }
@@ -159,8 +174,8 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
   const visibleRows = rows.map((row) => ({
     ...row,
     cells: row.cells.map((cell, i) => {
-      // Make the Customer column (index 5) a clickable button
-      if (i === 5) {
+      // Make the Customer column (index 4) a clickable button
+      if (i === 4) {
         return (
           <button
             key="customer-btn"
@@ -288,16 +303,33 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
       setForm((prev) => ({ ...prev, customerId: preselectedCustomerId }))
       setEditingId(null)
       setShowForm(true)
+      redirectedOpenRef.current = true
       if (onPreselectedConsumed) onPreselectedConsumed()
     }
   }, [preselectedCustomerId, customers])
 
   const handleSubmit = async (event) => {
     event.preventDefault()
-    if (form.odometer === '' || form.odometer === null || form.odometer === undefined || Number.isNaN(Number(form.odometer))) {
-      setError('Odometer reading is required.')
+    setFieldErrors({})
+    setError('')
+
+    const errors = {}
+    if (!form.plateNumber?.trim()) errors.plateNumber = 'Plate number is required'
+    if (!form.make?.trim()) errors.make = 'Staff must select a brand (Make)'
+    if (!form.model?.trim()) errors.model = 'Vehicle model is required'
+    if (form.year === '' || form.year === null || Number.isNaN(Number(form.year)) || Number(form.year) < 1900) {
+      errors.year = 'A valid year after 1900 is required'
+    }
+    if (form.odometer === '' || form.odometer === null || Number.isNaN(Number(form.odometer)) || Number(form.odometer) < 0) {
+      errors.odometer = 'Valid odometer reading (>= 0) is required'
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      setError('Please fix the errors below.')
       return
     }
+
     let result
     try {
       const payload = {
@@ -306,8 +338,6 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
         year: Number(form.year),
         odometer: Number(form.odometer),
       }
-      delete payload._customModel   // internal UI state, don't send
-      delete payload._customVariant  // internal UI state, don't send
       if (editingId) {
         result = await apiPatch(`/vehicles/${editingId}`, token, payload)
       } else {
@@ -318,7 +348,7 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
       } else {
         setError('')
       }
-      handleCloseModal()
+      handleCloseModal('submitted')
       await loadData(page, search)
       try {
         const created = result && (result.data || result) ? (result.data || result) : result
@@ -347,14 +377,12 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
                 odometer: Number(form.odometer),
                 forceCreate: true,
               }
-              delete forcePayload._customModel
-              delete forcePayload._customVariant
               if (editingId) {
                 result = await apiPatch(`/vehicles/${editingId}`, token, forcePayload)
               } else {
                 result = await apiPost('/vehicles', token, forcePayload)
               }
-              handleCloseModal()
+              handleCloseModal('submitted')
               await loadData(page, search)
               try {
                 const created = result && (result.data || result) ? (result.data || result) : result
@@ -408,7 +436,7 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
         </div>
 
         <DataTable
-          headers={['Plate #', 'Conduction', 'Make/Model/Year', 'Color', 'Odometer', 'Customer']}
+          headers={['Plate #', 'Make/Model/Year', 'Color', 'Odometer', 'Customer']}
           rows={visibleRows}
           selectable
           selectedKeys={selectedKeys}
@@ -509,39 +537,17 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
               <div className="vf-input-wrap">
                 <span className="vf-input-icon">🔢</span>
                 <input
-                  className="vf-has-icon"
+                  className={`vf-has-icon ${fieldErrors.plateNumber ? 'vf-field-error' : ''}`}
                   placeholder="ABC 1234"
                   value={form.plateNumber}
-                  onChange={(event) => setForm((prev) => ({ ...prev, plateNumber: event.target.value }))}
+                  onChange={(event) => {
+                    setForm((prev) => ({ ...prev, plateNumber: event.target.value }))
+                    setFieldErrors(p => ({ ...p, plateNumber: null }))
+                  }}
                   required
                 />
               </div>
-            </div>
-
-            <div className="form-group">
-              <label className="vf-label">Conduction Sticker <span style={{ fontWeight: 400, color: '#888', fontSize: '0.85em' }}>(Optional)</span></label>
-              <div className="vf-input-wrap">
-                <span className="vf-input-icon">📋</span>
-                <input
-                  className="vf-has-icon"
-                  placeholder="CS-123456"
-                  value={form.conductionSticker}
-                  onChange={(event) => setForm((prev) => ({ ...prev, conductionSticker: event.target.value }))}
-                />
-              </div>
-            </div>
-
-            <div className="form-group full-width">
-              <label className="vf-label">VIN / Chassis Number <span style={{ fontWeight: 400, color: '#888', fontSize: '0.85em' }}>(Optional)</span></label>
-              <div className="vf-input-wrap">
-                <span className="vf-input-icon">🔑</span>
-                <input
-                  className="vf-has-icon"
-                  placeholder="e.g. 1HGBH41JXMN109186"
-                  value={form.vinChassis}
-                  onChange={(event) => setForm((prev) => ({ ...prev, vinChassis: event.target.value }))}
-                />
-              </div>
+              {fieldErrors.plateNumber && <div className="vf-inline-error">{fieldErrors.plateNumber}</div>}
             </div>
 
             {/* ── Vehicle Specs ─────────────────────────────── */}
@@ -556,49 +562,31 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
               <SearchableSelect
                 options={makes.map((m) => ({ value: m.name, label: m.name, category: m.category || 'Other' }))}
                 value={form.make}
-                onChange={(val) => setForm((prev) => ({ ...prev, make: val, model: '', customMake: '', variant: '', _customModel: false, _customVariant: false }))}
+                onChange={(val) => {
+                  setForm((prev) => ({ ...prev, make: val, model: '', customMake: '', variant: '', _customModel: false, _customVariant: false }))
+                  setFieldErrors(p => ({ ...p, make: null }))
+                }}
                 placeholder="Search brand…"
                 required
                 grouped
+                className={`vf-make-select ${fieldErrors.make ? 'vf-field-error' : ''}`}
               />
+              {fieldErrors.make && <div className="vf-inline-error">{fieldErrors.make}</div>}
             </div>
 
             <div className="form-group">
               <label className="vf-label">Model <span className="vf-required">*</span></label>
-              {models.length > 0 && !form._customModel ? (
-                <SearchableSelect
-                  options={[
-                    ...models.map((m) => ({ value: m.name, label: m.name })),
-                    { value: '__custom__', label: 'Other (type manually)' },
-                  ]}
-                  value={form.model}
-                  onChange={(val) => {
-                    if (val === '__custom__') {
-                      setForm((prev) => ({ ...prev, model: '', _customModel: true, variant: '', _customVariant: false }))
-                    } else {
-                      setForm((prev) => ({ ...prev, model: val, _customModel: false, variant: '', _customVariant: false }))
-                    }
-                  }}
-                  placeholder="Search model…"
-                  required
-                  allowCustomValue
-                />
-              ) : (
-                <>
-                  <input
-                    placeholder="Enter model name"
-                    value={form.model}
-                    onChange={(event) => setForm((prev) => ({ ...prev, model: event.target.value }))}
-                    required
-                  />
-                  {models.length > 0 && (
-                    <button type="button" className="vf-back-link"
-                      onClick={() => setForm((prev) => ({ ...prev, model: '', _customModel: false }))}>
-                      ← Back to model list
-                    </button>
-                  )}
-                </>
-              )}
+              <input
+                placeholder="Enter model name"
+                value={form.model}
+                onChange={(event) => {
+                  setForm((prev) => ({ ...prev, model: event.target.value }))
+                  setFieldErrors(p => ({ ...p, model: null }))
+                }}
+                required
+                className={fieldErrors.model ? 'vf-field-error' : ''}
+              />
+              {fieldErrors.model && <div className="vf-inline-error">{fieldErrors.model}</div>}
             </div>
 
             {form.make === 'Other' && (
@@ -615,44 +603,16 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
 
             <div className="form-group">
               <label className="vf-label">Variant</label>
-              {variants.length > 0 && !form._customVariant ? (
-                <SearchableSelect
-                  options={[
-                    ...variants.map((v) => ({ value: v.name, label: v.name })),
-                    { value: '__custom__', label: 'Other (type manually)' },
-                  ]}
-                  value={form.variant}
-                  onChange={(val) => {
-                    if (val === '__custom__') {
-                      setForm((prev) => ({ ...prev, variant: '', _customVariant: true }))
-                    } else {
-                      setForm((prev) => ({ ...prev, variant: val, _customVariant: false }))
-                    }
-                  }}
-                  placeholder={form.model ? 'Search variant…' : 'Select a model first'}
-                  disabled={!form.model}
-                  allowCustomValue
-                />
-              ) : (
-                <>
-                  <input
-                    placeholder={
-                      !form.make ? 'Select a make first' :
-                        !form.model ? 'Select a model first' :
-                          'e.g. 1.3 E MT'
-                    }
-                    value={form.variant}
-                    onChange={(event) => setForm((prev) => ({ ...prev, variant: event.target.value }))}
-                    disabled={!form.make || !form.model}
-                  />
-                  {variants.length > 0 && (
-                    <button type="button" className="vf-back-link"
-                      onClick={() => setForm((prev) => ({ ...prev, variant: '', _customVariant: false }))}>
-                      ← Back to variant list
-                    </button>
-                  )}
-                </>
-              )}
+              <input
+                placeholder={
+                  !form.make ? 'Select a make first' :
+                    !form.model ? 'Select a model first' :
+                      'e.g. 1.3 E MT'
+                }
+                value={form.variant}
+                onChange={(event) => setForm((prev) => ({ ...prev, variant: event.target.value }))}
+                disabled={!form.make || !form.model}
+              />
             </div>
 
             <div className="form-group">
@@ -660,14 +620,18 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
               <div className="vf-input-wrap">
                 <span className="vf-input-icon">📅</span>
                 <input
-                  className="vf-has-icon"
+                  className={`vf-has-icon ${fieldErrors.year ? 'vf-field-error' : ''}`}
                   type="number"
                   placeholder="2024"
                   value={form.year}
-                  onChange={(event) => setForm((prev) => ({ ...prev, year: event.target.value }))}
+                  onChange={(event) => {
+                    setForm((prev) => ({ ...prev, year: event.target.value }))
+                    setFieldErrors(p => ({ ...p, year: null }))
+                  }}
                   required
                 />
               </div>
+              {fieldErrors.year && <div className="vf-inline-error">{fieldErrors.year}</div>}
             </div>
 
             {vehicleCategories.length > 0 && (
@@ -710,13 +674,18 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
               <div className="vf-input-wrap">
                 <span className="vf-input-icon">📍</span>
                 <input
-                  className="vf-has-icon"
+                  className={`vf-has-icon ${fieldErrors.odometer ? 'vf-field-error' : ''}`}
                   type="number"
                   placeholder="0"
                   value={form.odometer}
-                  onChange={(event) => setForm((prev) => ({ ...prev, odometer: event.target.value }))}
+                  onChange={(event) => {
+                    setForm((prev) => ({ ...prev, odometer: event.target.value }))
+                    setFieldErrors(p => ({ ...p, odometer: null }))
+                  }}
+                  required
                 />
               </div>
+              {fieldErrors.odometer && <div className="vf-inline-error">{fieldErrors.odometer}</div>}
             </div>
 
             {/* ── Actions ───────────────────────────────────── */}

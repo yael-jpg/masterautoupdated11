@@ -280,6 +280,32 @@ router.get(
   }),
 )
 
+// GET /appointments/:id — fetch a single appointment with common display fields
+router.get(
+  '/:id',
+  requireAuth,
+  param('id').isInt({ min: 1 }).withMessage('Invalid appointment id'),
+  validateRequest,
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id)
+    const { rows } = await db.query(
+      `SELECT a.*,
+              c.full_name    AS customer_name,
+              v.plate_number AS plate_number,
+              sv.name        AS service_name
+       FROM appointments a
+       JOIN customers c ON c.id = a.customer_id
+       JOIN vehicles  v ON v.id = a.vehicle_id
+       LEFT JOIN services sv ON sv.id = a.service_id
+       WHERE a.id = $1
+       LIMIT 1`,
+      [id],
+    )
+    if (!rows.length) return res.status(404).json({ message: 'Appointment not found' })
+    return res.json(rows[0])
+  }),
+)
+
 router.post(
   '/',
   body('customerId').isInt({ min: 1 }).withMessage('customerId is required'),
@@ -814,7 +840,7 @@ router.post(
     const { rows: apptRows } = await db.query(
       `SELECT a.id, a.status, a.quotation_id, a.sale_id,
               a.customer_id, a.vehicle_id, a.schedule_start, a.schedule_end,
-              a.service_type, a.bay, a.assigned_team, a.notes,
+              a.service_id, a.bay, a.installer_team AS assigned_team, a.notes,
               c.full_name AS customer_name
        FROM appointments a
        JOIN customers c ON c.id = a.customer_id
@@ -860,7 +886,7 @@ router.post(
         bookingTemplate: {
           customer_id:   appt.customer_id,
           vehicle_id:    appt.vehicle_id,
-          service_type:  appt.service_type,
+          service_id:    appt.service_id,
           bay:           appt.bay,
           assigned_team: appt.assigned_team,
           notes:         appt.notes,

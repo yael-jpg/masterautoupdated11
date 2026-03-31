@@ -4,6 +4,7 @@ import 'react-datepicker/dist/react-datepicker.css'
 import './GuestPortalPage.css'
 import { SERVICE_CATALOG, VEHICLE_SIZE_OPTIONS, getEffectivePrice } from '../data/serviceCatalog'
 import { GenericServiceProcess, getServiceProcess, isCoating, isDetailing, isPPF } from '../components/ServiceProcess'
+import { onConfigUpdated, onVehicleMakesUpdated } from '../utils/events'
 
 const DEFAULT_API_BASE_URL = import.meta.env.DEV ? 'http://localhost:5000/api' : '/api'
 const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL
@@ -808,55 +809,76 @@ function QuotationTab({ prefillService }) {
 
 
     useEffect(() => {
-        // Load services (publicly available)
-        publicGet('/services')
-            .then(data => Array.isArray(data) ? setServices(data) : setServices([]))
-            .catch(() => { })
+        let cancelled = false
 
-        // Load pricing overrides (publicly available)
-        publicGet('/price-config')
-            .then(data => setPriceOverrides(data && typeof data === 'object' ? data : {}))
-            .catch(() => { })
+        const loadAll = () => {
+            // Load services (publicly available)
+            publicGet('/services')
+                .then(data => { if (!cancelled) setServices(Array.isArray(data) ? data : []) })
+                .catch(() => { })
 
-        // Load vehicle makes (publicly available)
-        publicGet('/vehicle-makes')
-            .then(data => Array.isArray(data) ? setMakes(data) : setMakes([]))
-            .catch(() => { })
+            // Load pricing overrides (publicly available)
+            publicGet('/price-config')
+                .then(data => { if (!cancelled) setPriceOverrides(data && typeof data === 'object' ? data : {}) })
+                .catch(() => { })
 
-        // Load branch locations (connected to Settings > Bookings > Branches)
-        publicGet('/branch-locations')
-            .then(data => {
-                if (Array.isArray(data) && data.length > 0) {
-                    const cleaned = data.map(x => String(x || '').trim()).filter(Boolean)
-                    if (cleaned.length) setBranches(cleaned)
-                }
-            })
-            .catch(() => { })
+            // Load vehicle makes (publicly available)
+            publicGet('/vehicle-makes')
+                .then(data => { if (!cancelled) setMakes(Array.isArray(data) ? data : []) })
+                .catch(() => { })
 
-        // Load VAT rate if available (fallback to default 0)
-        fetch(`${API_BASE}/config/display/frontend`)
-            .then(r => r.json().catch(() => ({})))
-            .then(json => {
-                const n = Number(json?.data?.business?.taxVatRate)
-                if (Number.isFinite(n)) setVatRate(n)
-            })
-            .catch(() => { })
-
-        // Load custom services from config
-        fetch(`${API_BASE}/config/category/quotations`)
-            .then(r => r.json().catch(() => []))
-            .then(arr => {
-                if (Array.isArray(arr)) {
-                    const svcRow = arr.find(row => row.key === 'custom_services')
-                    if (svcRow?.value) {
-                        try {
-                            const parsed = typeof svcRow.value === 'string' ? JSON.parse(svcRow.value) : svcRow.value
-                            if (Array.isArray(parsed)) setCustomCatalog(parsed)
-                        } catch (e) { console.error('Failed to parse custom services:', e) }
+            // Load branch locations (connected to Settings > Bookings > Branches)
+            publicGet('/branch-locations')
+                .then(data => {
+                    if (cancelled) return
+                    if (Array.isArray(data) && data.length > 0) {
+                        const cleaned = data.map(x => String(x || '').trim()).filter(Boolean)
+                        if (cleaned.length) setBranches(cleaned)
                     }
-                }
-            })
-            .catch(() => { })
+                })
+                .catch(() => { })
+
+            // Load VAT rate if available (fallback to default 0)
+            fetch(`${API_BASE}/config/display/frontend`)
+                .then(r => r.json().catch(() => ({})))
+                .then(json => {
+                    if (cancelled) return
+                    const n = Number(json?.data?.business?.taxVatRate)
+                    if (Number.isFinite(n)) setVatRate(n)
+                })
+                .catch(() => { })
+
+            // Load custom services from config
+            fetch(`${API_BASE}/config/category/quotations`)
+                .then(r => r.json().catch(() => []))
+                .then(arr => {
+                    if (cancelled) return
+                    if (Array.isArray(arr)) {
+                        const svcRow = arr.find(row => row.key === 'custom_services')
+                        if (svcRow?.value) {
+                            try {
+                                const parsed = typeof svcRow.value === 'string' ? JSON.parse(svcRow.value) : svcRow.value
+                                if (Array.isArray(parsed)) setCustomCatalog(parsed)
+                            } catch (e) { console.error('Failed to parse custom services:', e) }
+                        }
+                    }
+                })
+                .catch(() => { })
+        }
+
+        loadAll()
+
+        const offCfg = onConfigUpdated((e) => {
+            const cat = e?.detail?.category
+            if (!cat || cat === 'quotations' || cat === 'booking' || cat === 'business') loadAll()
+        })
+        const offMakes = onVehicleMakesUpdated(() => loadAll())
+
+        return () => {
+            cancelled = true
+            offCfg()
+            offMakes()
+        }
     }, [])
 
     // Load models when make changes
@@ -1395,7 +1417,7 @@ export function GuestPortalPage() {
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                         </svg>
-                        Online Services
+                        Services
                     </button>
                     <button
                         className={`gp-tab${tab === 'quote' ? ' active' : ''}`}
@@ -1406,7 +1428,7 @@ export function GuestPortalPage() {
                             <polyline points="14 2 14 8 20 8" />
                             <line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" />
                         </svg>
-                        Online Quotation
+                        Quotation
                     </button>
                 </div>
             </div>

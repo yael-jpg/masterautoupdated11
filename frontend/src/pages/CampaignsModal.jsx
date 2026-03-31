@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiGet, apiPost, apiPatch, apiDelete, apiPut, pushToast, buildApiUrl } from '../api/client'
+import { onConfigUpdated } from '../utils/events'
 import './CampaignsModal.css'
 
 export function CampaignsModal({ token, onClose, customerIds = [] }) {
@@ -11,16 +12,24 @@ export function CampaignsModal({ token, onClose, customerIds = [] }) {
   const [configDefaults, setConfigDefaults] = useState({})
   const [blastResult, setBlastResult] = useState(null)
 
+  const loadConfigDefaults = useCallback(async () => {
+    const map = {}
+    try {
+      const arr = await apiGet('/config/category/email', token)
+      for (const item of (Array.isArray(arr) ? arr : [])) {
+        map[item.key] = item.value
+      }
+      setConfigDefaults(map)
+    } catch (e) {
+      // ignore
+    }
+    return map
+  }, [token])
+
   useEffect(() => {
-    async function loadConfigDefaults() {
-      let map = {}
-      try {
-        const arr = await apiGet('/config/category/email', token)
-        for (const item of (Array.isArray(arr) ? arr : [])) {
-          map[item.key] = item.value
-        }
-        setConfigDefaults(map)
-      } catch (e) {}
+    let cancelled = false
+    loadConfigDefaults().then((map) => {
+      if (cancelled) return
       if (customerIds.length > 0) {
         setEditing({
           name:            map.default_campaign_name    || '',
@@ -36,9 +45,18 @@ export function CampaignsModal({ token, onClose, customerIds = [] }) {
         })
         setShowEditor(true)
       }
+    })
+
+    const off = onConfigUpdated((e) => {
+      const cat = e?.detail?.category
+      if (!cat || cat === 'email') loadConfigDefaults()
+    })
+
+    return () => {
+      cancelled = true
+      off()
     }
-    loadConfigDefaults()
-  }, [token, customerIds])
+  }, [customerIds, loadConfigDefaults])
 
   const load = useCallback(async () => {
     setLoading(true)
