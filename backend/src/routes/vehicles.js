@@ -8,6 +8,8 @@ const { validateRequest } = require('../middleware/validateRequest')
 const { upload } = require('../middleware/upload')
 const { normalizePlate, validatePlateFormat, isSuspiciousPlate, validatePrivatePlate, formatPlateForDisplay } = require('../utils/plateValidator')
 const { requireAuth, requireRole } = require('../middleware/auth')
+const NotificationService = require('../services/notificationService')
+const { emitDataChanged } = require('../realtime/hub')
 
 const router = express.Router()
 
@@ -287,6 +289,14 @@ router.post(
       entityId: rows[0].id,
       meta: { plateNumber, suspicious, make: finalMake },
     })
+
+    emitDataChanged({ scope: 'vehicles', action: 'create', id: rows[0].id })
+    await NotificationService.create({
+      role: 'admin',
+      title: 'Vehicle Added',
+      message: `Vehicle ${rows[0].plate_number} was added.`,
+      payload: { type: 'vehicle', action: 'create', vehicle_id: rows[0].id },
+    }).catch(() => {})
 
     res.status(201).json({ ...rows[0], warning: suspicious ? 'Plate flagged as suspicious — admin verification recommended.' : undefined })
   }),

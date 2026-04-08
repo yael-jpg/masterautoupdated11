@@ -3585,6 +3585,22 @@
   box-shadow: 0 0 0 3px rgba(200, 200, 200, 0.10);
 }
 
+.portal-svc-trigger-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #f3f4f6;
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 500;
+  padding: 0;
+}
+
+.portal-svc-trigger-input::placeholder {
+  color: rgba(189, 200, 218, 0.25);
+}
+
 .portal-svc-trigger-placeholder {
   color: rgba(189, 200, 218, 0.38);
   font-size: 14px;
@@ -3641,95 +3657,37 @@
 }
 
 /* Search bar */
-.portal-svc-search {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.025);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  flex-shrink: 0;
-  color: rgba(189, 200, 218, 0.45);
+.portal-svc-panel.grouped {
+  width: var(--panel-width); /* set by JS */
 }
 
-.portal-svc-search input {
+.portal-svc-list-scroll {
   flex: 1;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: #e2e8f2;
-  font-size: 13.5px;
-  font-family: inherit;
-}
-
-.portal-svc-search input::placeholder {
-  color: rgba(189, 200, 218, 0.35);
-}
-
-/* Two-panel body */
-.portal-svc-body {
-  display: grid;
-  grid-template-columns: 150px 1fr;
-  overflow: hidden;
-  flex: 1;
-  min-height: 0;
-}
-
-/* Left: category list */
-.portal-svc-cat-list {
-  list-style: none;
-  margin: 0;
-  padding: 6px 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.07);
   overflow-y: auto;
-  background: rgba(0, 0, 0, 0.22);
   scrollbar-width: thin;
-  scrollbar-color: rgba(200, 200, 200, 0.18) transparent;
+  padding: 8px 0;
+  max-height: 480px;
 }
 
-.portal-svc-cat-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 8px 14px;
-  background: transparent;
-  border: none;
-  color: rgba(189, 200, 218, 0.65);
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.14s, color 0.14s;
-  white-space: nowrap;
+.portal-svc-dropdown-group {
+  margin-bottom: 4px;
 }
 
-.portal-svc-cat-btn:hover {
-  background: rgba(200, 200, 200, 0.08);
-  color: #e2e8f2;
-}
-
-.portal-svc-cat-btn.active {
-  background: rgba(200, 200, 200, 0.14);
-  color: #e2e2e2;
-  font-weight: 700;
-}
-
-.portal-svc-cat-count {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
-  color: rgba(189, 200, 218, 0.50);
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.portal-svc-cat-btn.active .portal-svc-cat-count {
-  background: rgba(200, 200, 200, 0.20);
-  color: rgba(200, 200, 200, 0.85);
+.portal-svc-dropdown-group-label {
+  padding: 14px 18px 10px;
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  position: sticky;
+  top: 0;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(20px);
+  z-index: 10;
+  border-left: 4px solid rgba(255, 255, 255, 0.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 4px;
 }
 
 /* Right: service list */
@@ -3748,45 +3706,59 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 9px 16px;
+  padding: 12px 20px;
   background: transparent;
   border: none;
-  color: rgba(189, 200, 218, 0.85);
+  color: #f4f4f4;
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   cursor: pointer;
   text-align: left;
-  transition: background 0.14s, color 0.14s;
+  transition: all 0.15s;
 }
 
 .portal-svc-item-btn:hover {
-  background: rgba(200, 200, 200, 0.08);
-  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .portal-svc-item-btn.active {
-  background: rgba(200, 200, 200, 0.14);
-  color: #e2e2e2;
+  background: rgba(255, 255, 255, 0.08);
 }
 
-.portal-svc-item-name {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: inherit;
+.portal-svc-item-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   flex: 1;
 }
 
-.portal-svc-item-price {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: #e2e2e2;
-  flex-shrink: 0;
-  font-family: var(--font-mono, monospace);
+.portal-svc-item-name {
+  font-weight: 600;
+  color: #f4f4f4;
 }
 
-.portal-svc-item-btn.active .portal-svc-item-price {
-  color: #a8c4fb;
+.portal-svc-item-desc {
+  font-size: 12.5px;
+  color: rgba(189, 200, 218, 0.4);
+  font-weight: 400;
+}
+
+.portal-svc-item-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.portal-svc-item-badge {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 99px;
+  color: rgba(189, 200, 218, 0.85);
+  letter-spacing: 0.02em;
 }
 
 .portal-svc-empty {

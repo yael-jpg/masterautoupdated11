@@ -32,8 +32,10 @@ const { asyncHandler } = require('../utils/asyncHandler')
 const { validateRequest } = require('../middleware/validateRequest')
 const { normalizePlate, validatePlateFormat, isSuspiciousPlate } = require('../utils/plateValidator')
 const ConfigurationService = require('../services/configurationService')
+const NotificationService = require('../services/notificationService')
 const { sendPortalBookingRequestEmail, sendRawEmail } = require('../services/mailer')
 const { buildQuotationRequestStaffEmail } = require('../services/emailTemplates')
+const { emitDataChanged } = require('../realtime/hub')
 const { randomB64url, deriveVerifierFromPassword, computeProof, timingSafeEqualB64url } = require('../utils/hashedLogin')
 const { normalizeEmail, normalizeMobileDigits, normalizeMobileForStorage } = require('../utils/customerIdentity')
 
@@ -1265,6 +1267,38 @@ router.post(
       // ignore email failures
     }
 
+    emitDataChanged({
+      scope: 'appointments',
+      action: 'portal_request',
+      appointmentId: createdAppointment?.id || null,
+      quotationId: createdQuotation?.id || null,
+      customerId: req.customerId,
+    })
+
+    await NotificationService.create({
+      role: 'admin',
+      title: 'New Booking Request',
+      message: `Client submitted a booking request (${createdQuotation?.quotation_no || 'new quotation'}).`,
+      payload: {
+        type: 'booking-request',
+        quotation_id: createdQuotation?.id || null,
+        appointment_id: createdAppointment?.id || null,
+        customer_id: req.customerId,
+      },
+    }).catch(() => {})
+
+    await NotificationService.create({
+      role: 'client',
+      userId: req.customerId,
+      title: 'Booking Request Submitted',
+      message: 'Your booking request was sent to admin for approval.',
+      payload: {
+        type: 'booking-request',
+        quotation_id: createdQuotation?.id || null,
+        appointment_id: createdAppointment?.id || null,
+      },
+    }).catch(() => {})
+
     return res.status(201).json({
       id: createdQuotation?.id,
       appointmentId: createdAppointment?.id || null,
@@ -1709,6 +1743,22 @@ router.post(
       ],
     )
 
+    emitDataChanged({ scope: 'vehicles', action: 'portal_create', id: rows[0].id, customerId })
+    await NotificationService.create({
+      role: 'admin',
+      title: 'Client Registered Vehicle',
+      message: `Client added vehicle ${rows[0].plate_number}`,
+      payload: { type: 'vehicle', action: 'portal_create', vehicle_id: rows[0].id, customer_id: customerId },
+    }).catch(() => {})
+
+    await NotificationService.create({
+      role: 'client',
+      userId: customerId,
+      title: 'Vehicle Registered',
+      message: `${rows[0].plate_number} was added to your account.`,
+      payload: { type: 'vehicle', action: 'create', vehicle_id: rows[0].id },
+    }).catch(() => {})
+
     return res.status(201).json({
       ...rows[0],
       warning: suspicious ? 'Plate flagged as suspicious — admin verification recommended.' : undefined,
@@ -1763,13 +1813,64 @@ router.get(
 router.get(
   '/services',
   asyncHandler(async (req, res) => {
-    const r = await db.query(
+    // 1. Fetch base services from DB
+    const { rows: baseRows } = await db.query(
       `SELECT id, code, name, category, base_price, description, materials_notes
        FROM services
-       WHERE is_active = TRUE
-       ORDER BY category, name`,
+       WHERE COALESCE(is_active, TRUE) = TRUE`,
     )
-    return res.json(r.rows)
+
+    // 2. Fetch overrides & custom services from configuration
+    const overrides = await ConfigurationService.get('quotations', 'service_name_overrides')
+    const customSvcs = await ConfigurationService.get('quotations', 'custom_services')
+
+    // 3. Map base services with overrides (match on normalized code)
+    const ovMap = {}
+    if (overrides && typeof overrides === 'object') {
+      // Normalize all override keys to lowercase and stripped
+      Object.keys(overrides).forEach((k) => {
+        const normK = String(k || '').replace(/^CAT-/i, '').toLowerCase()
+        ovMap[normK] = overrides[k]
+      })
+    }
+    
+    let services = baseRows.map((s) => {
+      const catCode = String(s.code || '').replace(/^CAT-/i, '').toLowerCase()
+      const overName = ovMap[catCode] || ovMap[s.code]
+      return overName ? { ...s, name: overName } : s
+    })
+
+    // 4. Merge custom services (if active)
+    if (Array.isArray(customSvcs)) {
+      customSvcs.forEach((cs) => {
+        if (cs.enabled !== false) {
+          services.push({
+            id: `custom-${cs.code}`,
+            code: cs.code,
+            name: cs.name,
+            category: cs.group,
+            base_price: 0, 
+            description: cs.description || '',
+            materials_notes: null,
+          })
+        }
+      })
+    }
+
+    // 5. Sort by category (ASC), then name (ASC)
+    services.sort((a, b) => {
+      const catA = String(a.category || '').toLowerCase()
+      const catB = String(b.category || '').toLowerCase()
+      if (catA < catB) return -1
+      if (catA > catB) return 1
+      const nameA = String(a.name || '').toLowerCase()
+      const nameB = String(b.name || '').toLowerCase()
+      if (nameA < nameB) return -1
+      if (nameA > nameB) return 1
+      return 0
+    })
+
+    return res.json(services)
   }),
 )
 
@@ -2105,5 +2206,13 @@ router.get(
     return res.json(records)
   }),
 )
+
+// ────── Subscriptions & PMS Routes ──────────────────────────────────────────
+
+const portalSubscriptionsRoutes = require('./portalSubscriptions')
+const portalPMSRoutes = require('./portalPMS')
+
+router.use('/subscriptions', portalSubscriptionsRoutes)
+router.use('/pms', portalPMSRoutes)
 
 module.exports = router

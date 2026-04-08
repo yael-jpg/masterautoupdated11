@@ -16,6 +16,19 @@ function decodeJwtPayload(jwt) {
 }
 
 export function PortalLoginPage({ onLogin }) {
+  const googleClientId = String(import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim()
+  const googleAllowedOrigins = String(import.meta.env.VITE_GOOGLE_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean)
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : ''
+  const isLocalOrigin = /^(https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/i.test(currentOrigin)
+  const isOriginAllowed = googleAllowedOrigins.length > 0
+    ? googleAllowedOrigins.includes(currentOrigin)
+    : !isLocalOrigin
+  const canUseGoogleLogin = Boolean(googleClientId) && isOriginAllowed
+  const googleOriginHelp = currentOrigin ? `Current origin: ${currentOrigin}` : ''
+
   // Slide view: 'portal' | 'register' | 'verify'
   const [view, setView] = useState(() => {
     try {
@@ -253,15 +266,28 @@ export function PortalLoginPage({ onLogin }) {
                     <div className="auth-portal-divider"><span>or</span></div>
 
                     <div className="auth-google-wrap">
-                      <GoogleLogin
-                        onSuccess={handleGoogleCredential}
-                        onError={() => setPortalError('Google sign-in failed. Please try again.')}
-                        theme="filled_black"
-                        locale="en"
-                        shape="rectangular"
-                        size="large"
-                        text="continue_with"
-                      />
+                      {view === 'portal' && canUseGoogleLogin ? (
+                        <GoogleLogin
+                          onSuccess={handleGoogleCredential}
+                          onError={() => setPortalError('Google sign-in failed. Please try again.')}
+                          theme="filled_black"
+                          locale="en"
+                          shape="rectangular"
+                          size="large"
+                          text="continue_with"
+                        />
+                      ) : (
+                        <div style={{ textAlign: 'center' }}>
+                          <p className="auth-help" style={{ margin: 0 }}>
+                            Google sign-in is unavailable on this origin.
+                          </p>
+                          {googleOriginHelp ? (
+                            <p className="auth-help" style={{ margin: '6px 0 0', fontSize: 11 }}>
+                              {googleOriginHelp}
+                            </p>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
 
                     <p className="auth-portal-register-hint">
@@ -367,14 +393,27 @@ export function PortalLoginPage({ onLogin }) {
                     <div className="auth-portal-divider"><span>or</span></div>
 
                     <div className="auth-google-wrap">
-                      <GoogleLogin
-                        onSuccess={handleGoogleCredential}
-                        onError={() => setRegError('Google sign-in failed. Please try again.')}
-                        theme="filled_black"
-                        shape="rectangular"
-                        size="large"
-                        text="continue_with"
-                      />
+                      {view === 'register' && canUseGoogleLogin ? (
+                        <GoogleLogin
+                          onSuccess={handleGoogleCredential}
+                          onError={() => setRegError('Google sign-in failed. Please try again.')}
+                          theme="filled_black"
+                          shape="rectangular"
+                          size="large"
+                          text="continue_with"
+                        />
+                      ) : (
+                        <div style={{ textAlign: 'center' }}>
+                          <p className="auth-help" style={{ margin: 0 }}>
+                            Google sign-in is unavailable on this origin.
+                          </p>
+                          {googleOriginHelp ? (
+                            <p className="auth-help" style={{ margin: '6px 0 0', fontSize: 11 }}>
+                              {googleOriginHelp}
+                            </p>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
                   </form>
                 </div>

@@ -14,7 +14,13 @@ import { PortalAppointments } from './PortalAppointments'
 import { PortalServices } from './PortalServices'
 import { PortalVehicles } from './PortalVehicles'
 import { PortalProfile } from './PortalProfile'
+import { PortalSubscriptions } from './PortalSubscriptions'
+import { PortalPMS } from './PortalPMS'
 import { getJwtExpMs } from '../../utils/jwt'
+import { createRealtimeClient } from '../../utils/realtime'
+import { emitConfigUpdated, emitPackagesUpdated, emitVehicleMakesUpdated } from '../../utils/events'
+
+const ROOT_API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
 
 function SessionExpiredOverlay({ message, onResignIn }) {
   return (
@@ -127,6 +133,25 @@ const NAV = [
       </svg>
     ),
   },
+  {
+    key: 'subscriptions',
+    label: 'Subscriptions',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+      </svg>
+    ),
+  },
+  {
+    key: 'pms',
+    label: 'PMS Management',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+      </svg>
+    ),
+  },
 ]
 
 const PAGE_TITLES = {
@@ -139,6 +164,8 @@ const PAGE_TITLES = {
   receipts: 'Receipts & Payments',
   history: 'Service History',
   warranty: 'Warranty Tracker',
+  subscriptions: 'My Subscriptions',
+  pms: 'Preventive Maintenance',
   profile: 'My Account',
 }
 
@@ -163,6 +190,22 @@ export function PortalApp() {
     seenVehicleIds: new Set(),
     seenPaymentIds: new Set(),
   })
+
+  const upsertNotification = (raw) => {
+    if (!raw?.id) return
+    setNotifications((prev) => {
+      if (prev.some((n) => n.id === raw.id)) return prev
+      const mapped = {
+        id: raw.id,
+        title: raw.title,
+        message: raw.message,
+        details: raw.payload || null,
+        read: Boolean(raw.is_read),
+        time: raw.created_at ? new Date(raw.created_at).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'Now',
+      }
+      return [mapped, ...prev]
+    })
+  }
 
   const handleLogin = (t, c) => {
     setToken(t)
@@ -563,6 +606,63 @@ export function PortalApp() {
     }
   }, [token, customer])
 
+  useEffect(() => {
+    if (!token || !customer) return
+    let stopped = false
+
+    const load = async () => {
+      try {
+        const res = await fetch(`${ROOT_API_BASE}/notifications`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) return
+        const rows = await res.json().catch(() => [])
+        if (stopped || !Array.isArray(rows)) return
+        setNotifications(
+          rows.map((raw) => ({
+            id: raw.id,
+            title: raw.title,
+            message: raw.message,
+            details: raw.payload || null,
+            read: Boolean(raw.is_read),
+            time: raw.created_at ? new Date(raw.created_at).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'Now',
+          })),
+        )
+      } catch (_) {
+        // Silent
+      }
+    }
+
+    load()
+    return () => { stopped = true }
+  }, [token, customer])
+
+  useEffect(() => {
+    if (!token || !customer) return
+
+    const socket = createRealtimeClient(token)
+    if (!socket) return
+
+    socket.on('notification:new', upsertNotification)
+
+    socket.on('settings:updated', (payload) => {
+      emitConfigUpdated({ source: 'realtime', ...(payload || {}) })
+    })
+
+    socket.on('data:changed', (payload) => {
+      const scope = String(payload?.scope || '').toLowerCase()
+      if (scope === 'subscriptions' || scope === 'pms') emitPackagesUpdated({ source: 'realtime', ...(payload || {}) })
+      if (scope === 'vehicle-makes' || scope === 'vehicles') emitVehicleMakesUpdated({ source: 'realtime', ...(payload || {}) })
+      if (scope === 'appointments') {
+        window.dispatchEvent(new CustomEvent('ma:appointments-updated', { detail: payload || {} }))
+      }
+    })
+
+    return () => {
+      socket.disconnect()
+    }
+  }, [token, customer])
+
   if (!token || !customer) {
     if (sessionExpiredNotice) {
       return (
@@ -602,6 +702,10 @@ export function PortalApp() {
         return <PortalServiceHistory />
       case 'warranty':
         return <PortalWarranty />
+      case 'subscriptions':
+        return <PortalSubscriptions customer={customer} onNavigate={setActivePage} />
+      case 'pms':
+        return <PortalPMS customer={customer} onNavigate={setActivePage} />
       case 'profile':
         return <PortalProfile customer={customer} onCustomerUpdate={setCustomer} />
       default:
@@ -704,8 +808,16 @@ export function PortalApp() {
             <div className="portal-topbar-right">
               <NotificationCenter
                 notifications={notifications}
-                onMarkAsRead={(id) => {
+                onMarkAsRead={async (id) => {
                   setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
+                  try {
+                    await fetch(`${ROOT_API_BASE}/notifications/read/${id}`, {
+                      method: 'PUT',
+                      headers: { Authorization: `Bearer ${token}` },
+                    })
+                  } catch (_) {
+                    // Silent
+                  }
                 }}
                 onClearAll={() => setNotifications([])}
               />

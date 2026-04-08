@@ -1,9 +1,28 @@
 const { Pool } = require('pg')
 const env = require('./env')
 
+function normalizeDbUrl(dbUrl) {
+  if (!dbUrl) return dbUrl
+
+  try {
+    const parsed = new URL(dbUrl)
+    const mode = parsed.searchParams.get('sslmode')
+    const hasCompatFlag = parsed.searchParams.has('uselibpqcompat')
+
+    // Keep existing behavior explicit and silence pg v9 migration warning.
+    if ((mode === 'prefer' || mode === 'require' || mode === 'verify-ca') && !hasCompatFlag) {
+      parsed.searchParams.set('uselibpqcompat', 'true')
+    }
+
+    return parsed.toString()
+  } catch {
+    return dbUrl
+  }
+}
+
 const pool = env.dbUrl
   ? new Pool({
-      connectionString: env.dbUrl,
+      connectionString: normalizeDbUrl(env.dbUrl),
       ssl: { rejectUnauthorized: env.dbSslRejectUnauthorized },
     })
   : new Pool({

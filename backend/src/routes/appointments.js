@@ -8,6 +8,8 @@ const { writeAuditLog } = require('../utils/auditLog')
 const { requireAuth, requireRole } = require('../middleware/auth')
 const { sendReadyForReleaseEmail, sendReceiptEmail, sendCompletionEmail, sendCancellationEmail, sendBookingConfirmationEmail, sendQuotationApprovedScheduledEmail } = require('../services/mailer')
 const ConfigurationService = require('../services/configurationService')
+const NotificationService = require('../services/notificationService')
+const { emitDataChanged } = require('../realtime/hub')
 const {
   APPOINTMENT_WORKFLOW,
   JOB_ORDER_WORKFLOW,
@@ -471,6 +473,25 @@ router.post(
         }
       }
     } catch (_) { /* email failure must not block the response */ }
+
+    emitDataChanged({ scope: 'appointments', action: 'create', id: newAppt.id, status: newAppt.status })
+
+    await NotificationService.create({
+      role: 'admin',
+      title: 'Schedule Created',
+      message: `New appointment #${newAppt.id} has been created.`,
+      payload: { type: 'appointment', action: 'create', appointment_id: newAppt.id, status: newAppt.status },
+    }).catch(() => {})
+
+    if (newAppt?.customer_id) {
+      await NotificationService.create({
+        role: 'client',
+        userId: newAppt.customer_id,
+        title: 'Schedule Created',
+        message: 'Your appointment has been scheduled.',
+        payload: { type: 'appointment', action: 'create', appointment_id: newAppt.id, status: newAppt.status },
+      }).catch(() => {})
+    }
 
     res.status(201).json(newAppt)
   }),

@@ -20,6 +20,9 @@ export function PortalDashboard({ customer, onNavigate }) {
   const [stats, setStats] = useState(null)
   const [appointments, setAppointments] = useState([])
   const [vehicles, setVehicles] = useState([])
+  const [subscriptionStats, setSubscriptionStats] = useState(null)
+  const [pmsStats, setPmsStats] = useState(null)
+  const [subscriptions, setSubscriptions] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedAppt, setSelectedAppt] = useState(null)
 
@@ -29,15 +32,25 @@ export function PortalDashboard({ customer, onNavigate }) {
     const load = async (isInitial = false) => {
       if (isInitial) setLoading(true)
       try {
-        const [s, a, v] = await Promise.all([
+        const [s, a, v, subStats, pmsStats] = await Promise.all([
           portalGet('/dashboard/stats'),
           portalGet('/appointments'),
           portalGet('/vehicles'),
+          portalGet('/subscriptions/stats'),
+          portalGet('/pms/stats'),
         ])
         if (stopped) return
         setStats(s)
         setAppointments(Array.isArray(a) ? a : [])
         setVehicles(Array.isArray(v) ? v : [])
+        setSubscriptionStats(subStats)
+        setPmsStats(pmsStats)
+        
+        // Also fetch subscriptions list
+        const subs = await portalGet('/subscriptions')
+        if (!stopped) {
+          setSubscriptions(Array.isArray(subs) ? subs : [])
+        }
       } catch (_) {
         // Silent
       } finally {
@@ -198,6 +211,38 @@ export function PortalDashboard({ customer, onNavigate }) {
             <h3>{vehicles.length}</h3>
             <span className="stat-trend neutral">
               {vehicles.length === 0 ? 'No vehicles yet' : vehicles.length === 1 ? 'Registered vehicle' : 'Registered vehicles'}
+            </span>
+          </div>
+
+          {/* Active Subscriptions */}
+          <div className="stat-card clickable" onClick={() => onNavigate('subscriptions')}>
+            <div className="stat-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="7" width="20" height="14" rx="2" ry="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+              </svg>
+            </div>
+            <p className="stat-label">Active Subscriptions</p>
+            <h3>{subscriptionStats?.active ?? 0}</h3>
+            <span className={`stat-trend ${(subscriptionStats?.expiring_soon ?? 0) > 0 ? 'warning' : 'neutral'}`}>
+              {(subscriptionStats?.expiring_soon ?? 0) > 0 
+                ? `${subscriptionStats.expiring_soon} expiring soon` 
+                : 'All active'}
+            </span>
+          </div>
+
+          {/* PMS Maintenance */}
+          <div className="stat-card clickable" onClick={() => onNavigate('pms')}>
+            <div className="stat-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" /><path d="M12 6v6l4 2" />
+              </svg>
+            </div>
+            <p className="stat-label">PMS Due Services</p>
+            <h3>{pmsStats?.due_count ?? 0}</h3>
+            <span className={`stat-trend ${(pmsStats?.due_count ?? 0) > 0 ? 'warning' : 'positive'}`}>
+              {(pmsStats?.due_count ?? 0) > 0 
+                ? `${pmsStats.due_count === 1 ? 'Service' : 'Services'} pending` 
+                : 'All current'}
             </span>
           </div>
 

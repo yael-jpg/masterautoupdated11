@@ -73,6 +73,33 @@ export function OnlineQuotationRequestsPage({ token, user: _user, onConvert }) {
   const [viewItem, setViewItem] = useState(null)
   const [confirmCfg, setConfirmCfg] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {} })
 
+  const playNotificationSound = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      
+      const chime = (freq, start) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.1, start + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.01, start + 0.5);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.5);
+      };
+
+      chime(880, now); // A5
+      chime(1108.73, now + 0.1); // C#6
+    } catch (e) {
+      // Audio might be blocked by browser until user interacts
+    }
+  };
+
   const load = async (p = 1, s = search, st = statusFilter) => {
     setLoading(true)
     setError('')
@@ -91,9 +118,14 @@ export function OnlineQuotationRequestsPage({ token, user: _user, onConvert }) {
     load(page, search, statusFilter)
   }, [page, statusFilter])
 
-  // Auto-refresh when the global notifier detects new online requests.
+  // Auto-refresh and play sound when new online requests arrive
   useEffect(() => {
-    const handler = () => {
+    const handler = (e) => {
+      // Only play sound if it's from a 'public' source (a new lead),
+      // not a 'staff' action like deleting or status updates.
+      if (e?.detail?.source && e.detail.source !== 'staff') {
+        playNotificationSound()
+      }
       load(page, search, statusFilter)
     }
     window.addEventListener('ma:online-quotation-requests-updated', handler)
@@ -301,23 +333,6 @@ export function OnlineQuotationRequestsPage({ token, user: _user, onConvert }) {
             </div>
 
             <div className="qo-detail-actions">
-              <select 
-                style={{ 
-                  background: 'rgba(255,255,255,0.05)', 
-                  border: '1px solid rgba(255,255,255,0.1)', 
-                  color: '#fff', 
-                  padding: '10px 14px', 
-                  borderRadius: 12, 
-                  fontSize: '0.9rem',
-                  outline: 'none',
-                  cursor: 'pointer'
-                }}
-                value={viewItem.status}
-                onChange={(e) => handleStatusUpdate(viewItem.id, e.target.value)}
-              >
-                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-
               <div style={{ flex: 1 }} />
 
               <button 
@@ -328,7 +343,7 @@ export function OnlineQuotationRequestsPage({ token, user: _user, onConvert }) {
                    setViewItem(null)
                 }}
               >
-                Promote to Quotation
+                Proceed to Quotation
               </button>
             </div>
           </div>

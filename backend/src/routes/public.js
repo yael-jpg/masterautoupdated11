@@ -42,6 +42,10 @@ function makeTempPlate() {
   return `TMP${stamp}${rand}`
 }
 
+function normalizePackageCode(prefix, id) {
+  return `${prefix}-${String(id || '').trim()}`
+}
+
 async function nextQuotationNo(client, branchCode = 'BR') {
   const year = new Date().getFullYear()
   const yearShort = String(year).slice(-3)
@@ -61,13 +65,119 @@ async function nextQuotationNo(client, branchCode = 'BR') {
 router.get(
   '/services',
   asyncHandler(async (_req, res) => {
-    const { rows } = await db.query(
+    // 1. Fetch base services from DB
+    const { rows: baseRows } = await db.query(
       `SELECT id, code, name, category, base_price, description, materials_notes
        FROM services
-       WHERE COALESCE(is_active, TRUE) = TRUE
-       ORDER BY name ASC`,
+       WHERE COALESCE(is_active, TRUE) = TRUE`,
     )
-    return res.json(rows)
+
+    // 2. Fetch overrides & custom services from configuration
+    const overrides = await ConfigurationService.get('quotations', 'service_name_overrides')
+    const customSvcs = await ConfigurationService.get('quotations', 'custom_services')
+
+    // 2b. Fetch active package offerings for guest quotation service list
+    const [subscriptionPkgRows, pmsPkgRows] = await Promise.all([
+      db
+        .query(
+          `SELECT id, name, description, price
+           FROM subscription_packages
+           WHERE status = 'Active'
+           ORDER BY created_at DESC, id DESC`,
+        )
+        .then((r) => r.rows)
+        .catch(() => []),
+      db
+        .query(
+          `SELECT id,
+                  name,
+                  description,
+                  COALESCE(price, estimated_price) AS price
+           FROM pms_packages
+           WHERE COALESCE(is_deleted, false) = false
+             AND status = 'Active'
+           ORDER BY kilometer_interval ASC, id ASC`,
+        )
+        .then((r) => r.rows)
+        .catch(() => []),
+    ])
+
+    // 3. Map base services with overrides (match on normalized code)
+    const ovMap = {}
+    if (overrides && typeof overrides === 'object') {
+      // Normalize all override keys to lowercase and stripped
+      Object.keys(overrides).forEach((k) => {
+        const normK = String(k || '').replace(/^CAT-/i, '').toLowerCase()
+        ovMap[normK] = overrides[k]
+      })
+    }
+    
+    let services = baseRows.map((s) => {
+      const catCode = String(s.code || '').replace(/^CAT-/i, '').toLowerCase()
+      const overName = ovMap[catCode] || ovMap[s.code]
+      return overName ? { ...s, name: overName } : s
+    })
+
+    // 4. Merge custom services (if active)
+    if (Array.isArray(customSvcs)) {
+      customSvcs.forEach((cs) => {
+        if (cs.enabled !== false) {
+          services.push({
+            id: `custom-${cs.code}`,
+            code: cs.code,
+            name: cs.name,
+            category: cs.group,
+            base_price: cs.base_price || 0, 
+            description: cs.description || '',
+            materials_notes: null,
+          })
+        }
+      })
+    }
+
+    // 5. Merge subscription/pms packages as selectable guest quotation services
+    if (Array.isArray(subscriptionPkgRows)) {
+      subscriptionPkgRows.forEach((pkg) => {
+        services.push({
+          id: `subscription-${pkg.id}`,
+          code: normalizePackageCode('SUBS-PKG', pkg.id),
+          name: String(pkg.name || '').trim() || 'Subscription Package',
+          category: 'Subscription Services',
+          base_price: Number(pkg.price || 0),
+          description: pkg.description || '',
+          materials_notes: null,
+        })
+      })
+    }
+
+    if (Array.isArray(pmsPkgRows)) {
+      pmsPkgRows.forEach((pkg) => {
+        services.push({
+          id: `pms-${pkg.id}`,
+          code: normalizePackageCode('PMS-PKG', pkg.id),
+          name: String(pkg.name || '').trim() || 'PMS Package',
+          category: 'PMS Services',
+          base_price: Number(pkg.price || 0),
+          description: pkg.description || '',
+          materials_notes: null,
+        })
+      })
+    }
+
+    // 6. Sort by category (ASC), then name (ASC)
+    services.sort((a, b) => {
+      const catA = String(a.category || '').toLowerCase()
+      const catB = String(b.category || '').toLowerCase()
+      if (catA < catB) return -1
+      if (catA > catB) return 1
+      const nameA = String(a.name || '').toLowerCase()
+      const nameB = String(b.name || '').toLowerCase()
+      if (nameA < nameB) return -1
+      if (nameA > nameB) return 1
+      return 0
+    })
+
+    return res.json(services)
   }),
 )
 
@@ -139,6 +249,7 @@ router.post(
     // Resolve service (optional)
     let selectedService = null
     if (serviceId) {
+      const sid = String(serviceId || '').trim()
       if (!isNaN(serviceId)) {
         // Search by numeric ID
         const { rows } = await db.query(
@@ -149,6 +260,50 @@ router.post(
         )
         if (rows.length && (rows[0].is_active === undefined || rows[0].is_active === true)) {
           selectedService = rows[0]
+        }
+      } else if (/^SUBS-PKG-\d+$/i.test(sid)) {
+        const pkgId = Number(sid.split('-').pop())
+        const { rows } = await db.query(
+          `SELECT id, name, description, price
+           FROM subscription_packages
+           WHERE id = $1
+             AND status = 'Active'`,
+          [pkgId],
+        )
+        if (rows.length) {
+          selectedService = {
+            id: null,
+            code: sid.toUpperCase(),
+            name: rows[0].name,
+            category: 'Subscription Services',
+            base_price: Number(rows[0].price || 0),
+            description: rows[0].description,
+            is_active: true,
+          }
+        }
+      } else if (/^PMS-PKG-\d+$/i.test(sid)) {
+        const pkgId = Number(sid.split('-').pop())
+        const { rows } = await db.query(
+          `SELECT id,
+                  name,
+                  description,
+                  COALESCE(price, estimated_price) AS price
+           FROM pms_packages
+           WHERE id = $1
+             AND COALESCE(is_deleted, false) = false
+             AND status = 'Active'`,
+          [pkgId],
+        )
+        if (rows.length) {
+          selectedService = {
+            id: null,
+            code: sid.toUpperCase(),
+            name: rows[0].name,
+            category: 'PMS Services',
+            base_price: Number(rows[0].price || 0),
+            description: rows[0].description,
+            is_active: true,
+          }
         }
       } else {
         // Search by code (e.g. 'ppf-basic' or 'CAT-PPF-BASIC')

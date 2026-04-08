@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import './GuestPortalPage.css'
@@ -99,6 +100,15 @@ function catalogSizePrices(dbCode, overrides = {}) {
     return VEHICLE_SIZE_OPTIONS
         .map(s => ({ size: s.label, key: s.key, price: getEffectivePrice(entry.code, s.key, overrides) }))
         .filter(s => s.price > 0)
+}
+
+function getServicePriceForSize(service, vehicleSize, priceOverrides = {}) {
+    const sizeKey = vehicleSize || 'medium'
+    const catalogCode = dbCodeToCatalogCode(service?.code)
+    const configuredPrice = catalogCode ? getEffectivePrice(catalogCode, sizeKey, priceOverrides) : 0
+    if (Number(configuredPrice || 0) > 0) return Number(configuredPrice)
+    const fallback = Number(service?.base_price || 0)
+    return Number.isFinite(fallback) ? fallback : 0
 }
 
 const PHONE_COUNTRIES = [
@@ -227,6 +237,199 @@ function formatPortalDateTime(value) {
     })
 }
 // ─── CUSTOM SELECT ────────────────────────────────────────────────────────────
+// GpServicePicker — Advanced Two-Panel Service Picker (from PortalBooking)
+function GpServicePicker({ services, value, onChange, vehicleSize, priceOverrides, invalid = false }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [panelStyle, setPanelStyle] = useState({})
+  const triggerRef = useRef(null)
+  const panelRef = useRef(null)
+  const inputRef = useRef(null)
+
+  const normalizedServices = services.map((s) => ({
+    ...s,
+    category: normalizePortalServiceCategory(s.category, s.name),
+        })).filter((s) => isAllowedForCategory(s))
+
+  const isServiceAvailableForSize = (svc) => {
+        return getServicePriceForSize(svc, vehicleSize, priceOverrides) > 0
+  }
+
+  const qStr = query.toLowerCase()
+  const filtered = normalizedServices.filter((s) => {
+    const matchSearch = !qStr || s.name.toLowerCase().includes(qStr) || (s.category || '').toLowerCase().includes(qStr)
+    return matchSearch && isServiceAvailableForSize(s)
+  })
+
+  // Group items for display
+    const groups = Array.from(new Set(filtered.map(s => s.category))).map(cat => ({
+    category: cat,
+        items: filtered.filter(s => s.category === cat)
+  }))
+
+  const selected = normalizedServices.find((s) => String(s.id) === String(value) || s.code === value)
+
+  const openPanel = () => {
+    setOpen(true)
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    const reposition = () => {
+      if (triggerRef.current) {
+        const rect = triggerRef.current.getBoundingClientRect()
+        setPanelStyle({ 
+            position: 'fixed', 
+            top: rect.bottom + 6, 
+            left: rect.left, 
+            width: rect.width,
+            zIndex: 9999 
+        })
+      }
+    }
+    reposition()
+    window.addEventListener('scroll', reposition, true)
+    window.addEventListener('resize', reposition)
+    const handler = (e) => {
+        if (
+          triggerRef.current && !triggerRef.current.contains(e.target) &&
+          panelRef.current && !panelRef.current.contains(e.target)
+        ) setOpen(false)
+      }
+    document.addEventListener('mousedown', handler)
+    return () => {
+        window.removeEventListener('scroll', reposition, true)
+        window.removeEventListener('resize', reposition)
+        document.removeEventListener('mousedown', handler)
+    }
+  }, [open])
+
+  const badgeFor = (s) => {
+    const m = s.name.match(/(\d+)\s*Years?/i)
+    return m ? `${m[1]}YR` : null
+  }
+
+  const pick = (svc) => {
+    onChange(svc.code || svc.id)
+    setOpen(false)
+    setQuery('')
+  }
+
+  const panel = open &&
+    createPortal(
+      <div className="gp-svc-panel grouped" ref={panelRef} style={panelStyle}>
+        <div className="gp-svc-list-scroll">
+          {groups.length === 0 ? (
+            <div className="gp-svc-empty">No matching services found</div>
+          ) : (
+            groups.map((g) => (
+              <div key={g.category} className="gp-svc-dropdown-group">
+                <div className="gp-svc-dropdown-group-label">{g.category}</div>
+                {g.items.map((svc) => {
+                  const isSelected = String(value) === String(svc.id) || value === svc.code
+                  const badge = badgeFor(svc)
+                  return (
+                    <button
+                      key={svc.code || svc.id}
+                      type="button"
+                      className={`gp-svc-item-btn${isSelected ? ' active' : ''}`}
+                      onClick={() => pick(svc)}
+                    >
+                      <div className="gp-svc-item-texts">
+                        <span className="gp-svc-item-name">{svc.name}</span>
+                        <span className="gp-svc-item-desc">{svc.category}</span>
+                      </div>
+                      <div className="gp-svc-item-right">
+                        {badge && <span className="gp-svc-item-badge">{badge}</span>}
+                        {isSelected && (
+                          <svg className="gp-svc-item-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            ))
+          )}
+        </div>
+        {value && (
+          <div className="gp-svc-footer">
+            <button type="button" className="gp-svc-clear-btn" onClick={() => { onChange(''); setOpen(false) }}>
+              Clear Selection
+            </button>
+          </div>
+        )}
+      </div>,
+      document.body,
+    )
+
+  return (
+    <>
+      <div
+        ref={triggerRef}
+        className={`gp-svc-trigger${open ? ' open' : ''}${invalid ? ' invalid' : ''}`}
+        onClick={() => !open && openPanel()}
+      >
+        {open ? (
+          <input
+            ref={inputRef}
+            className="gp-svc-trigger-input"
+            type="text"
+            placeholder="Search services…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        ) : (
+          <div className="gp-svc-trigger-value">
+            {selected ? (
+              <>
+                <span className="gp-svc-trigger-cat-badge">{selected.category}</span>
+                {selected.name}
+              </>
+            ) : (
+              <span className="gp-svc-trigger-placeholder">— Choose a service —</span>
+            )}
+          </div>
+        )}
+        <svg className="gp-svc-trigger-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </div>
+      {panel}
+    </>
+  )
+}
+
+function normalizePortalServiceCategory(category, name) {
+  const c = String(category || '').trim()
+  const n = String(name || '').toLowerCase()
+  if (!c || c === 'Other' || c === 'Other Services') {
+    if (n.includes('detailing')) return 'Detailing Services'
+    if (n.includes('ppf') || n.includes('film')) return 'PPF Services'
+    if (n.includes('coating')) return 'Coating Services'
+    if (n.includes('wash')) return 'Car Wash Services'
+        return 'Other Services'
+  }
+  if (/^ppf$/i.test(c)) return 'PPF Services'
+  if (/^ceramic\s*coating$/i.test(c)) return 'Coating Services'
+  if (/^detailing$/i.test(c)) return 'Detailing Services'
+    if (/^subscription/i.test(c)) return 'Subscription Services'
+    if (/^pms/i.test(c)) return 'PMS Services'
+  if (!c.toLowerCase().endsWith('services')) return `${c} Services`
+  return c
+}
+
+function isAllowedForCategory(service) {
+    const category = normalizePortalServiceCategory(service?.category, service?.name)
+    const code = String(service?.code || '').toUpperCase()
+    if (category === 'Subscription Services') return /^SUBS-PKG-\d+$/.test(code)
+    if (category === 'PMS Services') return /^PMS-PKG-\d+$/.test(code)
+    return true
+}
+
 // options: [{ value, label, sub? }]
 function GpSelect({
     value,
@@ -559,130 +762,105 @@ function ServiceCard({ baseName, variants, description, materialsNotes, onReques
         </div>
     )
 }
-
 function ServicesTab({ onRequestQuote }) {
     const [services, setServices] = useState([])
     const [priceOverrides, setPriceOverrides] = useState({})
+    const [materialsNotesByCode, setMaterialsNotesByCode] = useState({})
     const [loading, setLoading] = useState(true)
     const [loadError, setLoadError] = useState('')
     const [search, setSearch] = useState('')
     const [category, setCategory] = useState('All')
     const [vehicleSize, setVehicleSize] = useState('medium')
 
-    const normalizeCategoryName = (raw) => {
-        const c = String(raw || '').trim()
-        if (!c) return c
-        if (/^ppf$/i.test(c)) return 'PPF Services'
-        if (/^ceramic\s*coating$/i.test(c)) return 'Coating Services'
-        if (/^detailing$/i.test(c)) return 'Detailing Services'
-        return c
-    }
-
     useEffect(() => {
         let cancelled = false
         setLoadError('')
         setLoading(true)
 
-        let servicesFailed = false
-        let priceFailed = false
+        const loadAll = () => {
+            Promise.all([
+                publicGet('/services', { timeoutMs: 15000 }).catch(() => []),
+                publicGet('/price-config', { timeoutMs: 15000 }).catch(() => ({})),
+            ])
+                .then(([svcData, overrides]) => {
+                    if (cancelled) return
+                    setServices(Array.isArray(svcData) ? svcData : [])
+                    setPriceOverrides(overrides && typeof overrides === 'object' ? overrides : {})
 
-        Promise.all([
-            publicGet('/services', { timeoutMs: 15000 }).catch(() => {
-                servicesFailed = true
-                return []
-            }),
-            publicGet('/price-config', { timeoutMs: 15000 }).catch(() => {
-                priceFailed = true
-                return {}
-            }),
-        ])
-            .then(([svcData, overrides]) => {
-                if (cancelled) return
-                setServices(Array.isArray(svcData) ? svcData : [])
-                setPriceOverrides(overrides && typeof overrides === 'object' ? overrides : {})
-                if (servicesFailed && priceFailed) {
-                    setLoadError('Unable to load services right now. Please refresh and try again.')
-                }
-            })
-            .finally(() => {
-                if (cancelled) return
-                setLoading(false)
-            })
-
-        return () => {
-            cancelled = true
+                    // Materials notes lookup
+                    const notesMap = {}
+                    if (Array.isArray(svcData)) {
+                        for (const s of svcData) {
+                            const key = String(s.code || '').toLowerCase()
+                            if (key && s.materials_notes) notesMap[key] = s.materials_notes
+                        }
+                    }
+                    setMaterialsNotesByCode(notesMap)
+                })
+                .finally(() => {
+                    if (cancelled) return
+                    setLoading(false)
+                })
         }
+
+        loadAll()
+        return () => { cancelled = true }
     }, [])
+
+    const fullCatalog = useMemo(() => {
+        return services.map(s => ({
+            ...s,
+            category: normalizePortalServiceCategory(s.category, s.name),
+            materialsNotes: s.materials_notes || ''
+        })).filter(s => isAllowedForCategory(s))
+    }, [services])
 
     const isBikeSize = vehicleSize === 'small-bike' || vehicleSize === 'big-bike'
     const sizeLabelForFilter = VEHICLE_SIZE_OPTIONS.find(s => s.key === vehicleSize)?.label || null
 
     const serviceSupportsSize = (svc) => {
-        const entry = getCatalogEntry(svc?.code)
-        if (entry) {
-            const p = getEffectivePrice(entry.code, vehicleSize || 'medium', priceOverrides)
-            if (p > 0) return true
-        }
-        const parsed = parseName(svc?.name || '')
-        if (parsed?.size && sizeLabelForFilter && parsed.size === sizeLabelForFilter) return true
-        return false
+        return getServicePriceForSize(svc, vehicleSize, priceOverrides) > 0
     }
 
-    const servicesForSize = isBikeSize ? services.filter(serviceSupportsSize) : services
-    const categories = ['All', ...new Set(servicesForSize.map(s => normalizeCategoryName(s.category)).filter(Boolean))]
+    const servicesForSize = fullCatalog.filter(serviceSupportsSize)
+    const categories = ['All', ...new Set(servicesForSize.map(s => normalizePortalServiceCategory(s.category, s.name)).filter(Boolean))]
 
     const availableVehicleSizes = useMemo(() => {
         const used = new Set()
-        const byLabel = new Map(VEHICLE_SIZE_OPTIONS.map(s => [s.label, s.key]))
-
-        services.forEach(svc => {
-            const entry = getCatalogEntry(svc?.code)
-            if (entry) {
-                VEHICLE_SIZE_OPTIONS.forEach(opt => {
-                    const p = getEffectivePrice(entry.code, opt.key, priceOverrides)
-                    if (p > 0) used.add(opt.key)
-                })
-            }
-
-            const parsed = parseName(svc?.name || '')
-            if (parsed?.size) {
-                const k = byLabel.get(parsed.size)
-                if (k) used.add(k)
-            }
+        fullCatalog.forEach(svc => {
+            VEHICLE_SIZE_OPTIONS.forEach(opt => {
+                const price = getEffectivePrice(svc.code, opt.key, priceOverrides)
+                if (price > 0) used.add(opt.key)
+            })
         })
-
         const opts = VEHICLE_SIZE_OPTIONS.filter(o => used.has(o.key))
         return opts.length ? opts : VEHICLE_SIZE_OPTIONS
-    }, [services, priceOverrides])
+    }, [fullCatalog, priceOverrides])
 
     const filtered = servicesForSize.filter(s => {
-        const cat = normalizeCategoryName(s.category)
+        const cat = normalizePortalServiceCategory(s.category, s.name)
         const matchCat = category === 'All' || cat === category
         const q = search.toLowerCase()
         return matchCat && (!q || s.name.toLowerCase().includes(q) || (cat || '').toLowerCase().includes(q))
     })
 
-    const structure = filtered.reduce((acc, svc) => {
-        const normalizedCategory = normalizeCategoryName(svc.category)
-        const { base, size } = parseName(svc.name)
-        if (!acc[normalizedCategory]) acc[normalizedCategory] = {}
-        if (!acc[normalizedCategory][base]) acc[normalizedCategory][base] = { variants: [], description: null, materialsNotes: null }
-        acc[normalizedCategory][base].variants.push({ ...svc, size })
-        const nextDesc = (svc.description && String(svc.description).trim())
-            ? String(svc.description).trim()
-            : (svc.materials_notes && String(svc.materials_notes).trim())
-                ? String(svc.materials_notes).trim().split('\n')[0]
-                : defaultServiceDescription(base)
+    const groups = {}
+    filtered.forEach(s => {
+        const cat = normalizePortalServiceCategory(s.category, s.name)
+        if (!groups[cat]) groups[cat] = { variants: [], description: '', materialsNotes: '' }
 
-        if (nextDesc && !acc[normalizedCategory][base].description) {
-            acc[normalizedCategory][base].description = nextDesc
-        }
-
-        if (svc.materials_notes && !acc[normalizedCategory][base].materialsNotes) {
-            acc[normalizedCategory][base].materialsNotes = svc.materials_notes
-        }
-        return acc
-    }, {})
+        const price = getServicePriceForSize(s, vehicleSize, priceOverrides)
+        groups[cat].variants.push({
+            id: s.code,
+            code: s.code,
+            name: s.name,
+            base_price: price,
+            size: vehicleSize,
+            description: s.description || ''
+        })
+        if (s.materialsNotes) groups[cat].materialsNotes = s.materialsNotes
+        if (s.description && !groups[cat].description) groups[cat].description = s.description
+    })
 
     if (loading) return <div className="gp-loading">Loading services…</div>
     if (loadError) return <div className="gp-loading">{loadError}</div>
@@ -723,24 +901,21 @@ function ServicesTab({ onRequestQuote }) {
                 ))}
             </div>
 
-            {Object.keys(structure).length === 0 ? (
+            {Object.keys(groups).length === 0 ? (
                 <div className="gp-empty">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                    </svg>
                     <p>No services found{search ? ` for "${search}"` : ''}.</p>
                 </div>
             ) : (
-                Object.entries(structure).map(([cat, groups]) => (
+                Object.entries(groups).map(([cat, { variants, description, materialsNotes }]) => (
                     <div key={cat} className="gp-cat-section">
                         <div className="gp-cat-label">{cat}</div>
                         <div className="gp-svc-grid-outer">
-                            {Object.entries(groups).map(([baseName, { variants, description, materialsNotes }]) => (
+                            {variants.map(v => (
                                 <ServiceCard
-                                    key={baseName}
-                                    baseName={baseName}
-                                    variants={variants}
-                                    description={description}
+                                    key={v.code}
+                                    baseName={v.name}
+                                    variants={[v]}
+                                    description={description || v.description}
                                     materialsNotes={materialsNotes}
                                     onRequestQuote={onRequestQuote}
                                     priceOverrides={priceOverrides}
@@ -759,7 +934,6 @@ function ServicesTab({ onRequestQuote }) {
 function QuotationTab({ prefillService }) {
     const [services, setServices] = useState([])
     const [priceOverrides, setPriceOverrides] = useState({})
-    const [customCatalog, setCustomCatalog] = useState([])
     const [branches, setBranches] = useState(['Cubao', 'Manila'])
     const [makes, setMakes] = useState([])
     const [models, setModels] = useState([])
@@ -789,8 +963,11 @@ function QuotationTab({ prefillService }) {
     const [attemptedSubmit, setAttemptedSubmit] = useState(false)
 
     const fullCatalog = useMemo(() => {
-        return [...SERVICE_CATALOG, ...customCatalog.filter(s => s.enabled !== false)]
-    }, [customCatalog])
+        return services.map(s => ({
+            ...s,
+            category: normalizePortalServiceCategory(s.category, s.name)
+        })).filter(s => isAllowedForCategory(s))
+    }, [services])
 
     const selectedService = form.serviceId ? fullCatalog.find(s => s.code === form.serviceId) : null
     const selectedServiceSchedule = useMemo(() => {
@@ -801,10 +978,8 @@ function QuotationTab({ prefillService }) {
 
     const selectedServicePrice = (() => {
         if (!selectedService) return null
-        const chosenSize = form.vehicleSize || 'medium'
-        const p = getEffectivePrice(selectedService.code, chosenSize, priceOverrides)
-        if (p > 0) return p
-        return null
+        const p = getServicePriceForSize(selectedService, form.vehicleSize, priceOverrides)
+        return p > 0 ? p : null
     })()
 
 
@@ -847,23 +1022,6 @@ function QuotationTab({ prefillService }) {
                     if (Number.isFinite(n)) setVatRate(n)
                 })
                 .catch(() => { })
-
-            // Load custom services from config
-            fetch(`${API_BASE}/config/category/quotations`)
-                .then(r => r.json().catch(() => []))
-                .then(arr => {
-                    if (cancelled) return
-                    if (Array.isArray(arr)) {
-                        const svcRow = arr.find(row => row.key === 'custom_services')
-                        if (svcRow?.value) {
-                            try {
-                                const parsed = typeof svcRow.value === 'string' ? JSON.parse(svcRow.value) : svcRow.value
-                                if (Array.isArray(parsed)) setCustomCatalog(parsed)
-                            } catch (e) { console.error('Failed to parse custom services:', e) }
-                        }
-                    }
-                })
-                .catch(() => { })
         }
 
         loadAll()
@@ -900,6 +1058,18 @@ function QuotationTab({ prefillService }) {
             if (match) setForm(f => ({ ...f, serviceId: match.code }))
         }
     }, [prefillService, fullCatalog])
+
+    useEffect(() => {
+        if (!prefillService?.category || form.serviceId || !fullCatalog.length) return
+        const targetCategory = String(prefillService.category || '').toLowerCase()
+        const match = fullCatalog.find((s) => {
+            const normalizedCategory = normalizePortalServiceCategory(s.category, s.name).toLowerCase()
+            return normalizedCategory === targetCategory
+        })
+        if (match?.code) {
+            setForm((f) => ({ ...f, serviceId: match.code }))
+        }
+    }, [prefillService, form.serviceId, fullCatalog])
 
     useEffect(() => {
         if (!form.preferredDate) {
@@ -1078,6 +1248,7 @@ function QuotationTab({ prefillService }) {
     const invalidMake = attemptedSubmit && !String(form.vehicleMake || '').trim()
     const invalidCustomMake = attemptedSubmit && showCustomMake && !String(form.customMake || '').trim()
     const invalidEndDate = attemptedSubmit && form.endDate && form.preferredDate && form.endDate < form.preferredDate
+    const invalidServiceId = attemptedSubmit && !form.serviceId
 
     return (
         <div className="gp-tab-content">
@@ -1246,28 +1417,16 @@ function QuotationTab({ prefillService }) {
                     </div>
                     <div className="gp-field">
                         <label>Services <span className="gp-req">*</span></label>
-                        <GpSelect
-                            value={form.serviceId}
+                      <GpServicePicker
+                        services={fullCatalog}
+                        value={form.serviceId}
                             onChange={v => {
                                 setEndDateTouched(false)
                                 set('serviceId', v)
                             }}
-                            placeholder="— Select service to add —"
-                            searchable
-                            grouped
-                            options={(() => {
-                                const chosenSize = form.vehicleSize || 'medium'
-                                const isBike = chosenSize === 'small-bike' || chosenSize === 'big-bike'
-                                return fullCatalog
-                                    .filter(s => !isBike || s.sizePrices[chosenSize])
-                                    .map(s => {
-                                        return {
-                                            value: s.code,
-                                            label: s.name,
-                                            group: s.group,
-                                        }
-                                    })
-                            })()}
+                            vehicleSize={form.vehicleSize}
+                            priceOverrides={priceOverrides}
+                            invalid={invalidServiceId}
                         />
                     </div>
                 </div>
@@ -1364,6 +1523,9 @@ function QuotationTab({ prefillService }) {
                     <p className="gp-form-note">
                         No account required · Response within 24 hours
                     </p>
+                    <p className="gp-form-note">
+                        Payment: Bank Transfer | <span className="blue-hl">Credit Card (+3%)</span>
+                    </p>
                 </div>
             </form>
         </div>
@@ -1374,6 +1536,39 @@ function QuotationTab({ prefillService }) {
 export function GuestPortalPage() {
     const [tab, setTab] = useState('services')
     const [quotePrefill, setQuotePrefill] = useState(null)
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search)
+        const tabParam = String(params.get('tab') || '').toLowerCase()
+        const intentParam = String(params.get('intent') || '').toLowerCase()
+
+        let intent = intentParam
+        if (!intent) {
+            try {
+                intent = String(localStorage.getItem('ma_portal_landing_intent') || '').toLowerCase()
+            } catch {
+                intent = ''
+            }
+        }
+
+        if (tabParam === 'quote') {
+            setTab('quote')
+        }
+
+        if (intent === 'subscription') {
+            setQuotePrefill({ category: 'Subscription Services' })
+        } else if (intent === 'pms') {
+            setQuotePrefill({ category: 'PMS Services' })
+        }
+
+        if (intentParam || intent) {
+            try {
+                localStorage.removeItem('ma_portal_landing_intent')
+            } catch {
+                // ignore localStorage failures
+            }
+        }
+    }, [])
 
     const handleRequestQuote = (svc) => {
         setQuotePrefill(svc)

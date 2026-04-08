@@ -18,7 +18,11 @@ import { JoApprovalPage } from './pages/JoApprovalPage'
 import { InventoryPage } from './pages/InventoryPage'
 import { OnlineQuotationRequestsPage } from './pages/OnlineQuotationRequestsPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { SubscriptionsPage } from './pages/SubscriptionsPage'
+import { PMSPage } from './pages/PMSPage'
 import { apiDownload, buildApiUrl, loginRequest, pushToast } from './api/client'
+import { createRealtimeClient } from './utils/realtime'
+import { emitConfigUpdated, emitPackagesUpdated, emitVehicleMakesUpdated } from './utils/events'
 import { ToastViewport } from './components/ToastViewport'
 import { computeNewPortalBookings, computeNewPortalCancellations, computeNewPortalCancellationRequests, computeNewPortalQuotationBookings, createPortalBookingWatchState } from './utils/portalBookingWatcher'
 import { getJwtExpMs } from './utils/jwt'
@@ -71,15 +75,7 @@ function App() {
   const [openAppointmentId, setOpenAppointmentId] = useState(null)
   const [fromQuotation, setFromQuotation] = useState(null)
   const [openJobOrderId, setOpenJobOrderId] = useState(null)
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      title: 'Welcome!',
-      message: 'Notifications are now available',
-      time: 'Just now',
-      read: false,
-    },
-  ])
+  const [notifications, setNotifications] = useState([])
   const notifiedPortalAppointmentIdsRef = useRef(new Set())
   const [onlineLeadCount, setOnlineLeadCount] = useState(0)
 
@@ -843,6 +839,78 @@ function App() {
   }, [session.token])
 
   useEffect(() => {
+    if (!session.token) return
+    let stopped = false
+
+    const toUiNotification = (n) => ({
+      id: n.id,
+      title: n.title,
+      message: n.message,
+      details: n.payload || null,
+      time: n.created_at ? new Date(n.created_at).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'Now',
+      read: Boolean(n.is_read),
+    })
+
+    const load = async () => {
+      try {
+        const { url, headers } = buildApiUrl('/notifications', session.token)
+        const res = await fetch(url, { headers })
+        if (!res.ok) return
+        const rows = await res.json().catch(() => [])
+        if (!stopped && Array.isArray(rows)) {
+          setNotifications(rows.map(toUiNotification))
+        }
+      } catch (_) {
+        // Silent
+      }
+    }
+
+    load()
+    return () => { stopped = true }
+  }, [session.token])
+
+  useEffect(() => {
+    if (!session.token) return
+
+    const socket = createRealtimeClient(session.token)
+    if (!socket) return
+
+    const toUiNotification = (n) => ({
+      id: n.id,
+      title: n.title,
+      message: n.message,
+      details: n.payload || null,
+      time: n.created_at ? new Date(n.created_at).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'Now',
+      read: Boolean(n.is_read),
+    })
+
+    socket.on('notification:new', (n) => {
+      if (!n?.id) return
+      setNotifications((prev) => {
+        if (prev.some((x) => x.id === n.id)) return prev
+        return [toUiNotification(n), ...prev]
+      })
+    })
+
+    socket.on('settings:updated', (payload) => {
+      emitConfigUpdated({ source: 'realtime', ...(payload || {}) })
+    })
+
+    socket.on('data:changed', (payload) => {
+      const scope = String(payload?.scope || '').toLowerCase()
+      if (scope === 'subscriptions' || scope === 'pms') emitPackagesUpdated({ source: 'realtime', ...(payload || {}) })
+      if (scope === 'vehicle-makes' || scope === 'vehicles') emitVehicleMakesUpdated({ source: 'realtime', ...(payload || {}) })
+      if (scope === 'appointments') {
+        window.dispatchEvent(new CustomEvent('ma:appointments-updated', { detail: payload || {} }))
+      }
+    })
+
+    return () => {
+      socket.disconnect()
+    }
+  }, [session.token])
+
+  useEffect(() => {
     const handleNetwork = (event) => {
       const active = Number(event?.detail?.activeRequests || 0)
       const ui = networkBusyUiRef.current
@@ -1056,6 +1124,18 @@ function App() {
         ) 
       },
       {
+        key: 'pms',
+        group: 'master',
+        label: 'PMS Management',
+        icon: (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14.7 6.3a1 1 0 0 0 1.4 0l1.6-1.6a1 1 0 1 1 1.4 1.4l-1.6 1.6a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 1 1-1.4 1.4l-1.6-1.6a1 1 0 0 0-1.4 0l-1.6 1.6a1 1 0 1 1-1.4-1.4l1.6-1.6a1 1 0 0 0 0-1.4l-1.6-1.6a1 1 0 1 1 1.4-1.4z"></path>
+            <path d="M3 21l6-6"></path>
+            <path d="M12 21H21"></path>
+          </svg>
+        )
+      },
+      {
         key: 'online-quotation',
         group: 'operations',
         label: 'Online Quotation',
@@ -1120,6 +1200,18 @@ function App() {
           </svg>
         ),
       }] : []),
+      {
+        key: 'subscriptions',
+        group: 'operations',
+        label: 'Subscriptions',
+        icon: (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="9" cy="21" r="1"></circle>
+            <circle cx="20" cy="21" r="1"></circle>
+            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+          </svg>
+        ),
+      },
       {
         key: 'payments',
         group: 'finance',
@@ -1199,6 +1291,8 @@ function App() {
     }} />,
     sales: <SalesPage token={session.token} />,
     services: <ServicesPage token={session.token} />,
+    pms: <PMSPage token={session.token} />,
+    subscriptions: <SubscriptionsPage token={session.token} />,
     payments: <PaymentsPage token={session.token} user={session.user} />,
     scheduling: (
       <SchedulingPage
@@ -1309,10 +1403,17 @@ function App() {
     }
   }
 
-  const handleMarkAsRead = (notificationId) => {
+  const handleMarkAsRead = async (notificationId) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n)),
     )
+    if (!session.token) return
+    try {
+      const { url, headers } = buildApiUrl(`/notifications/read/${notificationId}`, session.token)
+      await fetch(url, { method: 'PUT', headers })
+    } catch (_) {
+      // Silent
+    }
   }
 
   const handleOpenNotification = async (notification) => {

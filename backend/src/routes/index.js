@@ -19,12 +19,18 @@ const configRoutes = require('./configRoutes')
 const emailCampaignRoutes = require('./emailCampaigns')
 const promoCodeRoutes = require('./promoCodes')
 const onlineQuotationRequestRoutes = require('./onlineQuotationRequests')
+const subscriptionRoutes = require('./subscriptions')
+const pmsRoutes = require('./pms')
+const settingsRoutes = require('./settings')
+const notificationsRoutes = require('./notifications')
 const { requireAuth } = require('../middleware/auth')
 
 const router = express.Router()
 
 router.use('/auth', authRoutes)
 router.use('/config', configRoutes)
+router.use('/settings', settingsRoutes)
+router.use('/notifications', notificationsRoutes)
 router.use(requireAuth)
 router.use('/customers', customerRoutes)
 router.use('/vehicles', vehicleRoutes)
@@ -44,6 +50,8 @@ router.use('/vehicle-makes', vehicleMakeRoutes)
 router.use('/email-campaigns', emailCampaignRoutes)
 router.use('/promo-codes', promoCodeRoutes)
 router.use('/online-quotation-requests', onlineQuotationRequestRoutes)
+router.use('/subscriptions', subscriptionRoutes)
+router.use('/pms', pmsRoutes)
 
 module.exports = router
 

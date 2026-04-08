@@ -4,6 +4,9 @@ const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 const ConfigurationService = require('../services/configurationService');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const SystemSettingsService = require('../services/systemSettingsService')
+const NotificationService = require('../services/notificationService')
+const { emitSettingsUpdated } = require('../realtime/hub')
 
 // Optional auth middleware - decodes token if provided
 function optionalAuth(req, res, next) {
@@ -167,6 +170,31 @@ router.put('/:category/:key', requireAuth, requireAdmin, async (req, res) => {
     
     // Update setting
     const result = await ConfigurationService.update(category, key, value, req.user.id, reason);
+
+    const flatKey = `${category}.${key}`
+    await SystemSettingsService.upsertMany({ [flatKey]: value }).catch(() => {})
+
+    emitSettingsUpdated({
+      source: 'config',
+      category,
+      key,
+      updatedBy: req.user?.id || null,
+      updatedAt: new Date().toISOString(),
+    })
+
+    const label = `${category}.${key}`
+    await NotificationService.create({
+      role: 'admin',
+      title: 'Configuration Updated',
+      message: `Admin updated ${label}`,
+      payload: { type: 'configuration', category, key, updatedBy: req.user?.id || null },
+    }).catch(() => {})
+    await NotificationService.create({
+      role: 'client',
+      title: 'System Configuration Updated',
+      message: `${label} has been updated by admin.`,
+      payload: { type: 'configuration', category, key },
+    }).catch(() => {})
     
     return res.json({
       success: true,

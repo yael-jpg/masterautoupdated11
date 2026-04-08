@@ -1,4 +1,4 @@
-﻿/* 
+/* 
    MasterAuto Landing Page  redesigned to match brand UI
    Black / charcoal / white + elegant serif feel
     */
@@ -146,22 +146,34 @@
   padding: 0 28px;
   text-align: center;
 }
+.lp-hero-mark {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.lp-hero-mark img {
+  width: clamp(96px, 10vw, 144px);
+  height: auto;
+  opacity: 0.92;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.45));
+}
 .lp-hero-eye {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 3px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 6px;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.5);
-  margin-bottom: 24px;
+  color: rgba(255,255,255,0.52);
+  margin-bottom: 22px;
 }
 .lp-hero-h1 {
   font-family: 'Cormorant Garamond', Georgia, serif;
-  font-size: clamp(34px, 6vw, 80px);
+  font-size: clamp(38px, 6.1vw, 92px);
   font-weight: 400;
-  line-height: 1.12;
-  letter-spacing: -0.5px;
+  line-height: 1.1;
+  letter-spacing: -0.3px;
   color: var(--white);
   margin-bottom: 40px;
+  text-shadow: 0 14px 44px rgba(0, 0, 0, 0.48);
 }
 .lp-hero-btns {
   display: flex;
@@ -197,20 +209,27 @@
 .lp button.lp-btn-o {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 9px;
-  padding: 13px 28px;
-  background: transparent;
-  color: var(--white);
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
+  min-height: 50px; /* Target 50px height */
+  padding: 0 36px;
+  background: var(--white); /* Switch to White */
+  color: var(--black);
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
   border-radius: 4px;
-  border: 1px solid rgba(255,255,255,0.45);
+  border: none;
   cursor: pointer;
   font-family: inherit;
-  transition: background var(--t), border-color var(--t), transform var(--t);
+  box-shadow: 0 4px 14px rgba(255,255,255,0.1);
+  transition: background var(--t), transform var(--t), box-shadow var(--t);
 }
-.lp button.lp-btn-o:hover { background: rgba(255,255,255,0.08); border-color: var(--white); transform: translateY(-2px); }
+.lp button.lp-btn-o:hover { 
+  background: var(--gray-100); 
+  transform: translateY(-2px); 
+  box-shadow: 0 8px 24px rgba(255,255,255,0.15); 
+}
 .lp button.lp-btn-ow {
   display: inline-flex;
   align-items: center;
@@ -1015,6 +1034,107 @@
   text-decoration: underline;
 }
 
+/* ── Subscriptions & PMS section ───────────────────────────── */
+.lp-packages {
+  background: #050505;
+  padding: 66px 0 84px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.lp-packages-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.lp-package-card {
+  border: 1px solid rgba(255,255,255,0.10);
+  background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%);
+  padding: 38px 42px;
+  min-height: 350px;
+  display: flex;
+  flex-direction: column;
+}
+
+.lp-package-card h3 {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: clamp(30px, 3vw, 42px);
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  color: #f4f4f2;
+  margin-bottom: 18px;
+}
+
+.lp-package-card p {
+  font-size: 18px;
+  line-height: 1.6;
+  color: rgba(255,255,255,0.72);
+  margin-bottom: 28px;
+}
+
+.lp-package-btn {
+  margin-top: auto;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 22px;
+  border-radius: 3px;
+  background: #f0f0ec;
+  color: #0f0f0f;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: background var(--t), transform var(--t), box-shadow var(--t);
+}
+
+.lp-package-btn:hover {
+  background: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px rgba(0,0,0,0.35);
+}
+
+@media (max-width: 980px) {
+  .lp-packages {
+    padding: 52px 0 66px;
+  }
+
+  .lp-packages-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lp-package-card {
+    min-height: 300px;
+    padding: 28px 26px;
+  }
+
+  .lp-package-card p {
+    font-size: 17px;
+  }
+}
+
+@media (max-width: 600px) {
+  .lp-package-card {
+    min-height: auto;
+    padding: 24px 20px;
+  }
+
+  .lp-package-card h3 {
+    font-size: clamp(28px, 8vw, 34px);
+  }
+
+  .lp-package-card p {
+    font-size: 16px;
+    line-height: 1.58;
+  }
+
+  .lp-package-btn {
+    width: 100%;
+  }
+}
+
 /* ── 3 diagonal panels ─────────────────────────────────────── */
 .lp-hiw-panels {
   display: flex;
@@ -1664,6 +1784,8 @@
   /* Hero */
   .lp-hero      { padding-top: 72px; padding-bottom: 72px; }
   .lp-hero-body { padding: 0 16px; text-align: center; }
+  .lp-hero-mark { margin-bottom: 12px; }
+  .lp-hero-mark img { width: clamp(78px, 20vw, 110px); }
   .lp-hero-eye  { font-size: 11px; letter-spacing: 2px; margin-bottom: 18px; }
   .lp-hero-btns { flex-direction: column; align-items: center; gap: 12px; }
   .lp-btn-w,
@@ -1714,6 +1836,8 @@
   /* Hero */
   .lp-hero      { padding-top: 60px; padding-bottom: 60px; }
   .lp-hero-body { padding: 0 12px; text-align: center; }
+  .lp-hero-mark { margin-bottom: 10px; }
+  .lp-hero-mark img { width: clamp(70px, 24vw, 96px); }
   .lp-hero-eye  { font-size: 10.5px; letter-spacing: 2px; margin-bottom: 14px; }
   .lp-hero-btns { gap: 10px; }
   .lp-btn-w,

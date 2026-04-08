@@ -25,7 +25,7 @@ const FEATURED = [
     id: 'ppf',
     name: 'Paint Protection Film',
     short: 'Paint Protection Film (PPF) is a transparent and durable film applied to your vehicle’s painted surfaces to protect it from scratches, rock chips, stains, and environmental damage. This high-quality protective layer helps maintain the original paint while keeping your car looking brand new. PPF also has self-healing properties that allow minor scratches to disappear with heat, ensuring long-lasting protection and shine.',
-    image: '/images/ppf.png',
+    image: '/images/ppf.avif',
     tag: 'Self-Healing Shield',
     details: [
       { label: 'Coverage', value: 'Partial or Full Body' },
@@ -44,7 +44,7 @@ const FEATURED = [
     id: 'ceramic',
     name: 'Graphene Ceramic Coating',
     short: 'Graphene Ceramic Coating is an advanced protective layer that bonds with your car’s paint, creating a strong shield against dirt, UV rays, chemicals, and water spots. It enhances the gloss and depth of your vehicle’s finish while providing hydrophobic properties that repel water and contaminants. This coating helps keep your car cleaner for longer and makes maintenance easier.',
-    image: '/images/graphene.png',
+    image: '/images/graphene.avif',
     tag: 'Nano-Ceramic Gloss',
     details: [
       { label: 'Hardness', value: '9H Ceramic' },
@@ -63,7 +63,7 @@ const FEATURED = [
     id: 'tint',
     name: 'Window Tinting',
     short: 'Window Tinting improves both the appearance and comfort of your vehicle by applying a high-quality tinted film to the windows. It reduces heat, blocks harmful UV rays, and increases privacy while enhancing the car’s sleek look. Window tinting also helps protect your interior from fading and improves driving comfort by reducing glare from the sun.',
-    image: '/images/window.png',
+    image: '/images/window.avif',
     tag: 'UV & Heat Protection',
     details: [
       { label: 'UV Ray Rejection', value: 'Up to 99%' },
@@ -82,7 +82,7 @@ const FEATURED = [
     id: 'detailing',
     name: 'Interior & Exterior Detailing',
     short: 'Interior and Exterior Detailing is a complete cleaning and restoration process that brings your vehicle back to its best condition. The service includes deep cleaning of the interior such as seats, carpets, and dashboard, as well as thorough exterior washing, polishing, and paint enhancement. Detailing removes dirt, stains, and contaminants while restoring the shine and cleanliness of your vehicle.',
-    image: '/images/detailing.png',
+    image: '/images/detailing.avif',
     tag: 'Deep Clean',
     details: [
       { label: 'Interior', value: 'Full Deep Clean' },
@@ -101,7 +101,7 @@ const FEATURED = [
     id: 'seat',
     name: 'Seat Cover',
     short: 'Seat Cover Installation enhances your vehicle’s interior by adding stylish, comfortable, and protective seat covers. High-quality materials such as leather or premium fabric are installed to protect the original seats from wear, stains, and damage. This service improves the overall look of the interior while increasing comfort and preserving the value of your vehicle.',
-    image: '/images/seatcover.png',
+    image: '/images/seatcover.avif',
     tag: 'Interior Upgrade',
     details: [
       { label: 'Material', value: 'Leather / Neoprene' },
@@ -413,11 +413,14 @@ export function LandingPage() {
         <div className="lp-hero-dim" />
 
         <div className="lp-hero-body">
+          <div className="lp-hero-mark" aria-hidden="true">
+            <img src="/images/logo-letter.png" alt="" />
+          </div>
           <p className="lp-hero-eye">Professional Auto Care</p>
           <h1 className="lp-hero-h1">
-            Premium Ceramic Coating,<br />
             Paint Protection Film,<br />
-            and Advanced Auto Coating
+            Premium Coatings<br />
+            Window Tint, and Wash-over
           </h1>
           <div className="lp-hero-btns">
             <button className="lp-btn-o" onClick={() => window.location.href = '/guest'}>Request Quotation</button>
@@ -514,6 +517,62 @@ export function LandingPage() {
       </section>
 
       {videoModalSrc && <VideoGalleryModal src={videoModalSrc} onClose={() => setVideoModalSrc(null)} />}
+
+      <section className="lp-packages">
+        <div className="lp-wrap">
+          <div className="lp-sec-head">
+            <p className="lp-eyebrow">Vehicle Care Services</p>
+            <h2>Subscriptions &amp; Preventive Maintenance</h2>
+            <div className="lp-rule" />
+          </div>
+
+          <div className="lp-packages-grid">
+            <article className="lp-package-card">
+              <h3>MasterAuto Subscription</h3>
+              <p>
+                Maintain your vehicle&apos;s flawless finish year-round by availing of our premium subscription packages.
+                Membership guarantees priority booking, structured maintenance intervals, and exclusive rates.
+              </p>
+              <button
+                type="button"
+                className="lp-package-btn"
+                onClick={() => {
+                  try {
+                    localStorage.setItem('ma_portal_landing_intent', 'subscription')
+                  } catch {
+                    // ignore localStorage failures
+                  }
+                  window.location.href = '/guest?tab=quote&intent=subscription'
+                }}
+              >
+                Avail Subscription
+              </button>
+            </article>
+
+            <article className="lp-package-card">
+              <h3>Preventive Maintenance System (PMS)</h3>
+              <p>
+                Take control over your automotive investments through our digital Preventive Maintenance System (PMS).
+                Avail our PMS packages to review service history, track active plans, and request detailing services.
+              </p>
+              <button
+                type="button"
+                className="lp-package-btn"
+                onClick={() => {
+                  try {
+                    localStorage.setItem('ma_portal_landing_intent', 'pms')
+                  } catch {
+                    // ignore localStorage failures
+                  }
+                  window.location.href = '/guest?tab=quote&intent=pms'
+                }}
+              >
+                Avail PMS
+              </button>
+            </article>
+          </div>
+        </div>
+      </section>
 
       <section className="lp-why">
         <div className="lp-wrap">

@@ -4,10 +4,18 @@ import { SERVICE_CATALOG, VEHICLE_SIZE_OPTIONS, getCatalogGroups } from '../data
 import './SettingsPage.css'
 import CampaignsModal from './CampaignsModal'
 import PromoEmailModal from './PromoEmailModal'
-import { emitConfigUpdated, emitVehicleMakesUpdated } from '../utils/events'
+import { emitConfigUpdated, emitPackagesUpdated, emitVehicleMakesUpdated } from '../utils/events'
 
 // ── Payment methods tag editor ───────────────────────────────────────────────
 const PRESET_PAYMENT_METHODS = ['Cash', 'GCash', 'Credit Card', 'Debit Card', 'Bank Transfer', 'PayMaya', 'Check']
+const BASIC_PMS_CORE_INCLUSIONS = [
+  'Engine Maintenance: Replacement of engine oil and oil filter.',
+  'Fluid Service: Top-up or replacement of brake fluid, clutch fluid, coolant, and washer fluid.',
+  'Brake System: Inspection of brake pads/shoes, cleaning of front and rear brakes, and brake fluid moisture testing.',
+  'Inspection & Cleaning: Air filter and cabin filter cleaning or replacement, and spark plug check.',
+  'Underchassis & Tires: Tire pressure check, tire rotation, and inspection of suspension, steering, and CV boots.',
+  'Electrical & Engine: Battery health check (voltage/terminals), light inspection, and basic computer box scanning.',
+]
 
 function MethodsEditor({ value, onChange, disabled }) {
   const [customInput, setCustomInput] = useState('')
@@ -192,6 +200,8 @@ const TABS = [
   { key: 'crm',             label: 'CRM',               icon: '🎯' },
   { key: 'vehicle',         label: 'Vehicles',          icon: '🚗' },
   { key: 'services',        label: 'Services',          icon: '🛠️' },
+  { key: 'subscriptions',   label: 'Subscriptions',     icon: '🛒' },
+  { key: 'pms',             label: 'PMS Packages',      icon: '🧰' },
   { key: 'quotations',      label: 'Quotations',        icon: '📋' },
   { key: 'quotation_email', label: 'Quotations Email',  icon: '📧' },
   { key: 'booking',         label: 'Bookings',          icon: '📅' },
@@ -215,6 +225,8 @@ const CATEGORY_LABELS = {
   sales:            'Sales Configuration',
   quotations:       'Quotation Rules',
   services:         'Services & Pricing',
+  subscriptions:    'Subscription Packages',
+  pms:              'PMS Packages',
   services_process:  'Services Process',
   inventory:        'Inventory Settings',
   quotation_email:  'Quotation Email Settings',
@@ -234,6 +246,8 @@ const CATEGORY_DESCRIPTIONS = {
   sales:            'Adjust how sales data is calculated and reported.',
   quotations:       'Manage vehicle size options used in Operations > Quotations.',
   services:         'Manage custom services and adjust global service pricing table.',
+  subscriptions:    'Manage subscription plans and service bundles.',
+  pms:              'Manage Preventive Maintenance Service schedules.',
   services_process: 'Configure service steps, checklists, and workflow status rules.',
   inventory:        'Configure stock thresholds and default inventory rules.',
   quotation_email:  'Customize the Service Confirmation email sent to customers when a quotation is approved.',
@@ -390,7 +404,13 @@ const FIELD_SCHEMA = {
         { key: 'report_generation_time',      label: 'Daily Report Generation Time',       type: 'text',   placeholder: '00:00', desc: 'HH:MM format (24-hour).' },
         { key: 'include_archived_in_reports', label: 'Include Archived Records',           type: 'toggle' },
         { key: 'tax_calculation_method',      label: 'Tax Calculation Method',             type: 'select', options: ['inclusive','exclusive'], desc: '"inclusive" means tax is embedded in prices, "exclusive" adds on top.' },
-        { key: 'default_service_pricing',     label: 'Default Service Pricing Rules',      type: 'json',   placeholder: '{"labor_cost":"hourly","parts_markup":"25"}' },
+        {
+          key: 'default_service_pricing',
+          label: 'Default Service Pricing Rules',
+          type: 'json',
+          defaultValue: JSON.stringify({ labor_cost: 'hourly', parts_markup: 25 }, null, 2),
+          placeholder: '{\n  "labor_cost": "hourly",\n  "parts_markup": 25\n}',
+        },
       ],
     },
     {
@@ -672,6 +692,46 @@ export function SettingsPage({ token, user }) {
   const [newMakeCategory, setNewMakeCategory] = useState('')
   const [showCampaigns, setShowCampaigns] = useState(false)
 
+  const [subscriptionPackages, setSubscriptionPackages] = useState([])
+  const [subsLoading, setSubsLoading] = useState(false)
+  const [subsSearch, setSubsSearch] = useState('')
+  const [subsStatusFilter, setSubsStatusFilter] = useState('all')
+  const [showSubsModal, setShowSubsModal] = useState(false)
+  const [showSubsDeleteModal, setShowSubsDeleteModal] = useState(false)
+  const [editingPackage, setEditingPackage] = useState(null)
+  const [deletingPackage, setDeletingPackage] = useState(null)
+  const [subsSaving, setSubsSaving] = useState(false)
+  const [subsDeleting, setSubsDeleting] = useState(false)
+  const [subsError, setSubsError] = useState('')
+  const [subsForm, setSubsForm] = useState({
+    name: '',
+    description: '',
+    price: '',
+    duration: 'Monthly',
+    customDays: '',
+    status: 'Active',
+  })
+
+  const [pmsPackages, setPmsPackages] = useState([])
+  const [pmsLoading, setPmsLoading] = useState(false)
+  const [pmsSearch, setPmsSearch] = useState('')
+  const [pmsStatusFilter, setPmsStatusFilter] = useState('all')
+  const [showPmsModal, setShowPmsModal] = useState(false)
+  const [showPmsDeleteModal, setShowPmsDeleteModal] = useState(false)
+  const [editingPmsPackage, setEditingPmsPackage] = useState(null)
+  const [deletingPmsPackage, setDeletingPmsPackage] = useState(null)
+  const [pmsSaving, setPmsSaving] = useState(false)
+  const [pmsDeleting, setPmsDeleting] = useState(false)
+  const [pmsError, setPmsError] = useState('')
+  const [pmsNameManuallyEdited, setPmsNameManuallyEdited] = useState(false)
+  const [pmsForm, setPmsForm] = useState({
+    name: '',
+    kilometerInterval: '',
+    description: '',
+    price: '',
+    status: 'Active',
+  })
+
   useEffect(() => {
     configRef.current = config
   }, [config])
@@ -679,6 +739,14 @@ export function SettingsPage({ token, user }) {
   useEffect(() => {
     draftRef.current = draft
   }, [draft])
+
+  const getDurationValue = (form) => {
+    if (form.duration === 'Custom') {
+      const days = Number(form.customDays)
+      return Number.isFinite(days) && days > 0 ? `${days} days` : ''
+    }
+    return form.duration
+  }
 
   useEffect(() => {
     return () => {
@@ -887,6 +955,231 @@ export function SettingsPage({ token, user }) {
     if (activeTab === 'vehicle') loadVehicleMakes()
   }, [activeTab, loadVehicleMakes])
 
+  const loadSubscriptionPackages = useCallback(async () => {
+    if (!isAdmin) return
+    setSubsLoading(true)
+    try {
+      const packages = await apiGet('/subscriptions', token)
+      setSubscriptionPackages(Array.isArray(packages) ? packages : [])
+    } catch (e) {
+      pushToast('error', e.message)
+    } finally {
+      setSubsLoading(false)
+    }
+  }, [isAdmin, token])
+
+  useEffect(() => {
+    if (activeTab === 'subscriptions') loadSubscriptionPackages()
+  }, [activeTab, loadSubscriptionPackages])
+
+  const openCreateSubscriptionModal = () => {
+    setEditingPackage(null)
+    setSubsError('')
+    setSubsForm({
+      name: '',
+      description: '',
+      price: '',
+      duration: 'Monthly',
+      customDays: '',
+      status: 'Active',
+    })
+    setShowSubsModal(true)
+  }
+
+  const openEditSubscriptionModal = (pkg) => {
+    const durationRaw = String(pkg.duration || 'Monthly')
+    const customMatch = durationRaw.match(/^(\d+)\s*days?$/i)
+    setEditingPackage(pkg)
+    setSubsError('')
+    setSubsForm({
+      name: pkg.name || '',
+      description: pkg.description || '',
+      price: pkg.price == null ? '' : String(pkg.price),
+      duration: customMatch ? 'Custom' : durationRaw,
+      customDays: customMatch ? customMatch[1] : '',
+      status: String(pkg.status || 'Active') === 'Inactive' ? 'Inactive' : 'Active',
+    })
+    setShowSubsModal(true)
+  }
+
+  const saveSubscriptionPackage = async () => {
+    const cleanName = subsForm.name.trim()
+    const cleanPrice = Number(subsForm.price)
+    const duration = getDurationValue(subsForm)
+    if (!cleanName || !Number.isFinite(cleanPrice) || cleanPrice < 0 || !duration) {
+      setSubsError('Package Name, Price, and Duration are required.')
+      return
+    }
+
+    setSubsSaving(true)
+    setSubsError('')
+    try {
+      const payload = {
+        name: cleanName,
+        description: subsForm.description.trim(),
+        price: cleanPrice,
+        duration,
+        services: [],
+        status: subsForm.status,
+      }
+
+      if (editingPackage?.id) {
+        await apiPut(`/subscriptions/${editingPackage.id}`, token, payload)
+        pushToast('success', 'Subscription Updated')
+        emitPackagesUpdated({ scope: 'subscriptions', action: 'update', id: editingPackage.id })
+      } else {
+        await apiPost('/subscriptions', token, payload)
+        pushToast('success', 'Subscription Created')
+        emitPackagesUpdated({ scope: 'subscriptions', action: 'create' })
+      }
+
+      setShowSubsModal(false)
+      await loadSubscriptionPackages()
+    } catch (e) {
+      setSubsError(e.message || 'Failed to save subscription package')
+    } finally {
+      setSubsSaving(false)
+    }
+  }
+
+  const deleteSubscriptionPackage = async () => {
+    if (!deletingPackage?.id) return
+    setSubsDeleting(true)
+    try {
+      await apiDelete(`/subscriptions/${deletingPackage.id}`, token)
+      pushToast('success', 'Subscription Deleted')
+      emitPackagesUpdated({ scope: 'subscriptions', action: 'delete', id: deletingPackage.id })
+      setShowSubsDeleteModal(false)
+      setDeletingPackage(null)
+      await loadSubscriptionPackages()
+    } catch (e) {
+      pushToast('error', e.message || 'Failed to delete subscription package')
+    } finally {
+      setSubsDeleting(false)
+    }
+  }
+
+  const formatPmsNameFromKm = (km) => {
+    const n = Number(km)
+    if (!Number.isFinite(n) || n <= 0) return ''
+    return `${n.toLocaleString('en-US')} KM PMS`
+  }
+
+  const loadPmsPackages = useCallback(async () => {
+    if (!isAdmin) return
+    setPmsLoading(true)
+    try {
+      const data = await apiGet('/pms', token)
+      setPmsPackages(Array.isArray(data) ? data : [])
+    } catch (e) {
+      pushToast('error', e.message)
+    } finally {
+      setPmsLoading(false)
+    }
+  }, [isAdmin, token])
+
+  useEffect(() => {
+    if (activeTab === 'pms') {
+      loadPmsPackages()
+    }
+  }, [activeTab, loadPmsPackages])
+
+  const openCreatePmsModal = () => {
+    setEditingPmsPackage(null)
+    setPmsError('')
+    setPmsNameManuallyEdited(false)
+    setPmsForm({
+      name: '',
+      kilometerInterval: '',
+      description: '',
+      price: '',
+      status: 'Active',
+    })
+    setShowPmsModal(true)
+  }
+
+  const openEditPmsModal = (pkg) => {
+    setEditingPmsPackage(pkg)
+    setPmsError('')
+    setPmsNameManuallyEdited(true)
+    setPmsForm({
+      name: pkg.name || '',
+      kilometerInterval: pkg.kilometer_interval == null ? '' : String(pkg.kilometer_interval),
+      description: pkg.description || '',
+      price: pkg.estimated_price == null ? '' : String(pkg.estimated_price),
+      status: String(pkg.status || 'Active') === 'Inactive' ? 'Inactive' : 'Active',
+    })
+    setShowPmsModal(true)
+  }
+
+  const savePmsPackage = async () => {
+    const cleanName = pmsForm.name.trim()
+    const km = Number(pmsForm.kilometerInterval)
+    if (!cleanName || !Number.isFinite(km) || km <= 0) {
+      setPmsError('Package Name and Kilometer Interval are required.')
+      return
+    }
+
+    const duplicate = pmsPackages.some((pkg) => Number(pkg.kilometer_interval) === km && Number(pkg.id) !== Number(editingPmsPackage?.id || 0))
+    if (duplicate) {
+      setPmsError('A PMS package with this kilometer interval already exists.')
+      return
+    }
+
+    const parsedPrice = Number(pmsForm.price)
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+      setPmsError('Price is required and must be a valid non-negative number.')
+      return
+    }
+
+    setPmsSaving(true)
+    setPmsError('')
+    try {
+      const payload = {
+        name: cleanName,
+        kilometer_interval: km,
+        description: pmsForm.description.trim(),
+        services: BASIC_PMS_CORE_INCLUSIONS.map((name) => ({ id: null, name })),
+        estimated_price: parsedPrice,
+        status: pmsForm.status,
+      }
+
+      if (editingPmsPackage?.id) {
+        await apiPut(`/pms/${editingPmsPackage.id}`, token, payload)
+        pushToast('success', 'PMS Package Updated')
+        emitPackagesUpdated({ scope: 'pms', action: 'update', id: editingPmsPackage.id })
+      } else {
+        await apiPost('/pms', token, payload)
+        pushToast('success', 'PMS Package Created')
+        emitPackagesUpdated({ scope: 'pms', action: 'create' })
+      }
+
+      setShowPmsModal(false)
+      await loadPmsPackages()
+    } catch (e) {
+      setPmsError(e.message || 'Failed to save PMS package')
+    } finally {
+      setPmsSaving(false)
+    }
+  }
+
+  const deletePmsPackage = async () => {
+    if (!deletingPmsPackage?.id) return
+    setPmsDeleting(true)
+    try {
+      await apiDelete(`/pms/${deletingPmsPackage.id}`, token)
+      pushToast('success', 'PMS Package Deleted')
+      emitPackagesUpdated({ scope: 'pms', action: 'delete', id: deletingPmsPackage.id })
+      setShowPmsDeleteModal(false)
+      setDeletingPmsPackage(null)
+      await loadPmsPackages()
+    } catch (e) {
+      pushToast('error', e.message || 'Failed to delete PMS package')
+    } finally {
+      setPmsDeleting(false)
+    }
+  }
+
   const handleToggleMakeActive = async (id, current) => {
     try {
       await apiPatch(`/vehicle-makes/${id}`, token, { is_active: !current })
@@ -1070,6 +1363,10 @@ export function SettingsPage({ token, user }) {
     setSaving(true)
     try {
       const categoryDraft = draft[category] || {}
+      const schemaSections = FIELD_SCHEMA[category] || []
+      const jsonFieldKeys = new Set(
+        schemaSections.flatMap((sec) => (sec.fields || []).filter((f) => f.type === 'json').map((f) => f.key)),
+      )
       const updates = []
 
       for (const [key, value] of Object.entries(categoryDraft)) {
@@ -1082,8 +1379,20 @@ export function SettingsPage({ token, user }) {
         }
         // Normalize both sides — parsed objects become JSON strings for comparison
         const normalize = (v) => (typeof v === 'object' && v !== null) ? JSON.stringify(v) : String(v ?? '')
-        if (normalize(oldVal) !== normalize(value)) {
-          updates.push({ key, value })
+        let nextValue = value
+
+        if (jsonFieldKeys.has(key)) {
+          try {
+            const parsed = String(value ?? '').trim() ? JSON.parse(String(value)) : {}
+            nextValue = JSON.stringify(parsed, null, 2)
+          } catch {
+            pushToast('error', `Invalid JSON in ${key.replace(/_/g, ' ')}.`)
+            return
+          }
+        }
+
+        if (normalize(oldVal) !== normalize(nextValue)) {
+          updates.push({ key, value: nextValue })
         }
       }
 
@@ -2315,9 +2624,403 @@ export function SettingsPage({ token, user }) {
           )
         })()}
 
-        {category !== 'email' && category !== 'quotations' && category !== 'services' && renderSections(category)}
+        {category === 'subscriptions' && (() => {
+          const keyword = subsSearch.trim().toLowerCase()
+          const filtered = subscriptionPackages.filter((pkg) => {
+            const statusOk = subsStatusFilter === 'all'
+              ? true
+              : subsStatusFilter === 'active'
+                ? String(pkg.status || 'Active') === 'Active'
+                : String(pkg.status || 'Active') === 'Inactive'
+            if (!statusOk) return false
+            if (!keyword) return true
+            return [pkg.name, pkg.description, pkg.duration]
+              .map((v) => String(v || '').toLowerCase())
+              .some((v) => v.includes(keyword))
+          })
 
-        {isAdmin && category !== 'email' && category !== 'quotations' && (
+          return (
+            <div>
+              <div style={{ padding: '16px 20px', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#d0d8e8' }}>Subscription Packages</div>
+                    <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>Manage subscription plans and service bundles</div>
+                  </div>
+                  <button type="button" className="btn-primary" onClick={openCreateSubscriptionModal}>+ Add Package</button>
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+                  <input
+                    className="settings-input"
+                    style={{ flex: '1 1 280px' }}
+                    placeholder="Search package, description, duration..."
+                    value={subsSearch}
+                    onChange={(e) => setSubsSearch(e.target.value)}
+                  />
+                  <select className="settings-input" style={{ width: 180 }} value={subsStatusFilter} onChange={(e) => setSubsStatusFilter(e.target.value)}>
+                    <option value="all">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Package Name</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Price</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Duration</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Status</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {subsLoading ? (
+                        <tr><td colSpan="5" style={{ padding: '16px 10px', color: '#64748b' }}>Loading packages…</td></tr>
+                      ) : filtered.length === 0 ? (
+                        <tr><td colSpan="5" style={{ padding: '16px 10px', color: '#64748b' }}>No packages found.</td></tr>
+                      ) : filtered.map((pkg) => (
+                        <tr key={pkg.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <td style={{ padding: '10px' }}>
+                            <div style={{ fontWeight: 600, color: '#d0d8e8' }}>{pkg.name}</div>
+                            {pkg.description ? <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{pkg.description}</div> : null}
+                          </td>
+                          <td style={{ padding: '10px', color: '#d0d8e8' }}>₱{Number(pkg.price || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td style={{ padding: '10px', color: '#94a3b8' }}>{pkg.duration}</td>
+                          <td style={{ padding: '10px' }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              padding: '3px 9px',
+                              borderRadius: 999,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color: String(pkg.status || 'Active') === 'Active' ? '#9af0b8' : '#f5c58a',
+                              border: `1px solid ${String(pkg.status || 'Active') === 'Active' ? 'rgba(16,185,129,0.35)' : 'rgba(245,158,11,0.35)'}`,
+                              background: String(pkg.status || 'Active') === 'Active' ? 'rgba(16,185,129,0.14)' : 'rgba(245,158,11,0.14)',
+                            }}>{String(pkg.status || 'Active') === 'Active' ? 'Active' : 'Inactive'}</span>
+                          </td>
+                          <td style={{ padding: '10px' }}>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button type="button" className="btn-secondary" style={{ minHeight: 32, padding: '6px 12px', borderRadius: 8 }} onClick={() => openEditSubscriptionModal(pkg)}>Edit</button>
+                              <button
+                                type="button"
+                                className="btn-danger"
+                                style={{ minHeight: 32, padding: '6px 12px', borderRadius: 8 }}
+                                onClick={() => { setDeletingPackage(pkg); setShowSubsDeleteModal(true) }}
+                              >Delete</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {showSubsModal ? (
+                <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => !subsSaving && setShowSubsModal(false)}>
+                  <div className="modal-content" style={{ width: 'min(860px, 100%)' }} onClick={(e) => e.stopPropagation()}>
+                    <div className="modal-header">
+                      <h2>{editingPackage ? 'Edit Package' : 'Add Package'}</h2>
+                      <button type="button" className="btn-close" onClick={() => !subsSaving && setShowSubsModal(false)} aria-label="Close">×</button>
+                    </div>
+                    <div className="modal-body">
+                      <div className="settings-fields-grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+                        <div className="settings-field">
+                          <label className="settings-label">Package Name</label>
+                          <input className="settings-input" value={subsForm.name} onChange={(e) => setSubsForm((p) => ({ ...p, name: e.target.value }))} />
+                        </div>
+                        <div className="settings-field">
+                          <label className="settings-label">Price</label>
+                          <input className="settings-input" type="number" min="0" step="0.01" value={subsForm.price} onChange={(e) => setSubsForm((p) => ({ ...p, price: e.target.value }))} />
+                        </div>
+                        <div className="settings-field settings-field--full">
+                          <label className="settings-label">Description</label>
+                          <textarea className="settings-input settings-input--textarea" rows="3" value={subsForm.description} onChange={(e) => setSubsForm((p) => ({ ...p, description: e.target.value }))} />
+                        </div>
+                        <div className="settings-field">
+                          <label className="settings-label">Duration</label>
+                          <select className="settings-input" value={subsForm.duration} onChange={(e) => setSubsForm((p) => ({ ...p, duration: e.target.value }))}>
+                            <option value="Monthly">Monthly</option>
+                            <option value="Quarterly">Quarterly</option>
+                            <option value="Yearly">Yearly</option>
+                            <option value="Custom">Custom Days</option>
+                          </select>
+                        </div>
+                        <div className="settings-field">
+                          <label className="settings-label">Status</label>
+                          <div className="settings-toggle-row">
+                            <button
+                              type="button"
+                              className={`toggle-switch ${subsForm.status === 'Active' ? 'toggle-on' : 'toggle-off'}`}
+                              onClick={() => setSubsForm((p) => ({ ...p, status: p.status === 'Active' ? 'Inactive' : 'Active' }))}
+                            >
+                              <span className="toggle-knob" />
+                            </button>
+                            <span className="toggle-label">{subsForm.status}</span>
+                          </div>
+                        </div>
+                        {subsForm.duration === 'Custom' ? (
+                          <div className="settings-field settings-field--full">
+                            <label className="settings-label">Custom Days</label>
+                            <input className="settings-input" type="number" min="1" value={subsForm.customDays} onChange={(e) => setSubsForm((p) => ({ ...p, customDays: e.target.value }))} />
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {subsError ? <div className="form-error-banner" style={{ marginTop: 14 }}>{subsError}</div> : null}
+
+                      <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                        <button type="button" className="btn-secondary" onClick={() => setShowSubsModal(false)} disabled={subsSaving}>Cancel</button>
+                        <button type="button" className="btn-primary" onClick={saveSubscriptionPackage} disabled={subsSaving}>{subsSaving ? 'Saving…' : 'Save'}</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {showSubsDeleteModal ? (
+                <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => !subsDeleting && setShowSubsDeleteModal(false)}>
+                  <div className="modal-content" style={{ width: 'min(500px, 100%)' }} onClick={(e) => e.stopPropagation()}>
+                    <div className="modal-header">
+                      <h2>Delete Subscription Package</h2>
+                    </div>
+                    <div className="modal-body">
+                      <p style={{ marginTop: 0, color: '#94a3b8' }}>Are you sure you want to delete <strong>{deletingPackage?.name}</strong>?</p>
+                      <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                        <button type="button" className="btn-secondary" onClick={() => setShowSubsDeleteModal(false)} disabled={subsDeleting}>Cancel</button>
+                        <button type="button" className="btn-danger" onClick={deleteSubscriptionPackage} disabled={subsDeleting}>{subsDeleting ? 'Deleting…' : 'Delete'}</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )
+        })()}
+
+        {category === 'pms' && (() => {
+          const keyword = pmsSearch.trim().toLowerCase()
+          const sorted = [...pmsPackages].sort((a, b) => Number(a.kilometer_interval || 0) - Number(b.kilometer_interval || 0))
+          const filtered = sorted.filter((pkg) => {
+            const statusOk = pmsStatusFilter === 'all'
+              ? true
+              : pmsStatusFilter === 'active'
+                ? String(pkg.status || 'Active') === 'Active'
+                : String(pkg.status || 'Active') === 'Inactive'
+            if (!statusOk) return false
+            if (!keyword) return true
+            return [pkg.name, pkg.description, String(pkg.kilometer_interval || '')]
+              .map((v) => String(v || '').toLowerCase())
+              .some((v) => v.includes(keyword))
+          })
+
+          const commonIntervals = new Set([5000, 10000, 20000])
+
+          return (
+            <div>
+              <div style={{ padding: '16px 20px', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#d0d8e8' }}>PMS Packages</div>
+                    <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>Manage Preventive Maintenance Service schedules</div>
+                  </div>
+                  <button type="button" className="btn-primary" onClick={openCreatePmsModal}>+ Add PMS Package</button>
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+                  <input
+                    className="settings-input"
+                    style={{ flex: '1 1 280px' }}
+                    placeholder="Search package, kilometer, description..."
+                    value={pmsSearch}
+                    onChange={(e) => setPmsSearch(e.target.value)}
+                  />
+                  <select className="settings-input" style={{ width: 180 }} value={pmsStatusFilter} onChange={(e) => setPmsStatusFilter(e.target.value)}>
+                    <option value="all">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Package Name</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>KM Interval</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Description</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Price</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Status</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pmsLoading ? (
+                        <tr><td colSpan="6" style={{ padding: '16px 10px', color: '#64748b' }}>Loading PMS packages...</td></tr>
+                      ) : filtered.length === 0 ? (
+                        <tr><td colSpan="6" style={{ padding: '16px 10px', color: '#64748b' }}>No PMS packages found.</td></tr>
+                      ) : filtered.map((pkg) => {
+                        const km = Number(pkg.kilometer_interval || 0)
+                        const isCommon = commonIntervals.has(km)
+                        return (
+                          <tr key={pkg.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            <td style={{ padding: '10px' }}>
+                              <div style={{ fontWeight: 600, color: '#d0d8e8' }}>{pkg.name}</div>
+                            </td>
+                            <td style={{ padding: '10px', color: '#d0d8e8' }}>
+                              <span>{km.toLocaleString('en-US')}</span>
+                              {isCommon ? (
+                                <span style={{ marginLeft: 8, padding: '2px 8px', fontSize: 10, borderRadius: 999, color: '#93c5fd', border: '1px solid rgba(59,130,246,0.35)', background: 'rgba(59,130,246,0.14)' }}>Common</span>
+                              ) : null}
+                            </td>
+                            <td style={{ padding: '10px', color: '#94a3b8' }}>{pkg.description || '—'}</td>
+                            <td style={{ padding: '10px', color: '#d0d8e8' }}>
+                              {pkg.estimated_price == null ? '—' : `₱${Number(pkg.estimated_price).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                            </td>
+                            <td style={{ padding: '10px' }}>
+                              <span style={{
+                                display: 'inline-flex',
+                                padding: '3px 9px',
+                                borderRadius: 999,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                color: String(pkg.status || 'Active') === 'Active' ? '#9af0b8' : '#f5c58a',
+                                border: `1px solid ${String(pkg.status || 'Active') === 'Active' ? 'rgba(16,185,129,0.35)' : 'rgba(245,158,11,0.35)'}`,
+                                background: String(pkg.status || 'Active') === 'Active' ? 'rgba(16,185,129,0.14)' : 'rgba(245,158,11,0.14)',
+                              }}>{String(pkg.status || 'Active') === 'Active' ? 'Active' : 'Inactive'}</span>
+                            </td>
+                            <td style={{ padding: '10px' }}>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button type="button" className="btn-secondary" style={{ minHeight: 32, padding: '6px 12px', borderRadius: 8 }} onClick={() => openEditPmsModal(pkg)}>Edit</button>
+                                <button
+                                  type="button"
+                                  className="btn-danger"
+                                  style={{ minHeight: 32, padding: '6px 12px', borderRadius: 8 }}
+                                  onClick={() => { setDeletingPmsPackage(pkg); setShowPmsDeleteModal(true) }}
+                                >Delete</button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {showPmsModal ? (
+                <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => !pmsSaving && setShowPmsModal(false)}>
+                  <div className="modal-content" style={{ width: 'min(900px, 100%)' }} onClick={(e) => e.stopPropagation()}>
+                    <div className="modal-header">
+                      <h2>{editingPmsPackage ? 'Edit PMS Package' : 'Add PMS Package'}</h2>
+                      <button type="button" className="btn-close" onClick={() => !pmsSaving && setShowPmsModal(false)} aria-label="Close">×</button>
+                    </div>
+                    <div className="modal-body">
+                      <div className="settings-fields-grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+                        <div className="settings-field">
+                          <label className="settings-label">Package Name</label>
+                          <input
+                            className="settings-input"
+                            value={pmsForm.name}
+                            onChange={(e) => {
+                              setPmsNameManuallyEdited(true)
+                              setPmsForm((prev) => ({ ...prev, name: e.target.value }))
+                            }}
+                          />
+                        </div>
+                        <div className="settings-field">
+                          <label className="settings-label">Kilometer Interval</label>
+                          <input
+                            className="settings-input"
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={pmsForm.kilometerInterval}
+                            onChange={(e) => {
+                              const kmValue = e.target.value
+                              setPmsForm((prev) => {
+                                if (!pmsNameManuallyEdited) {
+                                  return {
+                                    ...prev,
+                                    kilometerInterval: kmValue,
+                                    name: formatPmsNameFromKm(kmValue) || prev.name,
+                                  }
+                                }
+                                return { ...prev, kilometerInterval: kmValue }
+                              })
+                            }}
+                          />
+                        </div>
+                        <div className="settings-field settings-field--full">
+                          <label className="settings-label">Description</label>
+                          <textarea className="settings-input settings-input--textarea" rows="3" value={pmsForm.description} onChange={(e) => setPmsForm((prev) => ({ ...prev, description: e.target.value }))} />
+                        </div>
+                        <div className="settings-field">
+                          <label className="settings-label">Price</label>
+                          <input className="settings-input" type="number" min="0" step="0.01" value={pmsForm.price} onChange={(e) => setPmsForm((prev) => ({ ...prev, price: e.target.value }))} />
+                        </div>
+                        <div className="settings-field">
+                          <label className="settings-label">Status</label>
+                          <div className="settings-toggle-row">
+                            <button
+                              type="button"
+                              className={`toggle-switch ${pmsForm.status === 'Active' ? 'toggle-on' : 'toggle-off'}`}
+                              onClick={() => setPmsForm((prev) => ({ ...prev, status: prev.status === 'Active' ? 'Inactive' : 'Active' }))}
+                            >
+                              <span className="toggle-knob" />
+                            </button>
+                            <span className="toggle-label">{pmsForm.status}</span>
+                          </div>
+                        </div>
+                        <div className="settings-field settings-field--full">
+                          <label className="settings-label">Core Inclusions (Basic PMS Package)</label>
+                          <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: 12, background: 'rgba(0,0,0,0.16)' }}>
+                            <ul style={{ margin: 0, paddingLeft: 18, color: '#cbd5e1', display: 'grid', gap: 8 }}>
+                              {BASIC_PMS_CORE_INCLUSIONS.map((item) => (
+                                <li key={item} style={{ fontSize: 13, lineHeight: 1.45 }}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+
+                      {pmsError ? <div className="form-error-banner" style={{ marginTop: 14 }}>{pmsError}</div> : null}
+
+                      <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                        <button type="button" className="btn-secondary" onClick={() => setShowPmsModal(false)} disabled={pmsSaving}>Cancel</button>
+                        <button type="button" className="btn-primary" onClick={savePmsPackage} disabled={pmsSaving}>{pmsSaving ? 'Saving…' : 'Save'}</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {showPmsDeleteModal ? (
+                <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => !pmsDeleting && setShowPmsDeleteModal(false)}>
+                  <div className="modal-content" style={{ width: 'min(500px, 100%)' }} onClick={(e) => e.stopPropagation()}>
+                    <div className="modal-header">
+                      <h2>Delete PMS Package</h2>
+                    </div>
+                    <div className="modal-body">
+                      <p style={{ marginTop: 0, color: '#94a3b8' }}>Are you sure you want to delete <strong>{deletingPmsPackage?.name}</strong>?</p>
+                      <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                        <button type="button" className="btn-secondary" onClick={() => setShowPmsDeleteModal(false)} disabled={pmsDeleting}>Cancel</button>
+                        <button type="button" className="btn-danger" onClick={deletePmsPackage} disabled={pmsDeleting}>{pmsDeleting ? 'Deleting…' : 'Delete'}</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )
+        })()}
+
+        {category !== 'email' && category !== 'quotations' && category !== 'services' && category !== 'subscriptions' && category !== 'pms' && renderSections(category)}
+
+        {isAdmin && category !== 'email' && category !== 'quotations' && category !== 'subscriptions' && category !== 'pms' && (
           <div className="settings-actions">
             <button 
               type="button" 
@@ -2343,6 +3046,19 @@ export function SettingsPage({ token, user }) {
   }
 
   function renderLogs() {
+    const formatAuditValue = (value) => {
+      if (value === null || value === undefined || value === '') return '—'
+
+      const raw = typeof value === 'string' ? value : JSON.stringify(value)
+      try {
+        const parsed = typeof value === 'string' ? JSON.parse(value) : value
+        const normalized = JSON.stringify(parsed)
+        return normalized.length > 120 ? `${normalized.slice(0, 120)}...` : normalized
+      } catch {
+        return raw.length > 120 ? `${raw.slice(0, 120)}...` : raw
+      }
+    }
+
     return (
       <div className="settings-panel">
         <div className="settings-panel-header">
@@ -2375,8 +3091,8 @@ export function SettingsPage({ token, user }) {
                     <td>{new Date(log.created_at).toLocaleString('en-PH')}</td>
                     <td className="log-category">{log.category}</td>
                     <td className="log-key">{log.key}</td>
-                    <td className="log-value-old">{String(log.old_value).slice(0, 30)}</td>
-                    <td className="log-value-new">{String(log.new_value).slice(0, 30)}</td>
+                    <td className="log-value-old" title={formatAuditValue(log.old_value)}>{formatAuditValue(log.old_value)}</td>
+                    <td className="log-value-new" title={formatAuditValue(log.new_value)}>{formatAuditValue(log.new_value)}</td>
                     <td>{log.changed_by}</td>
                   </tr>
                 ))}

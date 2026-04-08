@@ -83,16 +83,19 @@ class ConfigurationService {
       const oldValue = await this.get(category, key);
       
       // Update setting (UPSERT — creates the row if it doesn't exist yet)
-      const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+      const isObject = typeof value === 'object' && value !== null;
+      const stringValue = isObject ? JSON.stringify(value) : String(value);
+      const dataType = isObject ? 'json' : null;
       
       await db.query(
-        `INSERT INTO configuration_settings (category, "key", value, updated_by, updated_at)
-         VALUES ($1, $2, $3, $4, NOW())
+        `INSERT INTO configuration_settings (category, "key", value, data_type, updated_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
          ON CONFLICT (category, "key") DO UPDATE
            SET value = EXCLUDED.value,
+               data_type = COALESCE(EXCLUDED.data_type, configuration_settings.data_type),
                updated_by = EXCLUDED.updated_by,
                updated_at = NOW()`,
-        [category, key, stringValue, userId]
+        [category, key, stringValue, dataType, userId]
       );
       
       // Log the change
@@ -342,6 +345,14 @@ class ConfigurationService {
           return value;
         }
       default:
+        // Attempt JSON parse if it looks like an object/array even if dataType is missing
+        if (typeof value === 'string' && (value.trim().startsWith('{') || value.trim().startsWith('['))) {
+          try {
+            return JSON.parse(value);
+          } catch {
+            return value;
+          }
+        }
         return value;
     }
   }

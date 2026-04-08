@@ -1101,28 +1101,31 @@
   grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 4px;
+  align-items: center; /* Center the button and note */
+  gap: 12px;
+  margin-top: 16px;
 }
 
 .gp-submit-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 11px 28px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 9px;
-  color: #f4f4f4;
-  font-size: 14px;
+  gap: 10px;
+  min-height: 50px; /* Professional 50px height */
+  padding: 0 40px;
+  background: #ffffff; /* Clean White */
+  border: none;
+  border-radius: 10px;
+  color: #000000;
+  font-size: 15px;
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.18s, border-color 0.18s, transform 0.12s;
+  transition: background 0.18s, transform 0.12s, box-shadow 0.18s;
   width: 100%;
-  max-width: 280px;
+  max-width: 320px; /* Slightly wider for better presence */
   letter-spacing: 0.01em;
+  box-shadow: 0 4px 14px rgba(255, 255, 255, 0.1);
 }
 
 .gp-submit-btn:hover {
@@ -1144,11 +1147,22 @@
 
 .gp-form-note {
   font-size: 11.5px;
-  color: rgba(192, 196, 204, 0.38);
+  color: rgba(255, 255, 255, 0.40); /* Subdued gray from image */
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  font-weight: 400;
+  font-weight: 500;
+  text-align: center;
+  margin-top: 4px;
+}
+
+.gp-form-note:first-of-type {
+  margin-top: 18px; /* Extra gap from button as seen in image */
+}
+
+.gp-form-note .blue-hl {
+  color: #3b82f6; /* Clean blue from image */
 }
 
 /* ─── Success ─── */
@@ -1524,3 +1538,246 @@
     font-size: 13px;
   }
 }
+
+/* ─── Advanced Service Picker (GpServicePicker) ─── */
+.gp-svc-trigger {
+  width: 100%;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  background: rgba(22, 22, 22, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 9px;
+  color: #f4f4f4;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s;
+  text-align: left;
+}
+
+.gp-svc-trigger:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(28, 28, 28, 0.9);
+}
+
+.gp-svc-trigger.open {
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
+}
+
+.gp-svc-trigger.invalid {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.04);
+}
+
+.gp-svc-trigger-placeholder {
+  color: rgba(192, 196, 204, 0.35);
+}
+
+.gp-svc-trigger-value {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gp-svc-trigger-cat-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: rgba(192, 196, 204, 0.7);
+  flex-shrink: 0;
+}
+
+.gp-svc-trigger-arrow {
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: transform 0.2s;
+}
+
+.gp-svc-trigger.open .gp-svc-trigger-arrow {
+  transform: rotate(180deg);
+}
+
+.gp-svc-trigger-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #f4f4f4;
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 500;
+  padding: 0;
+}
+
+.gp-svc-trigger-input::placeholder {
+  color: rgba(192, 196, 204, 0.25);
+}
+
+/* Panel */
+.gp-svc-panel {
+  display: flex;
+  flex-direction: column;
+  background: rgba(12, 13, 22, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(24px);
+  overflow: hidden;
+  max-height: 480px;
+  animation: gp-sel-intro 0.22s cubic-bezier(0.2, 1, 0.3, 1);
+}
+
+@keyframes gp-sel-intro {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.gp-svc-panel.grouped {
+  width: var(--panel-width); /* set by JS */
+}
+
+.gp-svc-list-scroll {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 8px 0;
+  max-height: 400px;
+}
+
+.gp-svc-dropdown-group {
+  margin-bottom: 4px;
+}
+
+.gp-svc-dropdown-group-label {
+  padding: 14px 18px 10px;
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  position: sticky;
+  top: 0;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+  z-index: 10;
+  border-left: 4px solid rgba(255, 255, 255, 0.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 4px;
+}
+
+.gp-svc-item-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  background: transparent;
+  border: none;
+  color: #f4f4f4;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+
+.gp-svc-item-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.gp-svc-item-btn.active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.gp-svc-item-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.gp-svc-item-name {
+  font-weight: 600;
+  color: #f4f4f4;
+}
+
+.gp-svc-item-desc {
+  font-size: 12.5px;
+  color: rgba(192, 196, 204, 0.3);
+  font-weight: 400;
+}
+
+.gp-svc-item-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gp-svc-item-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 99px;
+  color: rgba(192, 196, 204, 0.85);
+  letter-spacing: 0.02em;
+}
+
+.gp-svc-item-cat {
+  font-size: 11px;
+  color: rgba(192, 196, 204, 0.4);
+}
+
+.gp-svc-item-check {
+  color: #f4f4f4;
+  flex-shrink: 0;
+}
+
+.gp-svc-empty {
+  padding: 40px;
+  text-align: center;
+  color: rgba(192, 196, 204, 0.4);
+  font-size: 14px;
+}
+
+.gp-svc-footer {
+  padding: 10px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.015);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.gp-svc-clear-btn {
+  background: none;
+  border: none;
+  color: rgba(239, 68, 68, 0.7);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.gp-svc-clear-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: rgb(239, 68, 68);
+}

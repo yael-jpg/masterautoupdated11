@@ -125,142 +125,128 @@ function PortalProcessPanel({ title, subtitle, steps }) {
 // ─── Service Picker (portal-themed two-panel) ────────────────────────
 function PortalServicePicker({ services, value, onChange, vehicleSize, priceOverrides }) {
   const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-  const [activeCategory, setActiveCategory] = useState('All')
+  const [query, setQuery] = useState('')
   const [panelStyle, setPanelStyle] = useState({})
   const triggerRef = useRef(null)
   const panelRef = useRef(null)
+  const inputRef = useRef(null)
 
   const normalizedServices = services.map((s) => ({
     ...s,
     category: normalizePortalServiceCategory(s.category, s.name),
   }))
 
-  const categories = ['All', ...Array.from(new Set(normalizedServices.map((s) => s.category).filter(Boolean))).sort()]
-
   const isServiceAvailableForSize = (svc) => {
-    const entry = getCatalogEntry(svc?.code)
-    if (!entry) return true
+    const entry = getCatalogEntry(svc?.code) || svc
     const sizeKey = vehicleSize || 'medium'
-    const p = getEffectivePrice(entry.code, sizeKey, priceOverrides)
+    const p = getEffectivePrice(entry.code || svc.code, sizeKey, priceOverrides)
     return Number(p || 0) > 0
   }
 
+  const qStr = query.toLowerCase()
   const filtered = normalizedServices.filter((s) => {
-    const matchSearch = !search || s.name.toLowerCase().includes(search.toLowerCase())
-    const matchCat = activeCategory === 'All' || s.category === activeCategory
-    return matchSearch && matchCat && isServiceAvailableForSize(s)
+    const matchSearch = !qStr || s.name.toLowerCase().includes(qStr) || (s.category || '').toLowerCase().includes(qStr)
+    return matchSearch && isServiceAvailableForSize(s)
   })
 
-  const selected = normalizedServices.find((s) => s.id === Number(value))
+  // Group items for display
+  const groups = Array.from(new Set(filtered.map(s => s.category || 'Other Services'))).map(cat => ({
+    category: cat,
+    items: filtered.filter(s => (s.category || 'Other Services') === cat)
+  }))
 
-  const openPanel = () => {
-    if (triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect()
-      const panelWidth = Math.min(520, window.innerWidth - 16)
-      let left = rect.right - panelWidth
-      if (left < 8) left = 8
-      setPanelStyle({ position: 'fixed', top: rect.bottom + 6, left, width: panelWidth, zIndex: 9999 })
-    }
-    setOpen(true)
+  const selected = normalizedServices.find((s) => String(s.id) === String(value) || s.code === value)
+
+  const badgeFor = (s) => {
+    const m = s.name.match(/(\d+)\s*Years?/i)
+    return m ? `${m[1]}YR` : null
   }
 
-  useEffect(() => {
-    if (!open) return
-    const handler = (e) => {
-      if (
-        triggerRef.current && !triggerRef.current.contains(e.target) &&
-        panelRef.current && !panelRef.current.contains(e.target)
-      ) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
+  const openPanel = () => {
+    setOpen(true)
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }
 
   useEffect(() => {
     if (!open) return
     const reposition = () => {
       if (triggerRef.current) {
         const rect = triggerRef.current.getBoundingClientRect()
-        const panelWidth = Math.min(520, window.innerWidth - 16)
-        let left = rect.right - panelWidth
-        if (left < 8) left = 8
-        setPanelStyle((s) => ({ ...s, top: rect.bottom + 6, left }))
+        setPanelStyle({ 
+            position: 'fixed', 
+            top: rect.bottom + 6, 
+            left: rect.left, 
+            width: rect.width,
+            zIndex: 9999 
+        })
       }
     }
+    reposition()
     window.addEventListener('scroll', reposition, true)
     window.addEventListener('resize', reposition)
+    const handler = (e) => {
+        if (
+          triggerRef.current && !triggerRef.current.contains(e.target) &&
+          panelRef.current && !panelRef.current.contains(e.target)
+        ) setOpen(false)
+      }
+    document.addEventListener('mousedown', handler)
     return () => {
-      window.removeEventListener('scroll', reposition, true)
-      window.removeEventListener('resize', reposition)
+        window.removeEventListener('scroll', reposition, true)
+        window.removeEventListener('resize', reposition)
+        document.removeEventListener('mousedown', handler)
     }
   }, [open])
 
   const pick = (svc) => {
     onChange(svc.id)
     setOpen(false)
-    setSearch('')
+    setQuery('')
   }
 
   const panel = open &&
     createPortal(
-      <div className="portal-svc-panel" ref={panelRef} style={panelStyle}>
-        {/* Search */}
-        <div className="portal-svc-search">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            autoFocus
-            placeholder="Search services…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        {/* Two-panel body */}
-        <div className="portal-svc-body">
-          {/* Left: categories */}
-          <ul className="portal-svc-cat-list">
-            {categories.map((cat) => (
-              <li key={cat}>
-                <button
-                  type="button"
-                  className={`portal-svc-cat-btn${activeCategory === cat ? ' active' : ''}`}
-                  onClick={() => setActiveCategory(cat)}
-                >
-                  {cat}
-                  <span className="portal-svc-cat-count">
-                    {cat === 'All'
-                      ? normalizedServices.length
-                      : normalizedServices.filter((s) => s.category === cat).length}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          {/* Right: service items */}
-          <ul className="portal-svc-item-list">
-            {filtered.length === 0 ? (
-              <li className="portal-svc-empty">No services found</li>
-            ) : (
-              filtered.map((svc) => (
-                <li key={svc.id}>
-                  <button
-                    type="button"
-                    className={`portal-svc-item-btn${Number(value) === svc.id ? ' active' : ''}`}
-                    onClick={() => pick(svc)}
-                  >
-                    <span className="portal-svc-item-name">{svc.name}</span>
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
+      <div className="portal-svc-panel grouped" ref={panelRef} style={panelStyle}>
+        <div className="portal-svc-list-scroll">
+          {groups.length === 0 ? (
+            <div className="portal-svc-empty">No matching services found</div>
+          ) : (
+            groups.map((g) => (
+              <div key={g.category} className="portal-svc-dropdown-group">
+                <div className="portal-svc-dropdown-group-label">{g.category}</div>
+                {g.items.map((svc) => {
+                  const isSelected = Number(value) === svc.id
+                  const badge = badgeFor(svc)
+                  return (
+                    <button
+                      key={svc.id}
+                      type="button"
+                      className={`portal-svc-item-btn${isSelected ? ' active' : ''}`}
+                      onClick={() => pick(svc)}
+                    >
+                      <div className="portal-svc-item-texts">
+                        <span className="portal-svc-item-name">{svc.name}</span>
+                        <span className="portal-svc-item-desc">{svc.category}</span>
+                      </div>
+                      <div className="portal-svc-item-right">
+                        {badge && <span className="portal-svc-item-badge">{badge}</span>}
+                        {isSelected && (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            ))
+          )}
         </div>
         {value && (
           <div className="portal-svc-footer">
             <button type="button" className="portal-svc-clear" onClick={() => { onChange(''); setOpen(false) }}>
-              Clear selection
+              Clear Selection
             </button>
           </div>
         )}
@@ -270,24 +256,36 @@ function PortalServicePicker({ services, value, onChange, vehicleSize, priceOver
 
   return (
     <>
-      <button
+      <div
         ref={triggerRef}
-        type="button"
         className={`portal-svc-trigger${open ? ' open' : ''}`}
-        onClick={open ? () => setOpen(false) : openPanel}
+        onClick={() => !open && openPanel()}
       >
-        {selected ? (
-          <span className="portal-svc-trigger-selected">
-            <span className="portal-svc-trigger-cat">{selected.category}</span>
-            {selected.name}
-          </span>
+        {open ? (
+          <input
+            ref={inputRef}
+            className="portal-svc-trigger-input"
+            type="text"
+            placeholder="Search services…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         ) : (
-          <span className="portal-svc-trigger-placeholder">— General / No specific service —</span>
+          <div className="portal-svc-trigger-selected">
+            {selected ? (
+              <>
+                <span className="portal-svc-trigger-cat">{selected.category}</span>
+                {selected.name}
+              </>
+            ) : (
+              <span className="portal-svc-trigger-placeholder">— Choose a service —</span>
+            )}
+          </div>
         )}
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}>
           <polyline points="6 9 12 15 18 9" />
         </svg>
-      </button>
+      </div>
       {panel}
     </>
   )
@@ -359,7 +357,7 @@ export function PortalBooking({ initialServiceId = '' }) {
   }, [])
 
   const selectedVehicle = vehicles.find((v) => String(v.id) === String(form.vehicleId))
-  const selectedService = services.find((s) => s.id === Number(form.serviceId))
+  const selectedService = services.find((s) => String(s.id) === String(form.serviceId))
 
   const selectedServicePrice = (() => {
     if (!selectedService) return 0
@@ -620,12 +618,17 @@ export function PortalBooking({ initialServiceId = '' }) {
 
           {/* Service */}
           <div className="portal-form-group">
-            <label>Service</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+              </svg>
+              SERVICES <span className="portal-required">*</span>
+            </label>
             <PortalServicePicker
               services={services}
               value={form.serviceId}
               onChange={(id) => {
-                const svc = services.find((s) => s.id === Number(id))
+                const svc = services.find((s) => String(s.id) === String(id))
                 const coating = isCoating(svc?.name)
                 const ppf = isPPF(svc?.name)
                 setForm((f) => {
