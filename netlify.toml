@@ -6,12 +6,12 @@
 # SPA fallback for deep links (/guest, /portal, /admin, etc.)
 [[redirects]]
   from = "/api/*"
-  to = "https://masterautoupdated11.onrender.com/api/:splat"
+  to = "https://masterautoupdated21.onrender.com/api/:splat"
   status = 200
 
 [[redirects]]
   from = "/uploads/*"
-  to = "https://masterautoupdated11.onrender.com/uploads/:splat"
+  to = "https://masterautoupdated21.onrender.com/uploads/:splat"
   status = 200
 
 [[redirects]]
