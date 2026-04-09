@@ -7,6 +7,26 @@ const { emitDataChanged } = require('../realtime/hub')
 
 const router = express.Router()
 
+const PMS_TIER_LABEL_BY_KM = {
+  5000: 'Basic PMS',
+  10000: 'Standard PMS',
+  20000: 'Advanced PMS',
+  40000: 'Major PMS',
+  50000: 'Premium PMS',
+}
+
+function getPmsTierLabel(kmValue) {
+  const km = Number(kmValue)
+  if (!Number.isFinite(km) || km <= 0) return 'Custom PMS'
+  return PMS_TIER_LABEL_BY_KM[km] || 'Custom PMS'
+}
+
+function formatPmsAutoName(kmValue) {
+  const km = Number(kmValue)
+  if (!Number.isFinite(km) || km <= 0) return ''
+  return `${getPmsTierLabel(km)} - ${km.toLocaleString('en-US')} KM`
+}
+
 async function ensurePmsSchema() {
   await db.query(`
     CREATE TABLE IF NOT EXISTS pms_packages (
@@ -74,6 +94,26 @@ async function ensurePmsSchema() {
   await db.query(`UPDATE pms_packages SET interval_value = kilometer_interval WHERE interval_value IS NULL AND kilometer_interval IS NOT NULL`)
   await db.query(`UPDATE pms_packages SET price = estimated_price WHERE price IS NULL AND estimated_price IS NOT NULL`)
   await db.query(`UPDATE pms_packages SET estimated_price = price WHERE estimated_price IS NULL AND price IS NOT NULL`)
+
+  // One-time, idempotent cleanup: normalize legacy auto-generated names to tier-based labels.
+  await db.query(`
+    UPDATE pms_packages
+    SET name =
+      CASE kilometer_interval
+        WHEN 5000 THEN 'Basic PMS'
+        WHEN 10000 THEN 'Standard PMS'
+        WHEN 20000 THEN 'Advanced PMS'
+        WHEN 40000 THEN 'Major PMS'
+        WHEN 50000 THEN 'Premium PMS'
+        ELSE 'Custom PMS'
+      END || ' - ' || TO_CHAR(kilometer_interval, 'FM999,999,999') || ' KM'
+    WHERE kilometer_interval IS NOT NULL
+      AND (
+        name IS NULL
+        OR BTRIM(name) = ''
+        OR name ~* '(kilometer\\s*pms|km\\s*pms)$'
+      )
+  `)
 }
 
 function normalizeServices(value) {
@@ -96,6 +136,153 @@ function normalizeStatus(value) {
   if (value === false || String(value).toLowerCase() === 'inactive') return 'Inactive'
   return 'Active'
 }
+
+router.get(
+  '/requests',
+  requireRole('SuperAdmin', 'Admin'),
+  asyncHandler(async (req, res) => {
+    const statusParam = String(req.query?.status || '').trim().toLowerCase()
+    const where = ["a.notes ILIKE '%[PORTAL PMS AVAIL REQUEST]%' "]
+    const params = []
+
+    if (statusParam) {
+      params.push(statusParam)
+      where.push(`LOWER(COALESCE(a.status, '')) = $${params.length}`)
+    } else {
+      where.push(`LOWER(COALESCE(a.status, '')) = 'requested'`)
+    }
+
+    const { rows } = await db.query(
+      `SELECT
+         a.id AS appointment_id,
+         a.status,
+         a.schedule_start,
+         a.schedule_end,
+         a.created_at AS requested_at,
+         a.notes,
+         q.id AS quotation_id,
+         q.quotation_no,
+         c.id AS customer_id,
+         c.full_name AS customer_name,
+         c.mobile AS customer_mobile,
+         v.id AS vehicle_id,
+         v.plate_number,
+         TRIM(CONCAT_WS(' ', v.make, v.model, v.variant)) AS vehicle_name
+       FROM appointments a
+       LEFT JOIN quotations q ON q.id = a.quotation_id
+       JOIN customers c ON c.id = a.customer_id
+       LEFT JOIN vehicles v ON v.id = a.vehicle_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY a.created_at DESC, a.id DESC
+       LIMIT 500`,
+      params,
+    )
+
+    return res.json(rows)
+  }),
+)
+
+router.post(
+  '/requests/:appointmentId/approve',
+  requireRole('SuperAdmin', 'Admin'),
+  asyncHandler(async (req, res) => {
+    const appointmentId = Number(req.params.appointmentId)
+    if (!Number.isFinite(appointmentId) || appointmentId <= 0) {
+      return res.status(400).json({ message: 'Invalid appointment id.' })
+    }
+
+    const client = await db.pool.connect()
+    try {
+      await client.query('BEGIN')
+
+      const { rows: apptRows } = await client.query(
+        `SELECT id, status, notes, customer_id, vehicle_id, quotation_id
+         FROM appointments
+         WHERE id = $1
+         FOR UPDATE`,
+        [appointmentId],
+      )
+
+      if (!apptRows.length) {
+        await client.query('ROLLBACK')
+        return res.status(404).json({ message: 'PMS request appointment not found.' })
+      }
+
+      const appt = apptRows[0]
+      const notes = String(appt.notes || '')
+      if (!notes.includes('[PORTAL PMS AVAIL REQUEST]')) {
+        await client.query('ROLLBACK')
+        return res.status(400).json({ message: 'Appointment is not a PMS request.' })
+      }
+
+      await client.query(
+        `UPDATE appointments
+         SET status = 'In Progress'
+         WHERE id = $1`,
+        [appointmentId],
+      )
+
+      await client.query('COMMIT')
+
+      emitDataChanged({ scope: 'appointments', action: 'pms_request_approved', id: appointmentId, customerId: appt.customer_id })
+
+      await NotificationService.create({
+        role: 'client',
+        userId: appt.customer_id,
+        title: 'PMS Request Update',
+        message: 'Your PMS request has been approved and is now in progress.',
+        payload: {
+          type: 'pms-request',
+          action: 'approved',
+          appointment_id: appointmentId,
+          quotation_id: appt.quotation_id || null,
+        },
+      }).catch(() => {})
+
+      return res.json({
+        message: 'PMS request approved and moved to Service Tracking (In Progress).',
+        appointmentId,
+      })
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+  }),
+)
+
+router.get(
+  '/tracking',
+  requireRole('SuperAdmin', 'Admin'),
+  asyncHandler(async (req, res) => {
+    const { rows } = await db.query(
+      `SELECT
+         a.id,
+         a.customer_id,
+         a.vehicle_id,
+         a.schedule_start AS due_date,
+         a.status,
+         a.notes,
+         a.created_at,
+         c.full_name AS customer_name,
+         c.mobile AS customer_mobile,
+         v.plate_number,
+         TRIM(CONCAT_WS(' ', v.make, v.model, v.variant)) AS vehicle_name,
+         COALESCE(sv.name, SUBSTRING(a.notes FROM 'Package:\\s*([^\\n\\r]+)'), 'PMS Service') AS package_name
+       FROM appointments a
+       JOIN customers c ON c.id = a.customer_id
+       LEFT JOIN vehicles v ON v.id = a.vehicle_id
+       LEFT JOIN services sv ON sv.id = a.service_id
+       WHERE a.notes ILIKE '%[PORTAL PMS AVAIL REQUEST]%'
+         AND LOWER(COALESCE(a.status, '')) <> 'requested'
+       ORDER BY a.created_at DESC, a.id DESC
+       LIMIT 500`,
+    )
+
+    return res.json(rows)
+  }),
+)
 
 router.get(
   '/',
@@ -144,9 +331,7 @@ router.post(
 
     const cleanInterval = Number(kilometer_interval)
     const cleanName = String(name || '').trim()
-    const autoName = Number.isFinite(cleanInterval) && cleanInterval > 0
-      ? `${cleanInterval.toLocaleString('en-US')} KM PMS`
-      : ''
+    const autoName = formatPmsAutoName(cleanInterval)
     const finalName = cleanName || autoName
     const cleanStatus = normalizeStatus(status)
     const cleanServices = normalizeServices(services)
@@ -228,9 +413,7 @@ router.put(
 
     const cleanInterval = Number(kilometer_interval)
     const cleanName = String(name || '').trim()
-    const autoName = Number.isFinite(cleanInterval) && cleanInterval > 0
-      ? `${cleanInterval.toLocaleString('en-US')} KM PMS`
-      : ''
+    const autoName = formatPmsAutoName(cleanInterval)
     const finalName = cleanName || autoName
     const cleanStatus = normalizeStatus(status)
     const cleanServices = normalizeServices(services)

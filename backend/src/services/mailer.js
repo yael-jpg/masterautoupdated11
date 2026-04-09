@@ -12,8 +12,13 @@ const {
   buildCancellationEmail,
   buildBookingConfirmationEmail,
   buildPortalBookingRequestEmail,
+  buildPortalSubscriptionRequestEmail,
+  buildPortalPmsRequestEmail,
   buildQuotationApprovedScheduledEmail,
   buildPaymentReceiptEmail,
+  buildJobStatusUpdateEmail,
+  buildSubscriptionConfirmationEmail,
+  buildPmsBookingConfirmationEmail,
 } = require('./emailTemplates')
 
 function isLocalSmtpHost(host) {
@@ -407,6 +412,8 @@ async function sendServiceConfirmationEmail({
   services,
   totalAmount,
   subtotal,
+  applyVat,
+  vatRate,
   vatAmount,
   notes,
   hasCoating = false,
@@ -432,6 +439,8 @@ async function sendServiceConfirmationEmail({
     services,
     totalAmount,
     subtotal,
+    applyVat,
+    vatRate,
     vatAmount,
     notes,
     hasCoating,
@@ -802,6 +811,38 @@ async function sendPortalBookingRequestEmail({
   return { skipped: false }
 }
 
+async function sendPortalSubscriptionRequestEmail(payload) {
+  if (!payload?.to || !isEmailConfigured()) return { skipped: true }
+
+  const { subject, html, text } = buildPortalSubscriptionRequestEmail(payload)
+  await sendEmail({
+    from: env.smtpFrom,
+    to: payload.to,
+    replyTo: env.smtpReplyTo || undefined,
+    subject,
+    html,
+    text,
+    attachments: withDefaultAttachments(),
+  })
+  return { skipped: false }
+}
+
+async function sendPortalPmsRequestEmail(payload) {
+  if (!payload?.to || !isEmailConfigured()) return { skipped: true }
+
+  const { subject, html, text } = buildPortalPmsRequestEmail(payload)
+  await sendEmail({
+    from: env.smtpFrom,
+    to: payload.to,
+    replyTo: env.smtpReplyTo || undefined,
+    subject,
+    html,
+    text,
+    attachments: withDefaultAttachments(),
+  })
+  return { skipped: false }
+}
+
 // ── Portal: Quotation Approved & Scheduled (staff scheduled the appointment) ──
 
 async function sendQuotationApprovedScheduledEmail({
@@ -970,6 +1011,125 @@ async function sendPaymentReceiptEmail({
   return { skipped: false }
 }
 
+async function sendJobStatusUpdateEmail({
+  to,
+  customerName,
+  jobOrderNo,
+  quotationNo,
+  plateNumber,
+  make,
+  model,
+  vehicleYear,
+  color,
+  status,
+  statusAt,
+  notes,
+  ctaUrl,
+}) {
+  if (!to || !isEmailConfigured()) return { skipped: true }
+
+  const { subject, html, text } = buildJobStatusUpdateEmail({
+    customerName,
+    jobOrderNo,
+    quotationNo,
+    plateNumber,
+    make,
+    model,
+    vehicleYear,
+    color,
+    status,
+    statusAt,
+    notes,
+    ctaUrl,
+  })
+
+  await sendEmail({
+    from: env.smtpFrom,
+    to,
+    replyTo: env.smtpReplyTo || undefined,
+    subject,
+    html,
+    text,
+    attachments: withDefaultAttachments(),
+  })
+
+  return { skipped: false }
+}
+
+async function sendSubscriptionConfirmationEmail({
+  to,
+  customerName,
+  packageName,
+  frequency,
+  startDate,
+  endDate,
+  amount,
+  plateNumber,
+  ctaUrl,
+}) {
+  if (!to || !isEmailConfigured()) return { skipped: true }
+
+  const { subject, html, text } = buildSubscriptionConfirmationEmail({
+    customerName,
+    packageName,
+    frequency,
+    startDate,
+    endDate,
+    amount,
+    plateNumber,
+    ctaUrl,
+  })
+
+  await sendEmail({
+    from: env.smtpFrom,
+    to,
+    replyTo: env.smtpReplyTo || undefined,
+    subject,
+    html,
+    text,
+    attachments: withDefaultAttachments(),
+  })
+
+  return { skipped: false }
+}
+
+async function sendPmsBookingConfirmationEmail({
+  to,
+  customerName,
+  packageName,
+  scheduleStart,
+  scheduleEnd,
+  bay,
+  plateNumber,
+  referenceNo,
+  ctaUrl,
+}) {
+  if (!to || !isEmailConfigured()) return { skipped: true }
+
+  const { subject, html, text } = buildPmsBookingConfirmationEmail({
+    customerName,
+    packageName,
+    scheduleStart,
+    scheduleEnd,
+    bay,
+    plateNumber,
+    referenceNo,
+    ctaUrl,
+  })
+
+  await sendEmail({
+    from: env.smtpFrom,
+    to,
+    replyTo: env.smtpReplyTo || undefined,
+    subject,
+    html,
+    text,
+    attachments: withDefaultAttachments(),
+  })
+
+  return { skipped: false }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -985,10 +1145,15 @@ module.exports = {
   sendCancellationEmail,
   sendBookingConfirmationEmail,
   sendPortalBookingRequestEmail,
+  sendPortalSubscriptionRequestEmail,
+  sendPortalPmsRequestEmail,
   sendQuotationApprovedScheduledEmail,
   sendPortalAccessEmail,
   sendPortalEmailVerificationEmail,
   sendPaymentReceiptEmail,
+  sendJobStatusUpdateEmail,
+  sendSubscriptionConfirmationEmail,
+  sendPmsBookingConfirmationEmail,
   // Generic send helper for campaign / custom emails
   sendRawEmail: async function ({ to, subject, html, text, from, attachments }) {
     if (!to || !isEmailConfigured()) return { skipped: true }

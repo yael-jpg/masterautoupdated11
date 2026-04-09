@@ -28,6 +28,12 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;')
 }
 
+function round2(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 0
+  return Math.round(n * 100) / 100
+}
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const QUOTATION_STATUSES = ['Draft', 'Sent', 'Pending', 'Approved', 'Not Approved', 'Cancelled', 'History']
@@ -350,11 +356,52 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
   const [priceOverrides, setPriceOverrides] = useState({})
   const [activeSizes, setActiveSizes] = useState(VEHICLE_SIZE_OPTIONS)
   const [customServices, setCustomServices] = useState([])
+  const [packageServices, setPackageServices] = useState([])
   const [serviceNameOverrides, setServiceNameOverrides] = useState({})
   const [leadPreview, setLeadPreview] = useState(null)
   const leadSourceRef = useRef(null)
   const [leadScheduleHintsByQuotationId, setLeadScheduleHintsByQuotationId] = useState({})
   const processingLeadRef = useRef(null)
+
+  const buildFlatSizePrices = (price) => {
+    const n = Number(price)
+    const safe = Number.isFinite(n) && n >= 0 ? n : 0
+    return VEHICLE_SIZE_OPTIONS.reduce((acc, opt) => {
+      acc[opt.key] = safe
+      return acc
+    }, {})
+  }
+
+  const loadPackageServices = useCallback(async () => {
+    try {
+      const [subscriptions, pmsPackages] = await Promise.all([
+        apiGet('/subscriptions', token, { status: 'active' }).catch(() => []),
+        apiGet('/pms', token, { status: 'active' }).catch(() => []),
+      ])
+
+      const mappedSubscriptions = (Array.isArray(subscriptions) ? subscriptions : [])
+        .filter((p) => String(p?.status || 'Active').toLowerCase() === 'active')
+        .map((p) => ({
+          code: `SUBS-PKG-${p.id}`,
+          name: String(p?.name || '').trim() || `Subscription Package #${p.id}`,
+          group: 'Subscription Services',
+          sizePrices: buildFlatSizePrices(p?.price),
+        }))
+
+      const mappedPms = (Array.isArray(pmsPackages) ? pmsPackages : [])
+        .filter((p) => String(p?.status || 'Active').toLowerCase() === 'active')
+        .map((p) => ({
+          code: `PMS-PKG-${p.id}`,
+          name: String(p?.name || '').trim() || `PMS Package #${p.id}`,
+          group: 'PMS Services',
+          sizePrices: buildFlatSizePrices(p?.estimated_price),
+        }))
+
+      setPackageServices([...mappedSubscriptions, ...mappedPms])
+    } catch {
+      setPackageServices([])
+    }
+  }, [token])
   const loadQuotationConfig = useCallback(async () => {
     try {
       const rows = await apiGet('/config/category/quotations', token)
@@ -393,12 +440,13 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
 
   useEffect(() => {
     loadQuotationConfig()
+    loadPackageServices()
     const off = onConfigUpdated((e) => {
       const cat = e?.detail?.category
       if (!cat || cat === 'quotations') loadQuotationConfig()
     })
     return off
-  }, [loadQuotationConfig])
+  }, [loadQuotationConfig, loadPackageServices])
 
   // Services Process from configuration
   const [servicesProcess, setServicesProcess] = useState({})
@@ -486,7 +534,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
 
         // Match service if possible
         if (preselectedQuotation.serviceCode) {
-          const fullCatalog = [...SERVICE_CATALOG, ...customServices]
+          const fullCatalog = [...SERVICE_CATALOG, ...customServices, ...packageServices]
           const matchQuery = fullCatalog.find(s => s.code === preselectedQuotation.serviceCode)
           if (matchQuery) {
             const price = getEffectivePrice(matchQuery.code, preselectedQuotation.vehicleSize || 'medium', priceOverrides) || 0
@@ -608,7 +656,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
     setShowForm(true)
     if (onPreselectedConsumed) onPreselectedConsumed()
   }
-}, [preselectedQuotation, priceOverrides, token, customServices])
+}, [preselectedQuotation, priceOverrides, token, customServices, packageServices])
 
   useEffect(() => {
     if (form.customerId) {
@@ -625,8 +673,9 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
+  const effectiveVatRate = 12
   const subtotal = form.items.reduce((s, i) => s + (i.total || 0), 0)
-  const vatAmount = form.applyVat ? subtotal * (vatRate / 100) : 0
+  const vatAmount = form.applyVat ? subtotal * (effectiveVatRate / 100) : 0
   const preDiscount = subtotal + vatAmount
   const promoDiscount = promoInfo
     ? promoInfo.discount_type === 'percent'
@@ -698,7 +747,21 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
         vehicleSize: full.vehicle_size || 'medium',
         notes: full.notes || '',
         bay: full.bay || '',
-        applyVat: false,
+        applyVat: (() => {
+          if (typeof full.apply_vat === 'boolean') return full.apply_vat
+          const servicesSubtotal = round2(
+            rawServices.reduce((sum, s) => {
+              const lineTotal = Number(s.total)
+              if (Number.isFinite(lineTotal)) return sum + lineTotal
+              const qty = Number(s.qty || 1)
+              const unit = Number(s.unitPrice || s.base_price || 0)
+              return sum + (qty * unit)
+            }, 0),
+          )
+          const grossBeforeDiscount = round2(Number(full.total_amount || 0) + Number(full.discount_amount || 0))
+          const inferredVat = Math.max(round2(grossBeforeDiscount - servicesSubtotal), 0)
+          return inferredVat > 0.009
+        })(),
         promoCode: full.promo_code || '',
         items: rawServices.map((s) => ({
           code: s.code,
@@ -747,6 +810,9 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
         services: form.items,
         notes: form.notes,
         totalAmount: preDiscount,
+        applyVat: !!form.applyVat,
+        vatRate: form.applyVat ? effectiveVatRate : 0,
+        vatAmount: form.applyVat ? vatAmount : 0,
         vehicleSize: form.vehicleSize,
         ...(form.promoCode?.trim() ? { promoCode: form.promoCode.trim() } : {}),
         ...(overrideBalance ? { overrideBalance: true } : {}),
@@ -1490,7 +1556,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
                 vehicleSize={form.vehicleSize}
                 priceOverrides={priceOverrides}
                 nameOverrides={serviceNameOverrides}
-                customCatalog={customServices}
+                customCatalog={[...customServices, ...packageServices]}
                 onItemsChange={(items) => setForm((p) => ({ ...p, items }))}
                 materialsNotesByCode={materialsNotesByCode}
               />
@@ -1503,7 +1569,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
                 <span>Subtotal</span>
                 <strong>{formatCurrency(subtotal)}</strong>
               </div>
-              {vatRate > 0 && (
+              {effectiveVatRate > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 500, color: 'rgba(189,200,218,0.85)', fontSize: '0.9rem' }}>
                     <input
@@ -1512,7 +1578,7 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
                       onChange={(e) => setForm((p) => ({ ...p, applyVat: e.target.checked }))}
                       style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: '#a0a8b8' }}
                     />
-                    Apply VAT ({vatRate}%)
+                    Apply VAT ({effectiveVatRate}%)
                   </label>
                   <span style={{ color: form.applyVat ? '#fde047' : 'rgba(189,200,218,0.35)', fontWeight: 500 }}>
                     {form.applyVat ? `+ ${formatCurrency(vatAmount)}` : formatCurrency(0)}
@@ -1916,6 +1982,30 @@ export function QuotationsPage({ token, user, onCreateJobOrder, preselectedQuota
 
               {/* Total block */}
               <div className="qo-total-block">
+                {(() => {
+                  const serviceSubtotal = round2((viewItem.services || []).reduce((sum, s) => sum + Number(s?.total || 0), 0))
+                  const discountAmount = round2(Number(viewItem.discount_amount || 0))
+                  const grossBeforeDiscount = round2(Number(viewItem.total_amount || 0) + discountAmount)
+                  const hasExplicitVat = typeof viewItem.apply_vat === 'boolean'
+                  const vatAmountPreview = hasExplicitVat
+                    ? Math.max(round2(Number(viewItem.vat_amount || 0)), 0)
+                    : Math.max(round2(grossBeforeDiscount - serviceSubtotal), 0)
+                  const vatRatePreview = Number(viewItem.vat_rate || 12)
+                  const shouldShowVat = hasExplicitVat ? !!viewItem.apply_vat : vatAmountPreview > 0.009
+                  if (!shouldShowVat || vatAmountPreview <= 0.009) return null
+                  return (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', marginBottom: 2 }}>
+                        <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>Subtotal</span>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#cbd5e1' }}>{formatCurrency(serviceSubtotal)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', marginBottom: 2 }}>
+                        <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>{`VAT (${vatRatePreview}%)`}</span>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#fde047' }}>+ {formatCurrency(vatAmountPreview)}</span>
+                      </div>
+                    </>
+                  )
+                })()}
                 {viewItem.promo_code && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', marginBottom: 2 }}>
                     <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>

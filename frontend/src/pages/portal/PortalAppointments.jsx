@@ -59,7 +59,7 @@ export function PortalAppointments({ onBook }) {
   const shown = tab === 'history' ? historyAppointments : activeAppointments
 
   if (loading) {
-    return <div style={{ color: 'rgba(189,200,218,0.45)', padding: 48, textAlign: 'center', fontSize: 13 }}>Loading…</div>
+    return <div className="portal-loading">Loading…</div>
   }
 
   return (
@@ -114,53 +114,52 @@ export function PortalAppointments({ onBook }) {
                   <tr
                     key={a.id}
                     onClick={() => setSelected(a)}
-                    style={{ cursor: 'pointer' }}
+                    className="portal-appointments-row"
                     title="Click to view details"
                   >
-                    <td style={{ whiteSpace: 'nowrap' }}>
+                    <td className="portal-appointments-date-cell">
                       {new Date(a.schedule_start).toLocaleString('en-PH', {
                         month: 'short', day: 'numeric', year: 'numeric',
                         hour: '2-digit', minute: '2-digit',
                       })}
                     </td>
                     <td>
-                      <span style={{ fontWeight: 600 }}>{a.plate_number}</span>
+                      <span className="portal-appointments-plate">{a.plate_number}</span>
                       <br />
-                      <span style={{ fontSize: 11, color: 'rgba(189,200,218,0.45)' }}>{a.year} {a.make} {a.model}</span>
+                      <span className="portal-appointments-vehicle-meta">{a.year} {a.make} {a.model}</span>
                     </td>
                     <td>{a.service_name || 'General'}</td>
-                    <td style={{ fontSize: 12, color: 'rgba(189,200,218,0.55)' }}>
+                    <td className="portal-appointments-team-cell">
                       {[a.installer_team].filter(Boolean).join(' · ') || '—'}
                     </td>
                     <td>
                       <span className={`badge ${STATUS_CLASS[a.status] || 'badge-neutral'}`}>{a.status}</span>
                       {String(a?.cancel_request_status || '').toUpperCase() === 'PENDING' && (
-                        <span className="badge badge-warning" style={{ marginLeft: 4 }}>Pending Approval</span>
+                        <span className="badge badge-warning portal-appointments-badge-gap">Pending Approval</span>
                       )}
                       {String(a?.cancel_request_status || '').toUpperCase() === 'REJECTED' && (
-                        <span className="badge badge-danger" style={{ marginLeft: 4 }}>Rejected</span>
+                        <span className="badge badge-danger portal-appointments-badge-gap">Rejected</span>
                       )}
                       {a.quotation_approval_status && (
                         <span
-                          className={`badge ${QUOTATION_CLASS[a.quotation_approval_status] || 'badge-neutral'}`}
-                          style={{ marginLeft: 4 }}
+                          className={`badge ${QUOTATION_CLASS[a.quotation_approval_status] || 'badge-neutral'} portal-appointments-badge-gap`}
                           title={`Quotation ${a.quotation_reference_no || ''}`}
                         >
                           Quotation: {a.quotation_approval_status}
                         </span>
                       )}
                     </td>
-                    <td style={{ fontSize: 12, color: 'rgba(189,200,218,0.50)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td className="portal-appointments-payment-cell">
                       {(() => {
                         const total = Number(a.total_amount || 0)
                         const paid = Number(a.paid_amount || 0)
-                        if (!total) return <span style={{ color: 'rgba(189,200,218,0.30)' }}>—</span>
+                        if (!total) return <span className="portal-appointments-empty">—</span>
                         if (paid >= total) return <span className="badge badge-success">Paid</span>
                         if (paid > 0) {
                           return (
                             <>
                               <span className="badge badge-warning">Partial</span>
-                              <span style={{ fontSize: 10, color: 'rgba(189,200,218,0.40)', marginLeft: 4 }}>
+                              <span className="portal-appointments-partial-meta">
                                 ₱{paid.toLocaleString()} / ₱{total.toLocaleString()}
                               </span>
                             </>

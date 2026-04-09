@@ -511,6 +511,9 @@ export function PaymentsPage({ token, user }) {
   const handlePrintReceipt = (saleGroup) => {
     const lines = saleGroup.payments || []
     const totalPaid = lines.reduce((s, p) => s + Number(p.amount), 0)
+    const invoiceTotal = Number(saleGroup.sale_total) || 0
+    const vatRate = 0.12
+    const vatAmount = invoiceTotal * (vatRate / (1 + vatRate))
     const linesHtml = lines.map((p, i) => `
       <tr>
         <td style="padding: 4px 0;">${i + 1}. ${p.payment_type}</td>
@@ -529,7 +532,8 @@ export function PaymentsPage({ token, user }) {
           <tr><td>Date:</td><td style="text-align: right;">${new Date(saleGroup.created_at).toLocaleDateString()}</td></tr>
           <tr><td>Invoice:</td><td style="text-align: right;">${saleGroup.sale_reference || 'N/A'}</td></tr>
           <tr><td>Customer:</td><td style="text-align: right;">${saleGroup.customer_name || 'N/A'}</td></tr>
-          <tr><td>Invoice Total:</td><td style="text-align: right;">₱${Number(saleGroup.sale_total).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td></tr>
+          <tr><td>Invoice Total:</td><td style="text-align: right;">₱${invoiceTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td></tr>
+          <tr><td>VAT (12%):</td><td style="text-align: right;">₱${vatAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td></tr>
         </table>
         <hr style="border: none; border-top: 1px dashed #ccc; margin: 15px 0;">
         <div style="font-weight: bold; font-size: 13px; margin-bottom: 8px;">Payment Breakdown (${lines.length} line${lines.length > 1 ? 's' : ''})</div>

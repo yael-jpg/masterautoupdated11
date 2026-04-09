@@ -1,4 +1,5 @@
 import './App.css'
+import './styles/design-system.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTheme } from './hooks/useTheme'
 import { createPortal } from 'react-dom'
@@ -20,7 +21,7 @@ import { OnlineQuotationRequestsPage } from './pages/OnlineQuotationRequestsPage
 import { SettingsPage } from './pages/SettingsPage'
 import { SubscriptionsPage } from './pages/SubscriptionsPage'
 import { PMSPage } from './pages/PMSPage'
-import { apiDownload, buildApiUrl, loginRequest, pushToast } from './api/client'
+import { apiDownload, apiGet, buildApiUrl, loginRequest, pushToast } from './api/client'
 import { createRealtimeClient } from './utils/realtime'
 import { emitConfigUpdated, emitPackagesUpdated, emitVehicleMakesUpdated } from './utils/events'
 import { ToastViewport } from './components/ToastViewport'
@@ -30,15 +31,15 @@ import { getJwtExpMs } from './utils/jwt'
 function SessionExpiredOverlay({ message, onResignIn }) {
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true">
-      <div className="modal-content" style={{ width: 'min(520px, 100%)' }}>
+      <div className="modal-content session-expired-modal">
         <div className="modal-header">
           <h2>Session Expired</h2>
         </div>
-        <div style={{ padding: '22px 24px 24px' }}>
-          <p style={{ margin: '0 0 18px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+        <div className="session-expired-body">
+          <p className="session-expired-message">
             {message || 'Your session has expired. Please sign in again.'}
           </p>
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div className="session-expired-actions">
             <button type="button" className="btn-primary" onClick={onResignIn}>
               Re-sign in
             </button>
@@ -78,6 +79,7 @@ function App() {
   const [notifications, setNotifications] = useState([])
   const notifiedPortalAppointmentIdsRef = useRef(new Set())
   const [onlineLeadCount, setOnlineLeadCount] = useState(0)
+  const [adminAllowedModules, setAdminAllowedModules] = useState(null)
 
   // ── Admin notification sound ─────────────────────────────────────────
   // Notes:
@@ -218,6 +220,12 @@ function App() {
     }
 
     if (pathname === '/login' || pathname === '/admin/login') window.history.replaceState({}, '', '/admin')
+
+    if (pathname === '/subscriptions/requests' || pathname === '/admin/subscriptions/requests') {
+      window.history.replaceState({}, '', '/admin')
+      setActiveKey('subscriptions')
+      window.dispatchEvent(new CustomEvent('ma:subscriptions-view', { detail: { tab: 'requests' } }))
+    }
   }, [session.token])
 
   useEffect(() => {
@@ -839,6 +847,40 @@ function App() {
   }, [session.token])
 
   useEffect(() => {
+    let stopped = false
+
+    const loadModuleAccess = async () => {
+      if (!session.token || !session.user?.role) {
+        setAdminAllowedModules(null)
+        return
+      }
+
+      if (session.user.role === 'SuperAdmin') {
+        setAdminAllowedModules(null)
+        return
+      }
+
+      try {
+        const payload = await apiGet('/admin/module-access', session.token)
+        if (stopped) return
+        const allowed = Array.isArray(payload?.adminAllowedModules)
+          ? payload.adminAllowedModules
+          : []
+        setAdminAllowedModules(allowed)
+      } catch {
+        if (!stopped) {
+          setAdminAllowedModules(null)
+        }
+      }
+    }
+
+    loadModuleAccess()
+    return () => {
+      stopped = true
+    }
+  }, [session.token, session.user?.role])
+
+  useEffect(() => {
     if (!session.token) return
     let stopped = false
 
@@ -1085,7 +1127,8 @@ function App() {
   }, [isSidebarCollapsed])
 
   const navItems = useMemo(
-    () => [
+    () => {
+      const baseItems = [
       { 
         key: 'dashboard', 
         label: 'Dashboard',
@@ -1267,9 +1310,25 @@ function App() {
           </svg>
         ),
       }] : []),
-    ],
-    [session.user?.role, onlineLeadCount],
+      ]
+
+      if (session.user?.role !== 'Admin' || !Array.isArray(adminAllowedModules)) {
+        return baseItems
+      }
+
+      const allowed = new Set(adminAllowedModules)
+      allowed.add('dashboard')
+      const filtered = baseItems.filter((item) => allowed.has(item.key))
+      return filtered.length ? filtered : baseItems.filter((item) => item.key === 'dashboard')
+    },
+    [session.user?.role, onlineLeadCount, adminAllowedModules],
   )
+
+  useEffect(() => {
+    if (!navItems.some((item) => item.key === activeKey)) {
+      setActiveKey(navItems[0]?.key || 'dashboard')
+    }
+  }, [activeKey, navItems])
 
   const pageMap = {
     dashboard: <DashboardHome token={session.token} onNavigate={setActiveKey} />,
@@ -1292,7 +1351,14 @@ function App() {
     sales: <SalesPage token={session.token} />,
     services: <ServicesPage token={session.token} />,
     pms: <PMSPage token={session.token} />,
-    subscriptions: <SubscriptionsPage token={session.token} />,
+    subscriptions: <SubscriptionsPage
+      token={session.token}
+      onOpenRequestAppointment={(appointmentId) => {
+        if (!appointmentId) return
+        setOpenAppointmentId(appointmentId)
+        setActiveKey('scheduling')
+      }}
+    />,
     payments: <PaymentsPage token={session.token} user={session.user} />,
     scheduling: (
       <SchedulingPage
@@ -1418,9 +1484,15 @@ function App() {
 
   const handleOpenNotification = async (notification) => {
     const type = notification?.details?.type
-    if (type !== 'quotation' && type !== 'appointment') return false
+    if (type === 'subscription-request') {
+      setActiveKey('subscriptions')
+      window.dispatchEvent(new CustomEvent('ma:subscriptions-view', { detail: { tab: 'requests' } }))
+      return true
+    }
 
-    if (type === 'appointment') {
+    if (type !== 'quotation' && type !== 'appointment' && type !== 'booking-request') return false
+
+    if (type === 'appointment' || type === 'booking-request') {
       const appointmentId = notification?.details?.appointment_id
       if (!appointmentId) return false
       setOpenAppointmentId(appointmentId)

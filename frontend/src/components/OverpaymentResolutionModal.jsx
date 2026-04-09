@@ -11,9 +11,7 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { apiGet, apiPost } from '../api/client'
-
-const BORDER = '1px solid rgba(255,255,255,0.09)'
-const CARD   = { background: 'rgba(10,15,28,0.7)', borderRadius: '12px', border: BORDER, padding: '18px' }
+import './OverpaymentResolutionModal.css'
 
 const METHODS = ['Cash', 'GCash/Maya', 'Credit Card', 'Bank Transfer']
 
@@ -130,185 +128,117 @@ export function OverpaymentResolutionModal({
   }
 
   return createPortal(
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(0,0,0,0.72)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '16px',
-      }}
-    >
+    <div className="opr-overlay">
       <div
-        style={{
-          width: '100%', maxWidth: '560px',
-          background: '#0e0e0e',
-          borderRadius: '18px',
-          border: '1.5px solid rgba(255,255,255,0.12)',
-          boxShadow: '0 0 60px rgba(0,0,0,0.5)',
-          overflow: 'hidden',
-        }}
+        className="opr-modal"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="Resolve Overpayment"
       >
-        {/* ── Danger Header ─────────────────────────────────────────────── */}
-        <div
-          style={{
-            background: 'rgba(255,255,255,0.04)',
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
-            padding: '18px 24px',
-            display: 'flex', alignItems: 'center', gap: '14px',
-          }}
-        >
-          <span style={{ fontSize: '2rem' }}>⚠</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#e2e8f0' }}>
-              Overpayment Detected
-            </div>
-            <div style={{ fontSize: '0.82rem', color: 'rgba(189,200,218,0.65)', marginTop: '2px' }}>
-              Invoice&nbsp;<strong style={{ color: '#c0c8d8' }}>{invoiceRef}</strong>
+        <div className="opr-header">
+          <span className="opr-header-icon">⚠</span>
+          <div className="opr-header-main">
+            <div className="opr-header-title">Overpayment Detected</div>
+            <div className="opr-header-sub">
+              Invoice&nbsp;<strong>{invoiceRef}</strong>
               &nbsp;· Please resolve before closing this transaction.
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'rgba(189,200,218,0.5)', fontSize: '1.4rem', lineHeight: 1,
-              padding: '4px',
-            }}
+            className="opr-close"
             aria-label="Close"
           >
             ✕
           </button>
         </div>
 
-        <div style={{ padding: '24px', overflowY: 'auto', maxHeight: '70vh' }}>
-          {/* ── Overpaid Amount Callout ──────────────────────────────────── */}
-          <div
-            style={{
-              ...CARD,
-              background: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.10)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '20px',
-            }}
-          >
+        <div className="opr-body">
+          <div className="opr-card opr-amount">
             <div>
-              <div style={{ color: 'rgba(189,200,218,0.55)', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Excess Amount to Resolve
-              </div>
-              <div style={{ fontSize: '2rem', fontWeight: 800, color: '#c0c8d8', marginTop: '4px' }}>
+              <div className="opr-amount-label">Excess Amount to Resolve</div>
+              <div className="opr-amount-value">
                 ₱{Number(overpaidAmount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
               </div>
             </div>
-            <span style={{ fontSize: '2.4rem', opacity: 0.5 }}>⚠</span>
+            <span className="opr-amount-icon">⚠</span>
           </div>
 
-          {/* ── Resolution Type Selector ─────────────────────────────────── */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'rgba(189,200,218,0.55)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '10px' }}>
-              Choose Resolution Action
-            </label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="opr-section">
+            <label className="opr-section-label">Choose Resolution Action</label>
+            <div className="opr-resolution-list">
               {Object.entries(RESOLUTION_CONFIG).map(([key, c]) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() => setResolution(key)}
-                  style={{
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '14px 16px',
-                    borderRadius: '10px',
-                    border: `1.5px solid ${resolution === key ? c.color : 'rgba(255,255,255,0.08)'}`,
-                    background: resolution === key ? c.bg : 'rgba(255,255,255,0.02)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    transition: 'border-color 0.15s, background 0.15s',
-                  }}
+                  className={`opr-resolution-btn ${resolution === key ? 'is-active' : ''}`}
+                  style={{ '--opr-active-color': c.color, '--opr-active-bg': c.bg }}
                 >
-                  <span style={{ fontSize: '1.4rem', minWidth: '28px', textAlign: 'center' }}>{c.icon}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.9rem', color: resolution === key ? c.color : '#e2e8f0' }}>
-                      {c.label}
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: 'rgba(189,200,218,0.5)', marginTop: '2px' }}>
-                      {c.desc}
-                    </div>
+                  <span className="opr-resolution-icon">{c.icon}</span>
+                  <div className="opr-resolution-main">
+                    <div className="opr-resolution-title">{c.label}</div>
+                    <div className="opr-resolution-desc">{c.desc}</div>
                   </div>
-                  {resolution === key && (
-                    <span style={{ color: c.color, fontSize: '1.2rem', fontWeight: 800 }}>✓</span>
-                  )}
+                  {resolution === key && <span className="opr-resolution-check">✓</span>}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* ── Resolution-Specific Fields ───────────────────────────────── */}
           {resolution === 'REFUND' && (
-            <div style={{ ...CARD, marginBottom: '16px', borderColor: 'rgba(239,68,68,0.3)' }}>
-              <div style={{ fontWeight: 700, color: '#fca5a5', fontSize: '0.85rem', marginBottom: '12px' }}>
-                Refund Details
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div className="opr-card opr-detail-card is-refund">
+              <div className="opr-detail-title is-refund">Refund Details</div>
+              <div className="opr-grid-2">
                 <div>
-                  <label style={{ fontSize: '0.75rem', color: 'rgba(189,200,218,0.5)', display: 'block', marginBottom: '4px' }}>Refund Method *</label>
+                  <label className="opr-field-label">Refund Method *</label>
                   <select
                     value={refundMethod}
                     onChange={(e) => setRefundMethod(e.target.value)}
-                    style={{ width: '100%', padding: '9px 10px', background: 'var(--bg-input, #131313)', border: BORDER, borderRadius: '8px', color: '#e2e8f0', fontSize: '0.85rem' }}
+                    className="opr-select"
                   >
                     {METHODS.map((m) => <option key={m}>{m}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.75rem', color: 'rgba(189,200,218,0.5)', display: 'block', marginBottom: '4px' }}>Reference # (optional)</label>
+                  <label className="opr-field-label">Reference # (optional)</label>
                   <input
                     value={refundReference}
                     onChange={(e) => setRefundReference(e.target.value)}
                     placeholder="Slip / GCash Ref"
-                    style={{ width: '100%', padding: '9px 10px', background: 'var(--bg-input, #131313)', border: BORDER, borderRadius: '8px', color: '#e2e8f0', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                    className="opr-input"
                   />
                 </div>
               </div>
-              <div style={{ marginTop: '10px', padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: '8px', fontSize: '0.78rem', color: '#fca5a5' }}>
+              <div className="opr-refund-note">
                 ₱{Number(overpaidAmount).toLocaleString('en-PH', { minimumFractionDigits: 2 })} will be deducted from the {refundMethod} drawer and returned to the customer.
               </div>
             </div>
           )}
 
           {resolution === 'CREDIT' && (
-            <div style={{ ...CARD, marginBottom: '16px', borderColor: 'rgba(255,255,255,0.10)' }}>
-              <div style={{ fontWeight: 700, color: '#c0c8d8', fontSize: '0.85rem', marginBottom: '8px' }}>
-                Store Credit Preview
-              </div>
-              <div style={{ fontSize: '0.82rem', color: 'rgba(189,200,218,0.6)', lineHeight: 1.6 }}>
+            <div className="opr-card opr-detail-card is-credit">
+              <div className="opr-detail-title is-credit">Store Credit Preview</div>
+              <div className="opr-credit-copy">
                 ₱{Number(overpaidAmount).toLocaleString('en-PH', { minimumFractionDigits: 2 })} will be added to the customer's wallet and automatically suggested on their next invoice.
               </div>
             </div>
           )}
 
           {resolution === 'TRANSFER' && (
-            <div style={{ ...CARD, marginBottom: '16px', borderColor: 'rgba(245,158,11,0.3)' }}>
-              <div style={{ fontWeight: 700, color: '#fcd34d', fontSize: '0.85rem', marginBottom: '10px' }}>
-                Select Target Invoice
-              </div>
+            <div className="opr-card opr-detail-card is-transfer">
+              <div className="opr-detail-title is-transfer">Select Target Invoice</div>
               {unpaidSales.length === 0 ? (
-                <div style={{ color: 'rgba(189,200,218,0.5)', fontSize: '0.82rem', padding: '12px 0' }}>
+                <div className="opr-transfer-empty">
                   No eligible invoices found. All other invoices are either settled or overpaid.
                 </div>
               ) : (
                 <select
                   value={targetSaleId}
                   onChange={(e) => setTargetSaleId(e.target.value)}
-                  style={{ width: '100%', padding: '9px 10px', background: 'var(--bg-input, #131313)', border: BORDER, borderRadius: '8px', color: '#e2e8f0', fontSize: '0.85rem' }}
+                  className="opr-select"
                 >
                   <option value="">— Select invoice —</option>
                   {unpaidSales.map((s) => (
@@ -321,43 +251,26 @@ export function OverpaymentResolutionModal({
             </div>
           )}
 
-          {/* ── Notes ───────────────────────────────────────────────────── */}
           {resolution && (
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '0.75rem', color: 'rgba(189,200,218,0.5)', display: 'block', marginBottom: '4px' }}>Notes / Reason (optional)</label>
+            <div className="opr-notes">
+              <label className="opr-field-label">Notes / Reason (optional)</label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
                 placeholder="Add internal notes for audit trail..."
-                style={{
-                  width: '100%', padding: '10px', background: 'var(--bg-input, #131313)',
-                  border: BORDER, borderRadius: '8px', color: '#e2e8f0', fontSize: '0.85rem',
-                  resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit',
-                }}
+                className="opr-textarea"
               />
             </div>
           )}
 
-          {/* ── Error ───────────────────────────────────────────────────── */}
-          {error && (
-            <div style={{ padding: '10px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', color: '#fca5a5', fontSize: '0.82rem', marginBottom: '16px' }}>
-              {error}
-            </div>
-          )}
+          {error && <div className="opr-error">{error}</div>}
 
-          {/* ── Action Buttons ───────────────────────────────────────────── */}
-          <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+          <div className="opr-actions">
             <button
               type="button"
               onClick={onClose}
-              style={{
-                flex: 1, padding: '12px 0',
-                background: 'rgba(255,255,255,0.05)',
-                border: BORDER, borderRadius: '10px',
-                color: 'rgba(189,200,218,0.7)', fontWeight: 600, cursor: 'pointer',
-                fontSize: '0.88rem',
-              }}
+              className="opr-btn opr-btn-secondary"
             >
               Resolve Later
             </button>
@@ -365,17 +278,8 @@ export function OverpaymentResolutionModal({
               type="button"
               onClick={handleSubmit}
               disabled={!canSubmit || loading}
-              style={{
-                flex: 2, padding: '12px 0',
-                background: canSubmit && !loading
-                  ? (cfg ? cfg.color : '#3a3a3a')
-                  : 'rgba(100,100,120,0.3)',
-                border: 'none', borderRadius: '10px',
-                color: canSubmit && !loading ? '#fff' : 'rgba(255,255,255,0.3)',
-                fontWeight: 700, cursor: canSubmit && !loading ? 'pointer' : 'not-allowed',
-                fontSize: '0.92rem',
-                transition: 'background 0.2s',
-              }}
+              className={`opr-btn opr-btn-primary ${canSubmit && !loading ? 'is-enabled' : 'is-disabled'}`}
+              style={{ '--opr-submit-color': cfg ? cfg.color : '#3a3a3a' }}
             >
               {loading
                 ? 'Processing…'

@@ -7,6 +7,7 @@ import { Modal } from '../components/Modal'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { VehicleDetail } from '../components/VehicleDetail'
 import { CampaignsModal } from './CampaignsModal'
+import { SearchableSelect } from '../components/SearchableSelect'
 import { normalizeEmailClient } from '../utils/validationClient'
 import { onConfigUpdated, onVehicleMakesUpdated } from '../utils/events'
 import './CrmPage.css'
@@ -68,6 +69,8 @@ export function CRMPage({
   // Register Vehicle modal (CRM-only; no Vehicles page)
   const [showVehicleForm, setShowVehicleForm] = useState(false)
   const [vehicleMakes, setVehicleMakes] = useState([])
+  const [vehicleModels, setVehicleModels] = useState([])
+  const [vehicleVariants, setVehicleVariants] = useState([])
   const [vehicleCategories, setVehicleCategories] = useState([])
   const [vehicleSaving, setVehicleSaving] = useState(false)
   const [vehicleError, setVehicleError] = useState('')
@@ -241,23 +244,83 @@ export function CRMPage({
       color: '',
       odometer: 0,
       bodyType: '',
+      _customModel: false,
+      _customVariant: false,
     })
+    setVehicleModels([])
+    setVehicleVariants([])
     setShowVehicleForm(true)
   }
 
   const closeRegisterVehicle = () => {
     setShowVehicleForm(false)
     setVehicleSaving(false)
+    setVehicleModels([])
+    setVehicleVariants([])
     setVehicleConfirmConfig((p) => ({ ...p, isOpen: false }))
   }
 
+  useEffect(() => {
+    if (!showVehicleForm) return
+    if (!vehicleForm.make || vehicleForm.make.toLowerCase() === 'other') {
+      setVehicleModels([])
+      setVehicleVariants([])
+      return
+    }
+
+    const makeName = String(vehicleForm.make || '').trim().toLowerCase()
+    const makeObj = vehicleMakes.find((m) => String(m?.name || '').trim().toLowerCase() === makeName)
+    if (!makeObj?.id) {
+      setVehicleModels([])
+      setVehicleVariants([])
+      return
+    }
+
+    apiGet(`/vehicle-makes/${makeObj.id}/models`, token)
+      .then((data) => {
+        setVehicleModels(Array.isArray(data) ? data : [])
+      })
+      .catch(() => setVehicleModels([]))
+
+    setVehicleVariants([])
+  }, [showVehicleForm, vehicleForm.make, vehicleMakes, token])
+
+  useEffect(() => {
+    if (!showVehicleForm) return
+    if (!vehicleForm.model) {
+      setVehicleVariants([])
+      return
+    }
+
+    const modelName = String(vehicleForm.model || '').trim().toLowerCase()
+    const modelObj = vehicleModels.find((m) => String(m?.name || '').trim().toLowerCase() === modelName)
+    if (!modelObj?.id) {
+      setVehicleVariants([])
+      return
+    }
+
+    apiGet(`/vehicle-makes/models/${modelObj.id}/variants`, token)
+      .then((data) => {
+        setVehicleVariants(Array.isArray(data) ? data : [])
+      })
+      .catch(() => setVehicleVariants([]))
+  }, [showVehicleForm, vehicleForm.model, vehicleModels, token])
+
   const submitVehicle = async (payload) => {
     if (!selectedCustomer?.id) throw new Error('Missing customer')
+    const rawMake = (payload.make || '').trim()
+    const matchedMake = vehicleMakes.find((m) => String(m?.name || '').toLowerCase() === rawMake.toLowerCase())
+    const explicitOther = rawMake.toLowerCase() === 'other'
+    const resolvedMake = matchedMake ? matchedMake.name : 'Other'
+    const resolvedCustomMake = explicitOther
+      ? (payload.customMake || '').trim()
+      : (matchedMake ? '' : rawMake)
+
     return apiPost('/vehicles', token, {
       customerId: Number(selectedCustomer.id),
       plateNumber: payload.plateNumber,
-      make: payload.make,
-      customMake: payload.make === 'Other' ? (payload.customMake || '') : null,
+      make: resolvedMake,
+      customMake: resolvedMake === 'Other' ? resolvedCustomMake : null,
       model: payload.model,
       year: Number(payload.year),
       variant: payload.variant || '',
@@ -1128,21 +1191,34 @@ export function CRMPage({
 
             <div className="form-group">
               <label className="vf-label">Make <span className="vf-required">*</span></label>
-              <select
+              <SearchableSelect
+                options={[
+                  ...vehicleMakes.map((m) => ({
+                    value: m.name,
+                    label: m.name,
+                    category: m.category || 'Other',
+                  })),
+                  { value: 'Other', label: 'Other (Specify)', category: 'Custom' },
+                ]}
                 value={vehicleForm.make}
-                onChange={(event) => {
-                  setVehicleForm((prev) => ({ ...prev, make: event.target.value, customMake: '' }))
+                onChange={(nextMake) => {
+                  setVehicleForm((prev) => ({
+                    ...prev,
+                    make: nextMake,
+                    model: '',
+                    variant: '',
+                    customMake: nextMake.trim().toLowerCase() === 'other' ? prev.customMake : '',
+                    _customModel: false,
+                    _customVariant: false,
+                  }))
                   if (vehicleFieldErrors.make) setVehicleFieldErrors((p) => ({ ...p, make: null }))
                 }}
-                className={vehicleFieldErrors.make ? 'vf-field-error' : ''}
+                placeholder="Search or type make"
                 required
-              >
-                <option value="">— Select make —</option>
-                {vehicleMakes.map((m) => (
-                  <option key={m.id || m.name} value={m.name}>{m.name}</option>
-                ))}
-                <option value="Other">Other</option>
-              </select>
+                grouped
+                allowCustomValue
+                customValueText={(q) => `Use "${q}" as custom make`}
+              />
               {vehicleFieldErrors.make && <div className="vf-inline-error">{vehicleFieldErrors.make}</div>}
             </div>
 
@@ -1165,26 +1241,48 @@ export function CRMPage({
 
             <div className="form-group">
               <label className="vf-label">Model <span className="vf-required">*</span></label>
-              <input
-                placeholder="Enter model name"
-                value={vehicleForm.model}
-                onChange={(event) => {
-                  setVehicleForm((prev) => ({ ...prev, model: event.target.value }))
-                  if (vehicleFieldErrors.model) setVehicleFieldErrors((p) => ({ ...p, model: null }))
-                }}
-                required
-                className={vehicleFieldErrors.model ? 'vf-field-error' : ''}
-              />
+              {!vehicleForm.make ? (
+                <input
+                  placeholder="Select make first"
+                  value={vehicleForm.model}
+                  onChange={() => {}}
+                  disabled
+                  className={vehicleFieldErrors.model ? 'vf-field-error' : ''}
+                />
+              ) : (
+                <SearchableSelect
+                  options={vehicleModels.map((m) => ({ value: m.name, label: m.name }))}
+                  value={vehicleForm.model}
+                  onChange={(val) => {
+                    setVehicleForm((prev) => ({ ...prev, model: String(val || '').trim(), variant: '', _customVariant: false }))
+                    if (vehicleFieldErrors.model) setVehicleFieldErrors((p) => ({ ...p, model: null }))
+                  }}
+                  placeholder="Search or type model"
+                  required
+                  allowCustomValue
+                />
+              )}
               {vehicleFieldErrors.model && <div className="vf-inline-error">{vehicleFieldErrors.model}</div>}
             </div>
 
             <div className="form-group">
               <label className="vf-label">Variant</label>
-              <input
-                placeholder="e.g. 1.3 E MT"
-                value={vehicleForm.variant}
-                onChange={(event) => setVehicleForm((prev) => ({ ...prev, variant: event.target.value }))}
-              />
+              {!vehicleForm.model ? (
+                <input
+                  placeholder="Select model first"
+                  value={vehicleForm.variant}
+                  onChange={() => {}}
+                  disabled
+                />
+              ) : (
+                <SearchableSelect
+                  options={vehicleVariants.map((v) => ({ value: v.name, label: v.name }))}
+                  value={vehicleForm.variant}
+                  onChange={(val) => setVehicleForm((prev) => ({ ...prev, variant: String(val || '').trim() }))}
+                  placeholder="Search or type variant"
+                  allowCustomValue
+                />
+              )}
             </div>
 
             <div className="form-group">

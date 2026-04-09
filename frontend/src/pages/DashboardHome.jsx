@@ -4,7 +4,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -12,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import './DashboardHome.css'
 import { apiGet } from '../api/client'
 import { DataTable } from '../components/DataTable'
 import { PaginationBar } from '../components/PaginationBar'
@@ -28,10 +28,10 @@ export function DashboardHome({ token, onNavigate }) {
   const [salesPage, setSalesPage] = useState(1)
   const [schedulePage, setSchedulePage] = useState(1)
   const [error, setError] = useState(null)
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 640)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 900)
 
   useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth <= 640)
+    const handler = () => setIsMobile(window.innerWidth <= 900)
     window.addEventListener('resize', handler)
     return () => window.removeEventListener('resize', handler)
   }, [])
@@ -39,6 +39,14 @@ export function DashboardHome({ token, onNavigate }) {
   useEffect(() => {
     const load = async () => {
       try {
+        const pick = (row, keys, fallback = '-') => {
+          for (const key of keys) {
+            const value = row?.[key]
+            if (value !== undefined && value !== null && String(value).trim() !== '') return value
+          }
+          return fallback
+        }
+
         const [reportData, quotations, appointments] = await Promise.all([
           apiGet('/reports/sales-summary', token),
           apiGet('/quotations', token, { page: 1, limit: DASHBOARD_FETCH_LIMIT }),
@@ -54,24 +62,25 @@ export function DashboardHome({ token, onNavigate }) {
         setReport(reportData)
         setSalesRows(
           (quotations.data || []).map((row) => [
-            row.quotation_no,
-            row.customer_name,
-            row.plate_number,
-            `₱${Number(row.total_amount).toLocaleString()}`,
-            row.status,
+            pick(row, ['quotation_no', 'reference_no', 'id']),
+            pick(row, ['customer_name', 'full_name', 'customer']),
+            pick(row, ['plate_number', 'vehicle_plate']),
+            `₱${Number(pick(row, ['total_amount', 'amount_total', 'grand_total'], 0)).toLocaleString()}`,
+            renderStatusPill(pick(row, ['status', 'workflow_status', 'payment_status'])),
           ]),
         )
         setScheduleRows(
-          appointments.data.map((row) => [
-            new Date(row.schedule_start).toLocaleTimeString('en-PH', {
-              hour: '2-digit',
-              minute: '2-digit',
-            }),
-            row.customer_name,
-            row.plate_number,
-            row.service_id ? (row.service_name || `Service #${row.service_id}`) : 'Custom Service',
-            row.installer_team || '-',
-            row.status,
+          (appointments.data || []).map((row) => [
+            row?.schedule_start
+              ? new Date(row.schedule_start).toLocaleTimeString('en-PH', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : '-',
+            pick(row, ['customer_name', 'full_name', 'customer']),
+            pick(row, ['plate_number', 'vehicle_plate']),
+            row?.service_id ? (pick(row, ['service_name'], `Service #${row.service_id}`)) : pick(row, ['service_name'], 'Custom Service'),
+            renderStatusPill(pick(row, ['status', 'workflow_status'])),
           ]),
         )
       } catch (err) {
@@ -129,10 +138,26 @@ export function DashboardHome({ token, onNavigate }) {
       total: Number(item.total),
     }))
 
-    const distribution = (report.byServiceType || []).slice(0, 5).map((item) => ({
-      name: item.service_package,
-      value: Number(item.total),
-    }))
+    const rawDistribution = (report.byServiceType || [])
+      .map((item) => ({
+        name: item.service_package,
+        value: Number(item.total) || 0,
+      }))
+      .filter((item) => item.value > 0)
+
+    const MAX_VISIBLE_SLICES = 5
+    let distribution = rawDistribution
+
+    if (rawDistribution.length > MAX_VISIBLE_SLICES) {
+      const top = rawDistribution.slice(0, MAX_VISIBLE_SLICES)
+      const othersTotal = rawDistribution
+        .slice(MAX_VISIBLE_SLICES)
+        .reduce((sum, item) => sum + item.value, 0)
+
+      distribution = othersTotal > 0
+        ? [...top, { name: 'Others', value: othersTotal }]
+        : top
+    }
 
     return { trend, distribution }
   }, [report])
@@ -151,6 +176,16 @@ export function DashboardHome({ token, onNavigate }) {
   }, [scheduleRows, schedulePage])
 
   const PIE_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7', '#f97316', '#14b8a6']
+
+  const renderStatusPill = (status) => {
+    const text = String(status || '-').trim() || '-'
+    const normalized = text.toLowerCase()
+    let tone = 'neutral'
+    if (['approved', 'completed', 'released', 'paid', 'done'].some((s) => normalized.includes(s))) tone = 'success'
+    else if (['pending', 'requested', 'draft', 'scheduled'].some((s) => normalized.includes(s))) tone = 'warning'
+    else if (['cancelled', 'void', 'rejected', 'overdue'].some((s) => normalized.includes(s))) tone = 'danger'
+    return <span className={`dashboard-status-pill dashboard-status-pill--${tone}`}>{text}</span>
+  }
 
   const chartColors = {
     grid: 'rgba(255,255,255,0.05)',
@@ -186,7 +221,7 @@ export function DashboardHome({ token, onNavigate }) {
           <h3>Weekly Revenue Trend</h3>
           <div className="chart-container">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData.trend} margin={isMobile ? { top: 8, right: 8, left: 0, bottom: 0 } : undefined}>
+              <BarChart data={chartData.trend} margin={isMobile ? { top: 8, right: 8, left: 12, bottom: 0 } : { top: 8, right: 14, left: 8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
                 <XAxis
                   dataKey="name"
@@ -225,41 +260,51 @@ export function DashboardHome({ token, onNavigate }) {
 
         <article className="chart-card">
           <h3>Service Distribution</h3>
-          <div className="chart-container">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={chartData.distribution}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={isMobile ? 70 : 60}
-                  outerRadius={isMobile ? 100 : 80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {chartData.distribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: chartColors.tooltipBg,
-                    borderColor: chartColors.tooltipBorder,
-                    borderRadius: '8px',
-                    color: chartColors.tooltipText,
-                  }}
-                />
-                {!isMobile && (
-                  <Legend
-                    verticalAlign="middle"
-                    align="right"
-                    layout="vertical"
-                    iconType="circle"
-                    formatter={(value) => <span style={{ color: chartColors.legendText, fontSize: '12px' }}>{value}</span>}
+          <div className="chart-container dashboard-pie-panel">
+            <div className="dashboard-pie-canvas">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={chartData.distribution}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={isMobile ? 44 : 58}
+                    outerRadius={isMobile ? 68 : 82}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {chartData.distribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value) => `₱${Number(value || 0).toLocaleString('en-PH')}`}
+                    contentStyle={{
+                      backgroundColor: chartColors.tooltipBg,
+                      borderColor: chartColors.tooltipBorder,
+                      borderRadius: '8px',
+                      color: chartColors.tooltipText,
+                    }}
                   />
-                )}
-              </PieChart>
-            </ResponsiveContainer>
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="dashboard-pie-legend" aria-label="Service distribution legend">
+              {chartData.distribution.map((entry, index) => (
+                <div className="dashboard-pie-legend-item" key={`legend-${entry.name}-${index}`}>
+                  <span
+                    className="dashboard-pie-legend-dot"
+                    style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
+                    aria-hidden="true"
+                  />
+                  <div className="dashboard-pie-legend-content">
+                    <span className="dashboard-pie-legend-label">{entry.name}</span>
+                    <span className="dashboard-pie-legend-value">₱{Number(entry.value || 0).toLocaleString('en-PH')}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </article>
       </section>
@@ -271,10 +316,12 @@ export function DashboardHome({ token, onNavigate }) {
           actionLabel="Go to Sales"
           onActionClick={() => onNavigate && onNavigate('sales')}
         >
-          <DataTable
-            headers={['Quotation #', 'Customer', 'Plate', 'Amount', 'Status']}
-            rows={pagedSalesRows}
-          />
+          <div className="dashboard-table-wrap">
+            <DataTable
+              headers={['Quotation #', 'Customer', 'Plate', 'Amount', 'Status']}
+              rows={pagedSalesRows}
+            />
+          </div>
           {salesRows.length > DASHBOARD_PAGE_SIZE ? (
             <PaginationBar
               page={salesPage}
@@ -291,10 +338,12 @@ export function DashboardHome({ token, onNavigate }) {
           actionLabel="Go to Schedule"
           onActionClick={() => onNavigate && onNavigate('scheduling')}
         >
-          <DataTable
-            headers={['Time', 'Customer', 'Plate', 'Service', 'Status']}
-            rows={pagedScheduleRows}
-          />
+          <div className="dashboard-table-wrap">
+            <DataTable
+              headers={['Time', 'Customer', 'Plate', 'Service', 'Status']}
+              rows={pagedScheduleRows}
+            />
+          </div>
           {scheduleRows.length > DASHBOARD_PAGE_SIZE ? (
             <PaginationBar
               page={schedulePage}

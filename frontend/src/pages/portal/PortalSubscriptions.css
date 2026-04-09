@@ -1,0 +1,448 @@
+.portal-subs-page {
+  padding: 20px;
+}
+
+.portal-subs-header {
+  margin-bottom: 24px;
+}
+
+.portal-subs-title {
+  margin: 0 0 8px;
+  color: var(--text-primary);
+}
+
+.portal-subs-subtitle {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.portal-subs-request-msg {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.10);
+  color: #8ee5b8;
+  font-size: 13px;
+}
+
+.portal-subs-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.portal-subs-stat-card {
+  padding: 16px;
+  border: 1px solid var(--border-secondary);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+
+.portal-subs-stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.portal-subs-stat-value {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.portal-subs-stat-value.is-active {
+  color: #10b981;
+}
+
+.portal-subs-stat-value.is-expiring {
+  color: #f59e0b;
+}
+
+.portal-subs-stat-value.is-expired {
+  color: #ef4444;
+}
+
+.portal-subs-stat-value.is-revenue {
+  color: #3b82f6;
+}
+
+.portal-subs-tabs {
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.portal-subs-tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 12px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.portal-subs-tab-btn.is-active {
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--text-primary);
+  font-weight: 600;
+}
+
+.portal-subs-center-msg {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+}
+
+.portal-subs-center-msg.is-error {
+  color: #f87171;
+}
+
+.portal-subs-packages-grid,
+.portal-subs-active-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.portal-subs-package-card,
+.portal-subs-active-card {
+  padding: 16px;
+  border: 1px solid var(--border-secondary);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
+}
+
+.portal-subs-package-card {
+  display: grid;
+  gap: 12px;
+}
+
+.portal-subs-package-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.portal-subs-package-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.portal-subs-duration-pill {
+  font-size: 11px;
+  font-weight: 700;
+  color: #c0c8d8;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+.portal-subs-package-description {
+  font-size: 13px;
+  color: var(--text-secondary);
+  min-height: 36px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.portal-subs-package-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.portal-subs-frequency-label {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  display: grid;
+  gap: 5px;
+}
+
+.portal-subs-frequency-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.portal-subs-frequency-select {
+  min-height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  color-scheme: dark;
+}
+
+.portal-subs-frequency-select option {
+  background: #111111;
+  color: #e8edf7;
+}
+
+.portal-subs-frequency-select option:checked,
+.portal-subs-frequency-select option:hover,
+.portal-subs-frequency-select option:focus {
+  background: #1d2b3f;
+  color: #f4f7ff;
+}
+
+.portal-subs-services-box {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 10px 11px;
+}
+
+.portal-subs-services-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.portal-subs-services-list {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--text-secondary);
+  display: grid;
+  gap: 6px;
+}
+
+.portal-subs-services-item,
+.portal-subs-services-empty {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.portal-subs-services-more {
+  margin-top: 7px;
+  font-size: 12px;
+  color: #a0a8b8;
+}
+
+.portal-subs-price-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.portal-subs-price {
+  font-size: 20px;
+  font-weight: 800;
+  color: #d0d8e8;
+}
+
+.portal-subs-subscribe-btn {
+  min-height: 36px;
+  padding: 7px 14px;
+  border-radius: 9px;
+}
+
+.portal-subs-active-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.portal-subs-active-package {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.portal-subs-active-plate {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.portal-subs-status-pill {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.portal-subs-status-pill.is-active {
+  background-color: #10b981;
+}
+
+.portal-subs-status-pill.is-expiring {
+  background-color: #f59e0b;
+}
+
+.portal-subs-status-pill.is-expired,
+.portal-subs-status-pill.is-cancelled {
+  background-color: #ef4444;
+}
+
+.portal-subs-active-dates {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.portal-subs-active-price {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.portal-subs-active-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.portal-subs-view-btn,
+.portal-subs-cancel-btn {
+  border: 1px solid var(--border-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  border-radius: 8px;
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.portal-subs-view-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.portal-subs-cancel-btn {
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+}
+
+.portal-subs-cancel-btn:hover {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.portal-subs-cancel-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.portal-subs-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.65);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.portal-subs-modal {
+  width: min(560px, 100%);
+  border-radius: 12px;
+  border: 1px solid var(--border-secondary);
+  background: #0f1116;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+}
+
+.portal-subs-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.portal-subs-modal-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.portal-subs-modal-close {
+  border: 1px solid var(--border-secondary);
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 8px;
+  min-height: 30px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.portal-subs-modal-content {
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.portal-subs-modal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.portal-subs-modal-row strong {
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.portal-subs-progress-wrap {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.portal-subs-progress-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.portal-subs-progress-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.10);
+  overflow: hidden;
+}
+
+.portal-subs-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981 0%, #22d3ee 100%);
+  width: 0;
+  transition: width 220ms ease;
+}
+
+@media (max-width: 768px) {
+  .portal-subs-page {
+    padding: 14px;
+  }
+
+  .portal-subs-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    border-bottom: none;
+  }
+
+  .portal-subs-tab-btn.is-active {
+    border-bottom: none;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+  }
+}

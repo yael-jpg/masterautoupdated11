@@ -6,7 +6,7 @@ export function SectionCard({ title, subtitle, children, actionLabel, onActionCl
           <h2>{title}</h2>
           {subtitle ? <p>{subtitle}</p> : null}
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div className="section-card-actions">
           {actionNode ? actionNode : null}
           {actionLabel ? (
             <button type="button" onClick={onActionClick}>

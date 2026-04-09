@@ -34,24 +34,26 @@ router.get('/tracking', asyncHandler(async (req, res) => {
 
   const query = `
     SELECT 
-      pst.id,
-      pst.subscription_id,
-      pst.status,
-      pst.due_date,
-      pst.completed_date,
-      pst.notes,
-      pst.created_at,
-      s.vehicle_id,
-      s.subscription_service_id as package_id,
-      pp.name as package_name,
+      a.id,
+      NULL::INT as subscription_id,
+      COALESCE(a.status, 'Due') as status,
+      a.schedule_start as due_date,
+      CASE WHEN COALESCE(a.status, '') = 'Completed' THEN a.schedule_end ELSE NULL END as completed_date,
+      a.notes,
+      a.created_at,
+      a.vehicle_id,
+      NULL::INT as package_id,
+      COALESCE(sv.name, SUBSTRING(a.notes FROM 'Package:\\s*([^\\n\\r]+)'), 'PMS Service') as package_name,
       v.plate_number,
       TRIM(CONCAT_WS(' ', v.make, v.model, v.variant)) as make_model_variant
-    FROM pms_service_tracking pst
-    JOIN subscriptions s ON pst.subscription_id = s.id
-    LEFT JOIN pms_packages pp ON s.subscription_service_id = pp.id
-    LEFT JOIN vehicles v ON s.vehicle_id = v.id
-    WHERE s.customer_id = $1
-    ORDER BY pst.due_date ASC
+    FROM appointments a
+    LEFT JOIN services sv ON sv.id = a.service_id
+    LEFT JOIN vehicles v ON v.id = a.vehicle_id
+    WHERE a.customer_id = $1
+      AND a.notes ILIKE '%[PORTAL PMS AVAIL REQUEST]%'
+      AND LOWER(COALESCE(a.status, '')) <> 'requested'
+      AND LOWER(COALESCE(a.status, '')) <> 'cancelled'
+    ORDER BY a.schedule_start ASC, a.created_at ASC
   `
 
   const tracking = await db.query(query, [customerId])
@@ -65,14 +67,15 @@ router.get('/stats', asyncHandler(async (req, res) => {
 
   const query = `
     SELECT 
-      COALESCE(SUM(CASE WHEN pst.status = 'Due' THEN 1 ELSE 0 END), 0) as due_count,
-      COALESCE(SUM(CASE WHEN pst.status = 'In Progress' THEN 1 ELSE 0 END), 0) as in_progress_count,
-      COALESCE(SUM(CASE WHEN pst.status = 'Completed' THEN 1 ELSE 0 END), 0) as completed_count,
-      COUNT(DISTINCT s.id) as active_subscriptions,
-      COALESCE(SUM(CASE WHEN pst.status = 'Due' AND pst.due_date <= CURRENT_DATE + INTERVAL '7 days' THEN 1 ELSE 0 END), 0) as due_this_week
-    FROM pms_service_tracking pst
-    JOIN subscriptions s ON pst.subscription_id = s.id
-    WHERE s.customer_id = $1
+      COALESCE(SUM(CASE WHEN COALESCE(a.status, '') = 'Due' THEN 1 ELSE 0 END), 0) as due_count,
+      COALESCE(SUM(CASE WHEN COALESCE(a.status, '') = 'In Progress' THEN 1 ELSE 0 END), 0) as in_progress_count,
+      COALESCE(SUM(CASE WHEN COALESCE(a.status, '') = 'Completed' THEN 1 ELSE 0 END), 0) as completed_count,
+      COALESCE(SUM(CASE WHEN COALESCE(a.status, '') = 'Due' AND a.schedule_start <= CURRENT_DATE + INTERVAL '7 days' THEN 1 ELSE 0 END), 0) as due_this_week
+    FROM appointments a
+    WHERE a.customer_id = $1
+      AND a.notes ILIKE '%[PORTAL PMS AVAIL REQUEST]%'
+      AND LOWER(COALESCE(a.status, '')) <> 'requested'
+      AND LOWER(COALESCE(a.status, '')) <> 'cancelled'
   `
 
   const results = await db.query(query, [customerId])

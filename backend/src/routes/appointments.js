@@ -6,8 +6,7 @@ const { validateRequest } = require('../middleware/validateRequest')
 const emailNotificationService = require('../services/emailNotificationService')
 const { writeAuditLog } = require('../utils/auditLog')
 const { requireAuth, requireRole } = require('../middleware/auth')
-const { sendReadyForReleaseEmail, sendReceiptEmail, sendCompletionEmail, sendCancellationEmail, sendBookingConfirmationEmail, sendQuotationApprovedScheduledEmail } = require('../services/mailer')
-const ConfigurationService = require('../services/configurationService')
+const { sendReadyForReleaseEmail, sendReceiptEmail, sendCompletionEmail, sendCancellationEmail } = require('../services/mailer')
 const NotificationService = require('../services/notificationService')
 const { emitDataChanged } = require('../realtime/hub')
 const {
@@ -390,89 +389,11 @@ router.post(
 
     const newAppt = rows[0]
 
-    // ── Send booking-confirmation email (best-effort, never blocks the response) ──
-    try {
-      // 1. Read booking_email config from the settings DB
-      const [cfgEnabled, cfgSubject, cfgGreeting, cfgReminders, cfgClosing] = await Promise.all([
-        ConfigurationService.get('booking_email', 'enabled'),
-        ConfigurationService.get('booking_email', 'subject'),
-        ConfigurationService.get('booking_email', 'greeting'),
-        ConfigurationService.get('booking_email', 'reminders'),
-        ConfigurationService.get('booking_email', 'closing'),
-      ]).catch(() => [null, null, null, null, null])
-
-      // If admin explicitly disabled the booking email, skip quietly
-      if (String(cfgEnabled) === 'false') {
-        console.info('[BookingEmail] Disabled by configuration — skipping')
-      } else {
-        // 2. Fetch customer / vehicle / service details needed for the template
-        const { rows: detail } = await db.query(
-          `SELECT c.full_name AS customer_name,
-                  c.email    AS customer_email,
-                  v.plate_number, v.make, v.model, v.year, v.color,
-                  sv.name    AS service_name,
-                  COALESCE(q.quotation_no, s.reference_no) AS reference_no,
-                  q.notes     AS quotation_notes,
-                  q.created_by AS quotation_created_by
-           FROM appointments a
-           JOIN customers c ON c.id = a.customer_id
-           JOIN vehicles  v ON v.id = a.vehicle_id
-           LEFT JOIN services   sv ON sv.id = a.service_id
-           LEFT JOIN quotations  q ON q.id  = a.quotation_id
-           LEFT JOIN sales       s ON s.id  = a.sale_id
-           WHERE a.id = $1`,
-          [newAppt.id],
-        )
-
-        if (detail[0]?.customer_email) {
-          const quotationNotes = String(detail[0].quotation_notes || '')
-          const isPortalQuotation =
-            newAppt.quotation_id &&
-            quotationNotes.includes('[PORTAL BOOKING REQUEST]') &&
-            (detail[0].quotation_created_by === null || detail[0].quotation_created_by === undefined)
-
-          if (isPortalQuotation) {
-            await sendQuotationApprovedScheduledEmail({
-              to:            detail[0].customer_email,
-              customerName:  detail[0].customer_name,
-              plateNumber:   detail[0].plate_number,
-              make:          detail[0].make,
-              model:         detail[0].model,
-              vehicleYear:   detail[0].year,
-              color:         detail[0].color,
-              scheduleStart: newAppt.schedule_start,
-              scheduleEnd:   newAppt.schedule_end,
-              bay:           newAppt.bay,
-              installerTeam: newAppt.installer_team,
-              serviceName:   detail[0].service_name,
-              referenceNo:   detail[0].reference_no,
-            }).catch(() => {})
-          } else {
-            await sendBookingConfirmationEmail({
-              to:            detail[0].customer_email,
-              customerName:  detail[0].customer_name,
-              plateNumber:   detail[0].plate_number,
-              make:          detail[0].make,
-              model:         detail[0].model,
-              vehicleYear:   detail[0].year,
-              color:         detail[0].color,
-              scheduleStart: newAppt.schedule_start,
-              scheduleEnd:   newAppt.schedule_end,
-              bay:           newAppt.bay,
-              installerTeam: newAppt.installer_team,
-              serviceName:   detail[0].service_name,
-              referenceNo:   detail[0].reference_no,
-              notes:         newAppt.notes,
-              // Config overrides (undefined = use template defaults)
-              configSubject:   cfgSubject   || undefined,
-              configGreeting:  cfgGreeting  || undefined,
-              configReminders: cfgReminders || undefined,
-              configClosing:   cfgClosing   || undefined,
-            }).catch(() => {})
-          }
-        }
-      }
-    } catch (_) { /* email failure must not block the response */ }
+    emailNotificationService.safeFireAndForget('Schedule Approved', () =>
+      emailNotificationService.sendEmail('schedule_approved', req.user?.id, {
+        appointmentId: newAppt.id,
+      }),
+    )
 
     emitDataChanged({ scope: 'appointments', action: 'create', id: newAppt.id, status: newAppt.status })
 

@@ -2,6 +2,14 @@ import { useState, useEffect, useRef } from 'react'
 import { portalGet, portalPut, setPortalSession, getPortalToken } from '../../api/portalClient'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+const PMS_TIER_LABEL_BY_KM = {
+  5000: 'Basic PMS',
+  10000: 'Standard PMS',
+  20000: 'Advanced PMS',
+  40000: 'Major PMS',
+  50000: 'Premium PMS',
+}
+
 function fmtDate(iso) {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -46,6 +54,23 @@ function pmtLabel(p) {
   const total = Number(p.total_amount || 0)
   if (total > 0 && paid >= total) return 'Full Payment'
   return 'Partial'
+}
+
+function normalizePmsLabel(rawValue) {
+  const value = String(rawValue || '').trim()
+  if (!value) return ''
+
+  const legacyNamePattern = /(kilometer\s*pms|km\s*pms)$/i
+  if (!legacyNamePattern.test(value)) return value
+
+  const kmMatch = value.match(/(\d[\d,]*)\s*(km|kilometer)/i)
+  if (!kmMatch) return value
+
+  const km = Number(String(kmMatch[1]).replace(/,/g, ''))
+  if (!Number.isFinite(km) || km <= 0) return value
+
+  const tier = PMS_TIER_LABEL_BY_KM[km] || 'Custom PMS'
+  return `${tier} - ${km.toLocaleString('en-US')} KM`
 }
 
 function useEscClose(onClose) {
@@ -161,7 +186,7 @@ function QuotationDetailModal({ q, onClose }) {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="portal-detail-icon"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
             <div className="portal-detail-card-main">
               <div className="portal-detail-lbl">Service</div>
-              <div className="portal-detail-val">{q.service_package || <span className="portal-detail-dim">—</span>}</div>
+              <div className="portal-detail-val">{normalizePmsLabel(q.service_package) || <span className="portal-detail-dim">—</span>}</div>
             </div>
           </div>
           <div className="portal-detail-card">
@@ -210,7 +235,7 @@ function JobOrderDetailModal({ j, onClose }) {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="portal-detail-icon"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
             <div className="portal-detail-card-main">
               <div className="portal-detail-lbl">Service</div>
-              <div className="portal-detail-val">{j.service_package || <span className="portal-detail-dim">—</span>}</div>
+              <div className="portal-detail-val">{normalizePmsLabel(j.service_package) || <span className="portal-detail-dim">—</span>}</div>
             </div>
           </div>
           <div className="portal-detail-card">
@@ -275,7 +300,7 @@ function PaymentDetailModal({ p, onClose }) {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="portal-detail-icon"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
               <div className="portal-detail-card-main">
                 <div className="portal-detail-lbl">Service</div>
-                <div className="portal-detail-val">{p.service_package}</div>
+                <div className="portal-detail-val">{normalizePmsLabel(p.service_package)}</div>
               </div>
             </div>
           )}
@@ -898,7 +923,7 @@ export function PortalProfile({ customer, onCustomerUpdate }) {
                       <span className="portal-detail-linked portal-detail-mono">→ {q.linked_job_order_no}</span>
                     )}
                   </div>
-                  <div className="portal-profile-item-subline">{q.plate_number} · {q.service_package}</div>
+                  <div className="portal-profile-item-subline">{q.plate_number} · {normalizePmsLabel(q.service_package)}</div>
                 </div>
                 <div className="portal-profile-item-right">
                   <div className="portal-profile-item-amount">₱{Number(q.total_amount).toLocaleString()}</div>
@@ -928,7 +953,7 @@ export function PortalProfile({ customer, onCustomerUpdate }) {
                     <span className="portal-profile-item-ref">{j.reference_no}</span>
                     <span className={`badge ${JO_STATUS_COLOR[j.workflow_status] || 'badge-neutral'}`}>{j.workflow_status || 'Pending'}</span>
                   </div>
-                  <div className="portal-profile-item-subline">{j.plate_number} · {j.service_package}</div>
+                  <div className="portal-profile-item-subline">{j.plate_number} · {normalizePmsLabel(j.service_package)}</div>
                 </div>
                 <div className="portal-profile-item-right">
                   <div className="portal-profile-item-amount">₱{Number(j.total_amount).toLocaleString()}</div>
@@ -964,7 +989,7 @@ export function PortalProfile({ customer, onCustomerUpdate }) {
                         <span className="portal-profile-pay-pill">{lbl}</span>
                         {p.payment_type && <span className="portal-profile-item-note">{p.payment_type}</span>}
                       </div>
-                      <div className="portal-profile-item-subline">{p.sale_reference_no || '—'}{p.service_package ? ` · ${p.service_package}` : ''}</div>
+                      <div className="portal-profile-item-subline">{p.sale_reference_no || '—'}{p.service_package ? ` · ${normalizePmsLabel(p.service_package)}` : ''}</div>
                       {p.plate_number && (
                         <div className="portal-profile-pay-plate">{p.plate_number}{p.make ? ` · ${p.make} ${p.model || ''}` : ''}</div>
                       )}

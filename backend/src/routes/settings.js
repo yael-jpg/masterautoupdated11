@@ -8,7 +8,11 @@ const router = express.Router()
 
 router.get(
   '/',
+  requireAuth,
   asyncHandler(async (_req, res) => {
+    if (_req.user?.role !== 'SuperAdmin') {
+      return res.status(403).json({ message: 'SuperAdmin access required' })
+    }
     const result = await SystemSettingsService.getAll()
     return res.json(result)
   }),
@@ -18,9 +22,8 @@ router.put(
   '/',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const role = req.user?.role
-    if (!['Admin', 'SuperAdmin'].includes(role)) {
-      return res.status(403).json({ message: 'Admin access required' })
+    if (req.user?.role !== 'SuperAdmin') {
+      return res.status(403).json({ message: 'SuperAdmin access required' })
     }
 
     const settings = req.body?.settings && typeof req.body.settings === 'object'

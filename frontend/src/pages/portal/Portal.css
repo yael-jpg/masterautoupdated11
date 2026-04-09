@@ -202,6 +202,14 @@
   transform: translateY(-1px);
 }
 
+.portal-sidebar-toggle-icon {
+  transition: transform 0.3s ease;
+}
+
+.portal-sidebar-toggle-icon.is-collapsed {
+  transform: rotate(180deg);
+}
+
 /* Hidden on desktop � shown via media query on mobile */
 .portal-mobile-hamburger {
   display: none;
@@ -221,6 +229,12 @@
   object-fit: contain;
   display: block;
   filter: drop-shadow(0 0 8px rgba(200, 200, 200, 0.50));
+}
+
+.portal-avatar-compact {
+  width: 30px;
+  height: 30px;
+  font-size: 12px;
 }
 
 
@@ -3555,6 +3569,264 @@
   margin-left: 2px;
 }
 
+.portal-booking-full-row {
+  grid-column: 1 / -1;
+}
+
+.portal-booking-error {
+  margin-bottom: 16px;
+}
+
+.portal-booking-empty-text {
+  font-size: 13px;
+  color: rgba(189, 200, 218, 0.45);
+  margin: 0;
+}
+
+.portal-booking-help-text {
+  font-size: 11px;
+  color: rgba(189, 200, 218, 0.45);
+  margin-top: 4px;
+  display: block;
+}
+
+.portal-booking-service-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.portal-booking-service-label-icon {
+  flex-shrink: 0;
+}
+
+.portal-booking-materials-notes {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.portal-booking-materials-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: rgba(189, 200, 218, 0.65);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.portal-booking-materials-body {
+  margin-top: 6px;
+  white-space: pre-wrap;
+  font-size: 12.5px;
+  color: rgba(189, 200, 218, 0.85);
+  line-height: 1.5;
+}
+
+.portal-booking-release-pill {
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 8px;
+  border-radius: 20px;
+  padding: 2px 9px;
+}
+
+.portal-booking-release-pill.is-coating {
+  color: #5eda98;
+  background: rgba(94, 218, 152, 0.10);
+  border: 1px solid rgba(94, 218, 152, 0.25);
+}
+
+.portal-booking-release-pill.is-ppf {
+  color: #a888ff;
+  background: rgba(168, 136, 255, 0.10);
+  border: 1px solid rgba(168, 136, 255, 0.25);
+}
+
+.portal-booking-notes-input {
+  min-height: 90px;
+}
+
+.portal-booking-inline-subprice {
+  font-weight: 400;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.portal-booking-release-text.is-coating {
+  color: #5eda98;
+}
+
+.portal-booking-release-text.is-ppf {
+  color: #a888ff;
+}
+
+.portal-booking-submit-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.portal-booking-submit-btn,
+.portal-booking-success-btn {
+  max-width: 220px;
+}
+
+.portal-booking-submit-hint {
+  font-size: 12px;
+  color: rgba(189, 200, 218, 0.40);
+}
+
+.portal-booking-success-mono {
+  font-family: var(--font-mono);
+}
+
+.portal-booking-success-footnote {
+  margin-top: 10px;
+  font-size: 12px;
+  color: rgba(189, 200, 218, 0.55);
+  text-align: center;
+}
+
+.portal-booking-confirm-error {
+  margin-top: 8px;
+}
+
+.portal-booking-confirm-submit {
+  flex: 1;
+}
+
+/* Inline process panel cleanup */
+.portal-process-panel {
+  margin-top: 10px;
+  padding: 13px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.portal-process-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 11px;
+}
+
+.portal-process-panel-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #c0c0c0;
+  flex-shrink: 0;
+}
+
+.portal-process-panel-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #c0c0c0;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.portal-process-panel-subtitle {
+  font-size: 11px;
+  color: rgba(189, 200, 218, 0.50);
+  margin-top: 1px;
+}
+
+.portal-process-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.portal-process-step {
+  display: flex;
+  gap: 12px;
+  position: relative;
+}
+
+.portal-process-step-line {
+  position: absolute;
+  left: 11px;
+  top: 24px;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.portal-process-step-dot {
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: rgba(10, 13, 30, 0.85);
+  border: 1px solid color-mix(in srgb, var(--step-color) 33%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--step-color);
+  z-index: 1;
+  margin-top: 1px;
+}
+
+.portal-process-step-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.portal-process-step-content.is-spaced {
+  padding-bottom: 11px;
+}
+
+.portal-process-step-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.portal-process-step-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f2;
+}
+
+.portal-process-step-timing {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--step-color) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--step-color) 25%, transparent);
+  color: var(--step-color);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.portal-process-step-note {
+  font-size: 11.5px;
+  color: rgba(189, 200, 218, 0.45);
+  margin-top: 2px;
+  font-style: italic;
+}
+
+.portal-process-step-warning {
+  font-size: 11.5px;
+  color: rgba(248, 113, 113, 0.95);
+  margin-top: 2px;
+  font-weight: 700;
+}
+
 /* -- Service Picker trigger ------------------------------- */
 .portal-svc-trigger {
   display: flex;
@@ -3583,6 +3855,16 @@
   border-color: rgba(200, 200, 200, 0.55);
   background: rgba(200, 200, 200, 0.07);
   box-shadow: 0 0 0 3px rgba(200, 200, 200, 0.10);
+}
+
+.portal-svc-trigger-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s;
+  transform: rotate(0deg);
+}
+
+.portal-svc-trigger-chevron.open {
+  transform: rotate(180deg);
 }
 
 .portal-svc-trigger-input {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const GROUP_LABELS = {
   master:     'Master Data',
@@ -10,6 +10,31 @@ const GROUP_LABELS = {
 
 export function Sidebar({ navItems, activeKey, onChange, user, onLogout, collapsed }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const userMenuRef = useRef(null)
+
+  useEffect(() => {
+    if (!menuOpen) return undefined
+
+    const handleOutsideClick = (event) => {
+      if (!userMenuRef.current?.contains(event.target)) {
+        setMenuOpen(false)
+      }
+    }
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [menuOpen])
 
   // Collect unique group keys in insertion order
   const groupKeys = []
@@ -29,10 +54,10 @@ export function Sidebar({ navItems, activeKey, onChange, user, onLogout, collaps
       <div className="sidebar-brand">
         <div className="brand-header">
           {collapsed
-            ? <img src="/images/logo-letter.png" alt="M" className="sidebar-logo-letter" />
+            ? <img src="/images/logo-letter.png" alt="M" className="sidebar-logo-letter" loading="lazy" decoding="async" />
             : (
               <div className="brand-name-row">
-                <img src="/images/logo.png" alt="MasterAuto" className="sidebar-logo" />
+                <img src="/images/logo.png" alt="MasterAuto" className="sidebar-logo" loading="lazy" decoding="async" />
               </div>
             )
           }
@@ -92,7 +117,7 @@ export function Sidebar({ navItems, activeKey, onChange, user, onLogout, collaps
               <span className="sidebar-user-name">{user?.fullName}</span>
               <small className="sidebar-user-role">{user?.role}</small>
             </div>
-            <div className="sidebar-user-menu" style={{ position: 'relative' }}>
+            <div className="sidebar-user-menu" ref={userMenuRef}>
               <button
                 type="button"
                 className="sidebar-dots-btn"

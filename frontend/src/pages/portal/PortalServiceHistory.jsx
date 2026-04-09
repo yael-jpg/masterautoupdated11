@@ -148,7 +148,7 @@ export function PortalServiceHistory() {
   }, [mainTab, selectedVehicleId])
 
   if (loading) {
-    return <div style={{ color: 'rgba(189,200,218,0.45)', padding: 48, textAlign: 'center', fontSize: 13 }}>Loading…</div>
+    return <div className="portal-loading">Loading…</div>
   }
 
   return (
@@ -158,7 +158,7 @@ export function PortalServiceHistory() {
         <p>Complete record of all services performed on your vehicles.</p>
       </div>
 
-      <div className="portal-vd-tabs" style={{ marginBottom: 14 }}>
+      <div className="portal-vd-tabs portal-vd-tabs-spaced">
         {[
           { key: 'service', label: 'Service Records' },
           { key: 'photos', label: 'Photos' },
@@ -208,7 +208,7 @@ export function PortalServiceHistory() {
               <div key={r.id} className="portal-timeline-item">
                 <div className="portal-timeline-dot" />
                 <div
-                  className="portal-timeline-card"
+                  className="portal-timeline-card portal-timeline-card--interactive"
                   role="button"
                   tabIndex={0}
                   onClick={() => setExpandedRecordId((prev) => (prev === r.id ? null : r.id))}
@@ -218,46 +218,39 @@ export function PortalServiceHistory() {
                       setExpandedRecordId((prev) => (prev === r.id ? null : r.id))
                     }
                   }}
-                  style={{ cursor: 'pointer' }}
                 >
                   {/* Header row */}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
+                  <div className="portal-history-head-row">
                     <div className="portal-timeline-date">
                       {new Date(r.service_date).toLocaleDateString('en-PH', {
                         weekday: 'short', year: 'numeric', month: 'long', day: 'numeric',
                       })}
                     </div>
                     {r.reference_no && (
-                      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: 'rgba(200,200,200,0.55)', fontFamily: 'monospace' }}>
+                      <span className="portal-history-ref-no">
                         {r.reference_no}
                       </span>
                     )}
                   </div>
 
                   <div className="portal-timeline-title">{r.service_description || 'Service Record'}</div>
-                  <div className="portal-timeline-meta" style={{ marginTop: 4 }}>
+                  <div className="portal-timeline-meta portal-timeline-meta-spaced">
                     {r.plate_number} · {r.year} {r.make} {r.model}
                     {r.odometer_reading ? ` · ${Number(r.odometer_reading).toLocaleString()} km` : ''}
                   </div>
 
                   {/* Status + amount row */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+                  <div className="portal-history-status-row">
                     {r.workflow_status && (
-                      <span style={{
-                        fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em',
-                        textTransform: 'uppercase', padding: '3px 10px', borderRadius: 20,
-                        background: 'rgba(200,200,200,0.08)',
-                        border: '1px solid rgba(200,200,200,0.20)',
-                        color: 'rgba(200,200,200,0.75)',
-                      }}>
+                      <span className="portal-history-status-pill">
                         {r.workflow_status}
                       </span>
                     )}
                     {r.doc_type && (
-                      <span style={{ fontSize: 11, color: 'rgba(189,200,218,0.40)' }}>{r.doc_type}</span>
+                      <span className="portal-history-doc-type">{r.doc_type}</span>
                     )}
                     {r.total_amount && (
-                      <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(200,200,200,0.80)', marginLeft: 'auto' }}>
+                      <span className="portal-history-amount">
                         ₱{Number(r.total_amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                       </span>
                     )}
@@ -265,15 +258,7 @@ export function PortalServiceHistory() {
 
                   {/* Expanded details (click card) */}
                   {expandedRecordId === r.id && (
-                    <div style={{
-                      marginTop: 14,
-                      paddingTop: 14,
-                      borderTop: '1px solid rgba(255,255,255,0.06)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 10,
-                      cursor: 'default',
-                    }}
+                    <div className="portal-history-expanded"
                     onClick={(e) => e.stopPropagation()}
                     >
                       {([
@@ -282,9 +267,9 @@ export function PortalServiceHistory() {
                         r.doc_type && ['Document Type', r.doc_type],
                         r.total_amount && ['Total Amount', `₱${Number(r.total_amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`],
                       ].filter(Boolean)).map(([label, value]) => (
-                        <div key={label} style={{ display: 'flex', gap: 12, fontSize: 13 }}>
-                          <span style={{ color: 'rgba(189,200,218,0.45)', minWidth: 120, flexShrink: 0 }}>{label}</span>
-                          <span style={{ color: '#e2e8f2', fontWeight: 500 }}>{value}</span>
+                        <div key={label} className="portal-history-detail-row">
+                          <span className="portal-history-detail-label">{label}</span>
+                          <span className="portal-history-detail-value">{value}</span>
                         </div>
                       ))}
 
@@ -303,27 +288,19 @@ export function PortalServiceHistory() {
                         if (!configuredProcess && !showTimeline) return null
 
                         return (
-                          <div style={{ marginTop: 4 }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'rgba(200,200,200,0.45)', marginBottom: 8 }}>
+                          <div className="portal-history-block">
+                            <div className="portal-history-block-title">
                               Process
                             </div>
 
                             {configuredProcess && (
-                              <div style={{
-                                padding: '10px 12px',
-                                background: 'rgba(255,255,255,0.025)',
-                                borderRadius: 8,
-                                color: 'rgba(226,232,242,0.88)',
-                                fontSize: 13,
-                                lineHeight: 1.5,
-                                whiteSpace: 'pre-wrap',
-                              }}>
+                              <div className="portal-history-note-card">
                                 {configuredProcess}
                               </div>
                             )}
 
                             {!configuredProcess && (
-                              <div style={{ marginTop: 2 }}>
+                              <div className="portal-history-process-fallback">
                                 {isPpf ? (
                                   <PPFProcess />
                                 ) : isCoat ? (
@@ -340,24 +317,20 @@ export function PortalServiceHistory() {
                       })()}
 
                       {Array.isArray(r.items) && r.items.length > 0 && (
-                        <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'rgba(200,200,200,0.45)', marginBottom: 8 }}>
+                        <div className="portal-history-block">
+                          <div className="portal-history-block-title">
                             Services / Items
                           </div>
                           {r.items.map((item, i) => (
-                            <div key={i} style={{
-                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                              padding: '8px 12px', background: 'rgba(255,255,255,0.025)',
-                              borderRadius: 8, marginBottom: 5, gap: 12,
-                            }}>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 13, color: 'rgba(226,232,242,0.85)' }}>{item.name}</div>
+                            <div key={i} className="portal-history-item-row">
+                              <div className="portal-history-item-main">
+                                <div className="portal-history-item-name">{item.name}</div>
                               </div>
                               {item.qty && item.qty > 1 && (
-                                <span style={{ fontSize: 11, color: 'rgba(189,200,218,0.45)', flexShrink: 0 }}>×{item.qty}</span>
+                                <span className="portal-history-item-qty">×{item.qty}</span>
                               )}
                               {item.price && (
-                                <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(200,200,200,0.70)', flexShrink: 0, fontFamily: 'monospace' }}>
+                                <span className="portal-history-item-price">
                                   ₱{Number(item.price).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                                 </span>
                               )}
@@ -367,26 +340,18 @@ export function PortalServiceHistory() {
                       )}
 
                       {r.materials_notes && String(r.materials_notes).trim() && (
-                        <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'rgba(200,200,200,0.45)', marginBottom: 8 }}>
+                        <div className="portal-history-block">
+                          <div className="portal-history-block-title">
                             Materials Notes
                           </div>
-                          <div style={{
-                            padding: '10px 12px',
-                            background: 'rgba(255,255,255,0.025)',
-                            borderRadius: 8,
-                            color: 'rgba(226,232,242,0.82)',
-                            fontSize: 13,
-                            lineHeight: 1.55,
-                            whiteSpace: 'pre-wrap',
-                          }}>
+                          <div className="portal-history-note-card is-muted">
                             {String(r.materials_notes).trim()}
                           </div>
                         </div>
                       )}
 
                       {r.remarks && (
-                        <div style={{ fontSize: 12, color: 'rgba(189,200,218,0.55)', fontStyle: 'italic', paddingTop: 4 }}>
+                        <div className="portal-history-remarks">
                           📝 {r.remarks}
                         </div>
                       )}
@@ -412,12 +377,8 @@ export function PortalServiceHistory() {
           const filteredPhotos = photoTab === 'all' ? photos : photos.filter((p) => p.photo_type === photoTab)
 
           return (
-            <div style={{
-              marginTop: 12,
-              paddingTop: 14,
-              borderTop: '1px solid rgba(255,255,255,0.06)',
-            }}>
-              <div className="portal-vd-section-title" style={{ marginBottom: 10 }}>
+            <div className="portal-history-asset-section">
+              <div className="portal-vd-section-title portal-vd-section-title-spaced">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" />
                   <polyline points="21 15 16 10 5 21" />
@@ -490,12 +451,8 @@ export function PortalServiceHistory() {
           const damageOnly = serviceRecords.filter((sr) => sr.damage_notes)
 
           return (
-            <div style={{
-              marginTop: 12,
-              paddingTop: 14,
-              borderTop: '1px solid rgba(255,255,255,0.06)',
-            }}>
-              <div className="portal-vd-section-title" style={{ marginBottom: 10 }}>
+            <div className="portal-history-asset-section">
+              <div className="portal-vd-section-title portal-vd-section-title-spaced">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                   <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />

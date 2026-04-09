@@ -318,7 +318,7 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
     if (!form.make?.trim()) errors.make = 'Staff must select a brand (Make)'
     if (!form.model?.trim()) errors.model = 'Vehicle model is required'
     if (form.year === '' || form.year === null || Number.isNaN(Number(form.year)) || Number(form.year) < 1900) {
-      errors.year = 'A valid year after 1900 is required'
+      errors.year = 'Year model must be 1900 or later (19xx and up are allowed)'
     }
     if (form.odometer === '' || form.odometer === null || Number.isNaN(Number(form.odometer)) || Number(form.odometer) < 0) {
       errors.odometer = 'Valid odometer reading (>= 0) is required'
@@ -576,16 +576,40 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
 
             <div className="form-group">
               <label className="vf-label">Model <span className="vf-required">*</span></label>
-              <input
-                placeholder="Enter model name"
-                value={form.model}
-                onChange={(event) => {
-                  setForm((prev) => ({ ...prev, model: event.target.value }))
-                  setFieldErrors(p => ({ ...p, model: null }))
-                }}
-                required
-                className={fieldErrors.model ? 'vf-field-error' : ''}
-              />
+              {!form.make ? (
+                <input
+                  placeholder="Select a make first"
+                  value={form.model}
+                  onChange={() => {}}
+                  disabled
+                  className={fieldErrors.model ? 'vf-field-error' : ''}
+                />
+              ) : (
+                <>
+                <SearchableSelect
+                  options={[
+                    ...models.map((m) => ({ value: m.name, label: m.name })),
+                  ]}
+                  value={form.model}
+                  onChange={(val) => {
+                    setForm((prev) => ({ ...prev, model: String(val || '').trim(), _customModel: false, variant: '', _customVariant: false }))
+                    setFieldErrors((p) => ({ ...p, model: null }))
+                  }}
+                  placeholder="Search model..."
+                  required
+                  allowCustomValue
+                />
+                  {models.length > 0 && (
+                    <button
+                      type="button"
+                      className="vf-back-link"
+                      onClick={() => setForm((prev) => ({ ...prev, model: '', variant: '', _customVariant: false }))}
+                    >
+                      {'Clear model'}
+                    </button>
+                  )}
+                </>
+              )}
               {fieldErrors.model && <div className="vf-inline-error">{fieldErrors.model}</div>}
             </div>
 
@@ -603,16 +627,36 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
 
             <div className="form-group">
               <label className="vf-label">Variant</label>
-              <input
-                placeholder={
-                  !form.make ? 'Select a make first' :
-                    !form.model ? 'Select a model first' :
-                      'e.g. 1.3 E MT'
-                }
-                value={form.variant}
-                onChange={(event) => setForm((prev) => ({ ...prev, variant: event.target.value }))}
-                disabled={!form.make || !form.model}
-              />
+              {!form.model ? (
+                <input
+                  placeholder="Select a model first"
+                  value={form.variant}
+                  onChange={() => {}}
+                  disabled
+                />
+              ) : (
+                <>
+                <SearchableSelect
+                  options={variants.map((v) => ({ value: v.name, label: v.name }))}
+                  value={form.variant}
+                  onChange={(val) => {
+                    setForm((prev) => ({ ...prev, variant: String(val || '').trim(), _customVariant: false }))
+                  }}
+                  placeholder={form.model ? 'Search variant...' : 'Select a model first'}
+                  disabled={!form.model}
+                  allowCustomValue
+                />
+                  {variants.length > 0 && (
+                    <button
+                      type="button"
+                      className="vf-back-link"
+                      onClick={() => setForm((prev) => ({ ...prev, variant: '', _customVariant: false }))}
+                    >
+                      {'Clear variant'}
+                    </button>
+                  )}
+                </>
+              )}
             </div>
 
             <div className="form-group">
@@ -624,6 +668,8 @@ export function VehiclesPage({ token, user, preselectedCustomerId, onPreselected
                   type="number"
                   placeholder="2024"
                   value={form.year}
+                  min="1900"
+                  max={new Date().getFullYear() + 1}
                   onChange={(event) => {
                     setForm((prev) => ({ ...prev, year: event.target.value }))
                     setFieldErrors(p => ({ ...p, year: null }))

@@ -17,6 +17,90 @@ const BASIC_PMS_CORE_INCLUSIONS = [
   'Electrical & Engine: Battery health check (voltage/terminals), light inspection, and basic computer box scanning.',
 ]
 
+const PMS_TIER_LABEL_BY_KM = {
+  5000: 'Basic PMS',
+  10000: 'Standard PMS',
+  20000: 'Advanced PMS',
+  40000: 'Major PMS',
+  50000: 'Premium PMS',
+}
+
+const PMS_INCLUSIONS_BY_KM = {
+  5000: BASIC_PMS_CORE_INCLUSIONS,
+  10000: [
+    'Engine Maintenance PLUS: Replacement of engine oil and oil filter, and full underhood inspection.',
+    'Fluid Service PLUS: Top-up of brake, clutch, coolant, and washer fluids with leak-point inspection.',
+    'Brake System PLUS: Brake pad/shoe wear check, rotor/drum cleaning, and brake fluid condition check.',
+    'Inspection & Cleaning PLUS: Air filter and cabin filter inspection with replacement recommendation.',
+    'Underchassis & Tires PLUS: Tire rotation, pressure balancing, and steering/suspension visual check.',
+    'Electrical & Engine PLUS: Battery load test, charging output test, and scan for warning faults.',
+  ],
+  20000: [
+    'Engine Maintenance ADVANCED: Engine oil and oil filter replacement plus spark plug inspection.',
+    'Fluid Service ADVANCED: Brake fluid moisture test and coolant condition test with top-up/reset.',
+    'Brake System ADVANCED: Front and rear brake cleaning, adjustment, and wear trend recording.',
+    'Inspection & Cleaning ADVANCED: Air and cabin filter replacement as needed with throttle body check.',
+    'Underchassis & Tires ADVANCED: Tire rotation with wheel alignment check and underchassis torque check.',
+    'Electrical & Engine ADVANCED: Battery/alternator test and ECU scan with service reminder reset.',
+  ],
+  40000: [
+    'Engine Maintenance MAJOR: Engine oil and oil filter replacement with full tune-up inspection.',
+    'Fluid Service MAJOR: Brake fluid replacement and coolant flush/top-up based on condition.',
+    'Brake System MAJOR: Detailed brake overhaul check including caliper slide pins and brake lines.',
+    'Inspection & Cleaning MAJOR: Air and cabin filter replacement with spark plug service recommendation.',
+    'Underchassis & Tires MAJOR: Suspension bushings, steering links, and CV boots comprehensive inspection.',
+    'Electrical & Engine MAJOR: Battery health, starter draw test, alternator output, and full scan diagnostics.',
+  ],
+  50000: [
+    'Engine Maintenance PREMIUM: Engine oil and oil filter replacement with long-interval wear assessment.',
+    'Fluid Service PREMIUM: Transmission fluid check, brake fluid service, and coolant refresh as required.',
+    'Brake System PREMIUM: Full brake performance test, cleaning, and component replacement advisory.',
+    'Inspection & Cleaning PREMIUM: Air/cabin filter replacement and ignition/fuel system inspection.',
+    'Underchassis & Tires PREMIUM: Deep underchassis inspection with steering, suspension, and tire health report.',
+    'Electrical & Engine PREMIUM: Battery, charging, and electronic systems diagnostics with preventive recommendations.',
+  ],
+}
+
+function extractPmsServiceNames(services) {
+  if (!Array.isArray(services)) return []
+  return services
+    .map((item) => {
+      if (item && typeof item === 'object') return String(item.name || '').trim()
+      return String(item || '').trim()
+    })
+    .filter(Boolean)
+}
+
+function parseManualServices(text) {
+  return String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+function areSameServiceLists(a, b) {
+  if (a.length !== b.length) return false
+  return a.every((v, i) => String(v).toLowerCase() === String(b[i]).toLowerCase())
+}
+
+function getPmsTierLabel(kmValue) {
+  const km = Number(kmValue)
+  if (!Number.isFinite(km) || km <= 0) return 'Custom PMS'
+  return PMS_TIER_LABEL_BY_KM[km] || 'Custom PMS'
+}
+
+function getPmsDisplayName(name, kmValue) {
+  const rawName = String(name || '').trim()
+  const km = Number(kmValue)
+  if (!Number.isFinite(km) || km <= 0) return rawName || 'PMS Package'
+
+  const legacyNamePattern = /(kilometer\s*pms|km\s*pms)$/i
+  if (!rawName || legacyNamePattern.test(rawName)) {
+    return `${getPmsTierLabel(km)} - ${km.toLocaleString('en-US')} KM`
+  }
+  return rawName
+}
+
 function MethodsEditor({ value, onChange, disabled }) {
   const [customInput, setCustomInput] = useState('')
 
@@ -706,9 +790,9 @@ export function SettingsPage({ token, user }) {
   const [subsForm, setSubsForm] = useState({
     name: '',
     description: '',
-    price: '',
-    duration: 'Monthly',
-    customDays: '',
+    priceWeekly: '',
+    priceMonthly: '',
+    priceAnnual: '',
     status: 'Active',
   })
 
@@ -729,6 +813,8 @@ export function SettingsPage({ token, user }) {
     kilometerInterval: '',
     description: '',
     price: '',
+    inclusionMode: 'auto',
+    manualServicesText: '',
     status: 'Active',
   })
 
@@ -739,14 +825,6 @@ export function SettingsPage({ token, user }) {
   useEffect(() => {
     draftRef.current = draft
   }, [draft])
-
-  const getDurationValue = (form) => {
-    if (form.duration === 'Custom') {
-      const days = Number(form.customDays)
-      return Number.isFinite(days) && days > 0 ? `${days} days` : ''
-    }
-    return form.duration
-  }
 
   useEffect(() => {
     return () => {
@@ -978,25 +1056,24 @@ export function SettingsPage({ token, user }) {
     setSubsForm({
       name: '',
       description: '',
-      price: '',
-      duration: 'Monthly',
-      customDays: '',
+      priceWeekly: '',
+      priceMonthly: '',
+      priceAnnual: '',
       status: 'Active',
     })
     setShowSubsModal(true)
   }
 
   const openEditSubscriptionModal = (pkg) => {
-    const durationRaw = String(pkg.duration || 'Monthly')
-    const customMatch = durationRaw.match(/^(\d+)\s*days?$/i)
+    const freq = pkg?.price_by_frequency || {}
     setEditingPackage(pkg)
     setSubsError('')
     setSubsForm({
       name: pkg.name || '',
       description: pkg.description || '',
-      price: pkg.price == null ? '' : String(pkg.price),
-      duration: customMatch ? 'Custom' : durationRaw,
-      customDays: customMatch ? customMatch[1] : '',
+      priceWeekly: freq.weekly == null ? '' : String(freq.weekly),
+      priceMonthly: freq.monthly == null ? String(pkg.price ?? '') : String(freq.monthly),
+      priceAnnual: freq.annual == null ? '' : String(freq.annual),
       status: String(pkg.status || 'Active') === 'Inactive' ? 'Inactive' : 'Active',
     })
     setShowSubsModal(true)
@@ -1004,10 +1081,17 @@ export function SettingsPage({ token, user }) {
 
   const saveSubscriptionPackage = async () => {
     const cleanName = subsForm.name.trim()
-    const cleanPrice = Number(subsForm.price)
-    const duration = getDurationValue(subsForm)
-    if (!cleanName || !Number.isFinite(cleanPrice) || cleanPrice < 0 || !duration) {
-      setSubsError('Package Name, Price, and Duration are required.')
+    const weekly = Number(subsForm.priceWeekly)
+    const monthly = Number(subsForm.priceMonthly)
+    const annual = Number(subsForm.priceAnnual)
+    const duration = String(editingPackage?.duration || 'Monthly')
+    if (
+      !cleanName ||
+      !Number.isFinite(weekly) || weekly < 0 ||
+      !Number.isFinite(monthly) || monthly < 0 ||
+      !Number.isFinite(annual) || annual < 0
+    ) {
+      setSubsError('Package Name and valid Weekly/Monthly/Annual prices are required.')
       return
     }
 
@@ -1017,7 +1101,12 @@ export function SettingsPage({ token, user }) {
       const payload = {
         name: cleanName,
         description: subsForm.description.trim(),
-        price: cleanPrice,
+        price: monthly,
+        price_by_frequency: {
+          weekly,
+          monthly,
+          annual,
+        },
         duration,
         services: [],
         status: subsForm.status,
@@ -1062,7 +1151,23 @@ export function SettingsPage({ token, user }) {
   const formatPmsNameFromKm = (km) => {
     const n = Number(km)
     if (!Number.isFinite(n) || n <= 0) return ''
-    return `${n.toLocaleString('en-US')} KM PMS`
+    return `${getPmsTierLabel(n)} - ${n.toLocaleString('en-US')} KM`
+  }
+
+  const getAutoPmsInclusions = (kmValue, excludePackageId = null) => {
+    const km = Number(kmValue)
+    if (!Number.isFinite(km) || km <= 0) return BASIC_PMS_CORE_INCLUSIONS
+
+    // For official tiers, always use the fixed template (do not inherit old same-KM rows).
+    if (PMS_INCLUSIONS_BY_KM[km]) return PMS_INCLUSIONS_BY_KM[km]
+
+    const sameKm = pmsPackages.find((pkg) => (
+      Number(pkg.kilometer_interval) === km && Number(pkg.id) !== Number(excludePackageId || 0)
+    ))
+    const sameKmServices = extractPmsServiceNames(sameKm?.services)
+    if (sameKmServices.length > 0) return sameKmServices
+
+    return BASIC_PMS_CORE_INCLUSIONS
   }
 
   const loadPmsPackages = useCallback(async () => {
@@ -1093,12 +1198,18 @@ export function SettingsPage({ token, user }) {
       kilometerInterval: '',
       description: '',
       price: '',
+      inclusionMode: 'auto',
+      manualServicesText: '',
       status: 'Active',
     })
     setShowPmsModal(true)
   }
 
   const openEditPmsModal = (pkg) => {
+    const existingServices = extractPmsServiceNames(pkg?.services)
+    const autoServices = getAutoPmsInclusions(pkg?.kilometer_interval, pkg?.id)
+    const isAuto = existingServices.length > 0 && areSameServiceLists(existingServices, autoServices)
+
     setEditingPmsPackage(pkg)
     setPmsError('')
     setPmsNameManuallyEdited(true)
@@ -1107,6 +1218,8 @@ export function SettingsPage({ token, user }) {
       kilometerInterval: pkg.kilometer_interval == null ? '' : String(pkg.kilometer_interval),
       description: pkg.description || '',
       price: pkg.estimated_price == null ? '' : String(pkg.estimated_price),
+      inclusionMode: isAuto ? 'auto' : 'manual',
+      manualServicesText: existingServices.join('\n'),
       status: String(pkg.status || 'Active') === 'Inactive' ? 'Inactive' : 'Active',
     })
     setShowPmsModal(true)
@@ -1135,11 +1248,21 @@ export function SettingsPage({ token, user }) {
     setPmsSaving(true)
     setPmsError('')
     try {
+      const autoServices = getAutoPmsInclusions(km, editingPmsPackage?.id)
+      const manualServices = parseManualServices(pmsForm.manualServicesText)
+      const selectedServices = pmsForm.inclusionMode === 'manual' ? manualServices : autoServices
+
+      if (!selectedServices.length) {
+        setPmsError('Included Services is required. Please add at least one service.')
+        setPmsSaving(false)
+        return
+      }
+
       const payload = {
         name: cleanName,
         kilometer_interval: km,
         description: pmsForm.description.trim(),
-        services: BASIC_PMS_CORE_INCLUSIONS.map((name) => ({ id: null, name })),
+        services: selectedServices.map((name) => ({ id: null, name })),
         estimated_price: parsedPrice,
         status: pmsForm.status,
       }
@@ -2634,7 +2757,7 @@ export function SettingsPage({ token, user }) {
                 : String(pkg.status || 'Active') === 'Inactive'
             if (!statusOk) return false
             if (!keyword) return true
-            return [pkg.name, pkg.description, pkg.duration]
+              return [pkg.name, pkg.description]
               .map((v) => String(v || '').toLowerCase())
               .some((v) => v.includes(keyword))
           })
@@ -2654,7 +2777,7 @@ export function SettingsPage({ token, user }) {
                   <input
                     className="settings-input"
                     style={{ flex: '1 1 280px' }}
-                    placeholder="Search package, description, duration..."
+                    placeholder="Search package, description..."
                     value={subsSearch}
                     onChange={(e) => setSubsSearch(e.target.value)}
                   />
@@ -2670,25 +2793,27 @@ export function SettingsPage({ token, user }) {
                     <thead>
                       <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                         <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Package Name</th>
-                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Price</th>
-                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Duration</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Weekly</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Monthly</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Annual</th>
                         <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Status</th>
                         <th style={{ padding: '8px 10px', textAlign: 'left', color: '#94a3b8', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {subsLoading ? (
-                        <tr><td colSpan="5" style={{ padding: '16px 10px', color: '#64748b' }}>Loading packages…</td></tr>
+                        <tr><td colSpan="7" style={{ padding: '16px 10px', color: '#64748b' }}>Loading packages…</td></tr>
                       ) : filtered.length === 0 ? (
-                        <tr><td colSpan="5" style={{ padding: '16px 10px', color: '#64748b' }}>No packages found.</td></tr>
+                        <tr><td colSpan="7" style={{ padding: '16px 10px', color: '#64748b' }}>No packages found.</td></tr>
                       ) : filtered.map((pkg) => (
                         <tr key={pkg.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                           <td style={{ padding: '10px' }}>
                             <div style={{ fontWeight: 600, color: '#d0d8e8' }}>{pkg.name}</div>
                             {pkg.description ? <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{pkg.description}</div> : null}
                           </td>
-                          <td style={{ padding: '10px', color: '#d0d8e8' }}>₱{Number(pkg.price || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td style={{ padding: '10px', color: '#94a3b8' }}>{pkg.duration}</td>
+                          <td style={{ padding: '10px', color: '#d0d8e8' }}>₱{Number(pkg?.price_by_frequency?.weekly ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td style={{ padding: '10px', color: '#d0d8e8' }}>₱{Number(pkg?.price_by_frequency?.monthly ?? pkg?.price ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td style={{ padding: '10px', color: '#d0d8e8' }}>₱{Number(pkg?.price_by_frequency?.annual ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           <td style={{ padding: '10px' }}>
                             <span style={{
                               display: 'inline-flex',
@@ -2733,21 +2858,20 @@ export function SettingsPage({ token, user }) {
                           <input className="settings-input" value={subsForm.name} onChange={(e) => setSubsForm((p) => ({ ...p, name: e.target.value }))} />
                         </div>
                         <div className="settings-field">
-                          <label className="settings-label">Price</label>
-                          <input className="settings-input" type="number" min="0" step="0.01" value={subsForm.price} onChange={(e) => setSubsForm((p) => ({ ...p, price: e.target.value }))} />
+                          <label className="settings-label">Weekly Price</label>
+                          <input className="settings-input" type="number" min="0" step="0.01" value={subsForm.priceWeekly} onChange={(e) => setSubsForm((p) => ({ ...p, priceWeekly: e.target.value }))} />
+                        </div>
+                        <div className="settings-field">
+                          <label className="settings-label">Monthly Price</label>
+                          <input className="settings-input" type="number" min="0" step="0.01" value={subsForm.priceMonthly} onChange={(e) => setSubsForm((p) => ({ ...p, priceMonthly: e.target.value }))} />
+                        </div>
+                        <div className="settings-field">
+                          <label className="settings-label">Annual Price</label>
+                          <input className="settings-input" type="number" min="0" step="0.01" value={subsForm.priceAnnual} onChange={(e) => setSubsForm((p) => ({ ...p, priceAnnual: e.target.value }))} />
                         </div>
                         <div className="settings-field settings-field--full">
                           <label className="settings-label">Description</label>
                           <textarea className="settings-input settings-input--textarea" rows="3" value={subsForm.description} onChange={(e) => setSubsForm((p) => ({ ...p, description: e.target.value }))} />
-                        </div>
-                        <div className="settings-field">
-                          <label className="settings-label">Duration</label>
-                          <select className="settings-input" value={subsForm.duration} onChange={(e) => setSubsForm((p) => ({ ...p, duration: e.target.value }))}>
-                            <option value="Monthly">Monthly</option>
-                            <option value="Quarterly">Quarterly</option>
-                            <option value="Yearly">Yearly</option>
-                            <option value="Custom">Custom Days</option>
-                          </select>
                         </div>
                         <div className="settings-field">
                           <label className="settings-label">Status</label>
@@ -2762,12 +2886,6 @@ export function SettingsPage({ token, user }) {
                             <span className="toggle-label">{subsForm.status}</span>
                           </div>
                         </div>
-                        {subsForm.duration === 'Custom' ? (
-                          <div className="settings-field settings-field--full">
-                            <label className="settings-label">Custom Days</label>
-                            <input className="settings-input" type="number" min="1" value={subsForm.customDays} onChange={(e) => setSubsForm((p) => ({ ...p, customDays: e.target.value }))} />
-                          </div>
-                        ) : null}
                       </div>
 
                       {subsError ? <div className="form-error-banner" style={{ marginTop: 14 }}>{subsError}</div> : null}
@@ -2865,10 +2983,11 @@ export function SettingsPage({ token, user }) {
                       ) : filtered.map((pkg) => {
                         const km = Number(pkg.kilometer_interval || 0)
                         const isCommon = commonIntervals.has(km)
+                        const displayName = getPmsDisplayName(pkg.name, km)
                         return (
                           <tr key={pkg.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                             <td style={{ padding: '10px' }}>
-                              <div style={{ fontWeight: 600, color: '#d0d8e8' }}>{pkg.name}</div>
+                              <div style={{ fontWeight: 600, color: '#d0d8e8' }}>{displayName}</div>
                             </td>
                             <td style={{ padding: '10px', color: '#d0d8e8' }}>
                               <span>{km.toLocaleString('en-US')}</span>
@@ -2919,6 +3038,9 @@ export function SettingsPage({ token, user }) {
                       <button type="button" className="btn-close" onClick={() => !pmsSaving && setShowPmsModal(false)} aria-label="Close">×</button>
                     </div>
                     <div className="modal-body">
+                      {(() => {
+                        const autoInclusions = getAutoPmsInclusions(pmsForm.kilometerInterval, editingPmsPackage?.id)
+                        return (
                       <div className="settings-fields-grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
                         <div className="settings-field">
                           <label className="settings-label">Package Name</label>
@@ -2976,16 +3098,52 @@ export function SettingsPage({ token, user }) {
                           </div>
                         </div>
                         <div className="settings-field settings-field--full">
-                          <label className="settings-label">Core Inclusions (Basic PMS Package)</label>
+                          <label className="settings-label">Included Services Mode</label>
+                          <select
+                            className="settings-input"
+                            value={pmsForm.inclusionMode}
+                            onChange={(e) => setPmsForm((prev) => ({ ...prev, inclusionMode: e.target.value }))}
+                          >
+                            <option value="auto">Auto by Kilometer Interval</option>
+                            <option value="manual">Manual (Type Services)</option>
+                          </select>
+                        </div>
+                        <div className="settings-field settings-field--full">
+                          <label className="settings-label">
+                            {pmsForm.inclusionMode === 'manual' ? 'Included Services (One per line)' : 'Included Services (Auto by Kilometer)'}
+                          </label>
                           <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: 12, background: 'rgba(0,0,0,0.16)' }}>
-                            <ul style={{ margin: 0, paddingLeft: 18, color: '#cbd5e1', display: 'grid', gap: 8 }}>
-                              {BASIC_PMS_CORE_INCLUSIONS.map((item) => (
-                                <li key={item} style={{ fontSize: 13, lineHeight: 1.45 }}>{item}</li>
-                              ))}
-                            </ul>
+                            {pmsForm.inclusionMode === 'manual' ? (
+                              <textarea
+                                className="settings-input settings-input--textarea"
+                                rows="6"
+                                placeholder={[
+                                  'Engine oil replacement',
+                                  'Brake inspection',
+                                  'Tire rotation',
+                                ].join('\n')}
+                                value={pmsForm.manualServicesText}
+                                onChange={(e) => setPmsForm((prev) => ({ ...prev, manualServicesText: e.target.value }))}
+                              />
+                            ) : (
+                              <>
+                                <div style={{ fontSize: 12, color: '#7a8aa0', marginBottom: 8 }}>
+                                  {Number.isFinite(Number(pmsForm.kilometerInterval))
+                                    ? `Using ${getPmsTierLabel(pmsForm.kilometerInterval)} template for ${Number(pmsForm.kilometerInterval).toLocaleString('en-US')} KM.`
+                                    : 'Enter Kilometer Interval to preview matching auto inclusions.'}
+                                </div>
+                                <ul style={{ margin: 0, paddingLeft: 18, color: '#cbd5e1', display: 'grid', gap: 8 }}>
+                                  {autoInclusions.map((item) => (
+                                    <li key={item} style={{ fontSize: 13, lineHeight: 1.45 }}>{item}</li>
+                                  ))}
+                                </ul>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
+                        )
+                      })()}
 
                       {pmsError ? <div className="form-error-banner" style={{ marginTop: 14 }}>{pmsError}</div> : null}
 

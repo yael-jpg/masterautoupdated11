@@ -3,7 +3,6 @@ export function StatCard({ label, value, trend, onClick }) {
     <article
       className={`stat-card ${onClick ? 'clickable' : ''}`}
       onClick={onClick}
-      style={onClick ? { cursor: 'pointer' } : {}}
     >
       <p className="stat-label">{label}</p>
       <h3>{value}</h3>

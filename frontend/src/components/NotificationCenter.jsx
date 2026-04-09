@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 export function NotificationCenter({ notifications, onMarkAsRead, onClearAll, onOpenNotification }) {
   const [isOpen, setIsOpen] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
+  const containerRef = useRef(null)
   const unreadCount = notifications.filter((n) => !n.read).length
 
   const selected = useMemo(
@@ -13,6 +14,32 @@ export function NotificationCenter({ notifications, onMarkAsRead, onClearAll, on
   useEffect(() => {
     if (selectedId && !selected) setSelectedId(null)
   }, [selectedId, selected])
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+
+    const handleOutsideClick = (event) => {
+      if (!containerRef.current?.contains(event.target)) {
+        setIsOpen(false)
+        setSelectedId(null)
+      }
+    }
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false)
+        setSelectedId(null)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [isOpen])
 
   const formatDetailValue = (value) => {
     if (value == null) return '—'
@@ -27,7 +54,7 @@ export function NotificationCenter({ notifications, onMarkAsRead, onClearAll, on
   }
 
   return (
-    <div className="notification-center">
+    <div className="notification-center" ref={containerRef}>
       <button
         type="button"
         className="notification-bell"

@@ -14,6 +14,7 @@
     "sync:services-catalog": "node scripts/syncServiceCatalog.js",
     "smoke": "node scripts/smoke.js",
     "backfill:portal-preferred-contact-email": "node scripts/backfillPortalPreferredContactEmail.js",
+    "db:reset-operational": "node scripts/resetOperationalData.js --confirm-reset",
     "email:test-release": "node scripts/testReleaseEmail.js",
     "mail:dev": "maildev --smtp 1025 --web 8025 --ip 127.0.0.1",
     "test": "echo \"No automated tests configured yet\""

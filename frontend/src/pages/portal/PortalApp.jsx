@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import './Portal.css'
 import '../../App.css'
+import '../../styles/design-system.css'
 import { clearPortalSession, getPortalCustomer, getPortalToken, portalGet } from '../../api/portalClient'
 import { NotificationCenter } from '../../components/NotificationCenter'
 import { PortalLoginPage } from './PortalLoginPage'
@@ -25,15 +26,15 @@ const ROOT_API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV 
 function SessionExpiredOverlay({ message, onResignIn }) {
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true">
-      <div className="modal-content" style={{ width: 'min(520px, 100%)' }}>
+      <div className="modal-content session-expired-modal">
         <div className="modal-header">
           <h2>Session Expired</h2>
         </div>
-        <div style={{ padding: '22px 24px 24px' }}>
-          <p style={{ margin: '0 0 18px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+        <div className="session-expired-body">
+          <p className="session-expired-message">
             {message || 'Your session has expired. Please sign in again.'}
           </p>
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div className="session-expired-actions">
             <button type="button" className="btn-primary" onClick={onResignIn}>
               Re-sign in
             </button>
@@ -299,13 +300,20 @@ export function PortalApp() {
     const timeNow = () => new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
     const cap = (list) => (list.length > 40 ? list.slice(0, 40) : list)
 
-    const isPortalBookingRequest = (row) => {
-      if (!row) return false
-      if (row.is_portal_request === true) return true
-      const source = String(row.booking_source || '').toLowerCase()
-      if (source === 'portal') return true
+    const getPortalRequestKind = (row) => {
+      if (!row) return null
+      if (row.is_subscription_request === true) return 'subscription'
+      if (row.is_pms_request === true) return 'pms'
+
       const notes = String(row.notes || '')
-      return notes.includes('[PORTAL BOOKING REQUEST]')
+      if (notes.includes('[PORTAL SUBSCRIPTION AVAIL REQUEST]')) return 'subscription'
+      if (notes.includes('[PORTAL PMS AVAIL REQUEST]')) return 'pms'
+      if (notes.includes('[PORTAL BOOKING REQUEST]')) return 'booking'
+
+      if (row.is_portal_request === true) return 'booking'
+      const source = String(row.booking_source || '').toLowerCase()
+      if (source === 'portal') return 'booking'
+      return null
     }
 
     const addNotification = (n) => {
@@ -410,12 +418,15 @@ export function PortalApp() {
 
           const recentQuotations = quotations.filter((q) => q?.id != null && isRecent(q?.created_at)).sort(byCreatedAtAsc)
           for (const q of recentQuotations) {
-            const isPortalReq = isPortalBookingRequest(q)
+            const requestKind = getPortalRequestKind(q)
+            const isSubscriptionReq = requestKind === 'subscription'
+            const isPmsReq = requestKind === 'pms'
+            const isPortalReq = requestKind !== null
             addNotification({
-              title: isPortalReq ? 'New Request Schedule' : 'New Quotation',
+              title: isSubscriptionReq ? 'New Subscription Request' : isPmsReq ? 'New PMS Request' : isPortalReq ? 'New Request Schedule' : 'New Quotation',
               message: `${q?.service_package || 'Quotation'} • ${q?.quotation_approval_status || 'Pending'}`,
               details: {
-                type: isPortalReq ? 'schedule-request' : 'quotation',
+                type: isSubscriptionReq ? 'subscription-request' : isPmsReq ? 'pms-request' : isPortalReq ? 'schedule-request' : 'quotation',
                 quotation_id: q.id,
                 reference_no: q?.reference_no,
                 status: q?.quotation_approval_status,
@@ -477,16 +488,19 @@ export function PortalApp() {
           if (a?.id == null) continue
           const prevStatus = watch.apptStatusById.get(a.id)
           const nextStatus = a?.status
-          const isPortalReq = isPortalBookingRequest(a) && String(nextStatus || '').toLowerCase() === 'requested'
+          const requestKind = getPortalRequestKind(a)
+          const isSubscriptionReq = requestKind === 'subscription' && String(nextStatus || '').toLowerCase() === 'requested'
+          const isPmsReq = requestKind === 'pms' && String(nextStatus || '').toLowerCase() === 'requested'
+          const isPortalReq = requestKind !== null && String(nextStatus || '').toLowerCase() === 'requested'
 
           if (!watch.seenApptIds.has(a.id)) {
             watch.seenApptIds.add(a.id)
             watch.apptStatusById.set(a.id, nextStatus)
             addNotification({
-              title: isPortalReq ? 'New Request Schedule' : 'New Schedule',
+              title: isSubscriptionReq ? 'New Subscription Request' : isPmsReq ? 'PMS Request Submitted' : isPortalReq ? 'New Request Schedule' : 'New Schedule',
               message: `${a?.service_name || 'Service'} • ${new Date(a?.schedule_start).toLocaleString('en-PH')}`,
               details: {
-                type: isPortalReq ? 'schedule-request' : 'appointment',
+                type: isSubscriptionReq ? 'subscription-request' : isPmsReq ? 'pms-request' : isPortalReq ? 'schedule-request' : 'appointment',
                 appointment_id: a.id,
                 status: nextStatus,
                 schedule_start: a?.schedule_start,
@@ -496,11 +510,15 @@ export function PortalApp() {
             })
           } else if (prevStatus && nextStatus && prevStatus !== nextStatus) {
             watch.apptStatusById.set(a.id, nextStatus)
+            const updateKind = getPortalRequestKind(a)
+            const isSubscriptionUpdate = updateKind === 'subscription'
+            const isPmsUpdate = updateKind === 'pms'
+            const isPmsCancelled = isPmsUpdate && String(nextStatus || '').toLowerCase() === 'cancelled'
             addNotification({
-              title: 'Schedule Update',
+              title: isSubscriptionUpdate ? 'Subscription Update' : isPmsCancelled ? 'PMS Request Cancelled' : isPmsUpdate ? 'PMS Request Update' : 'Schedule Update',
               message: `${a?.service_name || 'Service'} • ${prevStatus} → ${nextStatus}`,
               details: {
-                type: 'appointment',
+                type: isSubscriptionUpdate ? 'subscription-request' : isPmsUpdate ? 'pms-request' : 'appointment',
                 appointment_id: a.id,
                 previous_status: prevStatus,
                 status: nextStatus,
@@ -558,16 +576,19 @@ export function PortalApp() {
           if (q?.id == null) continue
           const prevStatus = watch.quotationStatusById.get(q.id)
           const nextStatus = q?.quotation_approval_status
-          const isPortalReq = isPortalBookingRequest(q)
+          const requestKind = getPortalRequestKind(q)
+          const isSubscriptionReq = requestKind === 'subscription'
+          const isPmsReq = requestKind === 'pms'
+          const isPortalReq = requestKind !== null
 
           if (!watch.seenQuotationIds.has(q.id)) {
             watch.seenQuotationIds.add(q.id)
             watch.quotationStatusById.set(q.id, nextStatus)
             addNotification({
-              title: isPortalReq ? 'New Request Schedule' : 'New Quotation',
+              title: isSubscriptionReq ? 'New Subscription Request' : isPmsReq ? 'New PMS Request' : isPortalReq ? 'New Request Schedule' : 'New Quotation',
               message: `${q?.service_package || 'Quotation'} • ${nextStatus || 'Pending'}`,
               details: {
-                type: isPortalReq ? 'schedule-request' : 'quotation',
+                type: isSubscriptionReq ? 'subscription-request' : isPmsReq ? 'pms-request' : isPortalReq ? 'schedule-request' : 'quotation',
                 quotation_id: q.id,
                 reference_no: q?.reference_no,
                 status: nextStatus,
@@ -577,10 +598,10 @@ export function PortalApp() {
           } else if (prevStatus && nextStatus && prevStatus !== nextStatus) {
             watch.quotationStatusById.set(q.id, nextStatus)
             addNotification({
-              title: isPortalReq ? 'Schedule Update' : 'Quotation Update',
+              title: isSubscriptionReq ? 'Subscription Update' : isPmsReq ? 'PMS Request Update' : isPortalReq ? 'Schedule Update' : 'Quotation Update',
               message: `${q?.reference_no || 'Quotation'} • ${prevStatus} → ${nextStatus}`,
               details: {
-                type: isPortalReq ? 'schedule-request' : 'quotation',
+                type: isSubscriptionReq ? 'subscription-request' : isPmsReq ? 'pms-request' : isPortalReq ? 'schedule-request' : 'quotation',
                 quotation_id: q.id,
                 reference_no: q?.reference_no,
                 previous_status: prevStatus,
@@ -713,6 +734,42 @@ export function PortalApp() {
     }
   }
 
+  const handleOpenNotification = async (notification) => {
+    const details = notification?.details || {}
+    const directPage = details?.navigate?.page
+
+    if (directPage && PAGE_TITLES[directPage]) {
+      setActivePage(directPage)
+      return true
+    }
+
+    const type = String(details?.type || '').toLowerCase()
+    const eventType = String(details?.event_type || '').toLowerCase()
+
+    if (type.includes('booking') || eventType.includes('schedule')) {
+      setActivePage('appointments')
+      return true
+    }
+    if (type.includes('payment') || eventType.includes('payment')) {
+      setActivePage('receipts')
+      return true
+    }
+    if (type.includes('job') || eventType.includes('job_status')) {
+      setActivePage('jobs')
+      return true
+    }
+    if (type.includes('subscription') || eventType.includes('subscription')) {
+      setActivePage('subscriptions')
+      return true
+    }
+    if (type.includes('pms') || eventType.includes('pms')) {
+      setActivePage('pms')
+      return true
+    }
+
+    return false
+  }
+
   return (
     <div className="portal-root">
       <div className={`portal-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
@@ -723,8 +780,8 @@ export function PortalApp() {
         <aside className={`portal-sidebar${sidebarCollapsed ? ' collapsed' : ''}${mobileNavOpen ? ' mobile-open' : ''}`}>
           <div className="portal-sidebar-brand">
             {sidebarCollapsed
-              ? <img src="/images/logo-letter.png" alt="M" className="portal-brand-logo-letter" />
-              : <img src="/images/logo.png" alt="MasterAuto" className="portal-brand-logo" />
+              ? <img src="/images/logo-letter.png" alt="M" className="portal-brand-logo-letter" loading="lazy" decoding="async" />
+              : <img src="/images/logo.png" alt="MasterAuto" className="portal-brand-logo" loading="lazy" decoding="async" />
             }
             {!sidebarCollapsed && <p className="portal-brand-sub">Client Portal</p>}
           </div>
@@ -790,10 +847,10 @@ export function PortalApp() {
                 title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >
                 <svg
+                  className={`portal-sidebar-toggle-icon ${sidebarCollapsed ? 'is-collapsed' : ''}`}
                   width="14" height="14" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" strokeWidth="2.5"
                   strokeLinecap="round" strokeLinejoin="round"
-                  style={{ transform: sidebarCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s ease' }}
                 >
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
@@ -810,8 +867,10 @@ export function PortalApp() {
                 notifications={notifications}
                 onMarkAsRead={async (id) => {
                   setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
+                  const numericId = Number(id)
+                  if (!Number.isFinite(numericId) || numericId <= 0) return
                   try {
-                    await fetch(`${ROOT_API_BASE}/notifications/read/${id}`, {
+                    await fetch(`${ROOT_API_BASE}/notifications/read/${numericId}`, {
                       method: 'PUT',
                       headers: { Authorization: `Bearer ${token}` },
                     })
@@ -820,13 +879,14 @@ export function PortalApp() {
                   }
                 }}
                 onClearAll={() => setNotifications([])}
+                onOpenNotification={handleOpenNotification}
               />
               <div
                 className="portal-topbar-user portal-topbar-user--clickable"
                 onClick={() => setActivePage('profile')}
                 title="Edit my account"
               >
-                <div className="portal-avatar" style={{ width: 30, height: 30, fontSize: 12 }}>{initials}</div>
+                <div className="portal-avatar portal-avatar-compact">{initials}</div>
                 <div>
                   <div className="portal-topbar-user-name">{customer.name}</div>
                   <div className="portal-topbar-user-role">Client Account</div>

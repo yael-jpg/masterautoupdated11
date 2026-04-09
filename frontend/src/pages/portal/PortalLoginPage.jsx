@@ -277,12 +277,12 @@ export function PortalLoginPage({ onLogin }) {
                           text="continue_with"
                         />
                       ) : (
-                        <div style={{ textAlign: 'center' }}>
-                          <p className="auth-help" style={{ margin: 0 }}>
+                        <div className="auth-google-fallback">
+                          <p className="auth-help auth-help-compact">
                             Google sign-in is unavailable on this origin.
                           </p>
                           {googleOriginHelp ? (
-                            <p className="auth-help" style={{ margin: '6px 0 0', fontSize: 11 }}>
+                            <p className="auth-help auth-help-subtext">
                               {googleOriginHelp}
                             </p>
                           ) : null}
@@ -308,7 +308,7 @@ export function PortalLoginPage({ onLogin }) {
                     Sign In
                   </button>
 
-                  <p className="auth-kicker" style={{ marginTop: 8 }}>New Client</p>
+                  <p className="auth-kicker auth-kicker-spaced">New Client</p>
                   <h2>Create Your Account</h2>
                   <p className="auth-help">Register to access the client portal.</p>
 
@@ -328,7 +328,7 @@ export function PortalLoginPage({ onLogin }) {
 
                     <div className="field-group">
                       <label htmlFor="reg-mobile">
-                        Mobile Number <span style={{ color: 'rgba(189, 200, 218, 0.35)', fontWeight: 400 }}>(required)</span>
+                        Mobile Number <span className="auth-label-note">(required)</span>
                       </label>
                       <input
                         id="reg-mobile"
@@ -345,7 +345,7 @@ export function PortalLoginPage({ onLogin }) {
 
                     <div className="field-group">
                       <label htmlFor="reg-email">
-                        Email Address <span style={{ color: 'rgba(189, 200, 218, 0.35)', fontWeight: 400 }}>(required)</span>
+                        Email Address <span className="auth-label-note">(required)</span>
                       </label>
                       <input
                         id="reg-email"
@@ -403,12 +403,12 @@ export function PortalLoginPage({ onLogin }) {
                           text="continue_with"
                         />
                       ) : (
-                        <div style={{ textAlign: 'center' }}>
-                          <p className="auth-help" style={{ margin: 0 }}>
+                        <div className="auth-google-fallback">
+                          <p className="auth-help auth-help-compact">
                             Google sign-in is unavailable on this origin.
                           </p>
                           {googleOriginHelp ? (
-                            <p className="auth-help" style={{ margin: '6px 0 0', fontSize: 11 }}>
+                            <p className="auth-help auth-help-subtext">
                               {googleOriginHelp}
                             </p>
                           ) : null}
@@ -427,7 +427,7 @@ export function PortalLoginPage({ onLogin }) {
                     Back
                   </button>
 
-                  <p className="auth-kicker" style={{ marginTop: 8 }}>Email Verification</p>
+                  <p className="auth-kicker auth-kicker-spaced">Email Verification</p>
                   <h2>Enter Verification Code</h2>
                   <p className="auth-help">We sent a code to <strong>{verifyEmail || regEmail}</strong>.</p>
 
@@ -460,14 +460,14 @@ export function PortalLoginPage({ onLogin }) {
                       />
                     </div>
 
-                    {verifyNotice ? <p className="auth-help" style={{ marginTop: 8 }}>{verifyNotice}</p> : null}
+                    {verifyNotice ? <p className="auth-help auth-help-top-gap">{verifyNotice}</p> : null}
                     {verifyError ? <p className="form-error">{verifyError}</p> : null}
 
                     <button type="submit" disabled={verifyLoading} className="btn-submit" tabIndex={tVerify}>
                       {verifyLoading ? 'Verifying…' : 'Verify & Continue'}
                     </button>
 
-                    <p className="auth-portal-register-hint" style={{ marginTop: 14 }}>
+                    <p className="auth-portal-register-hint auth-portal-register-hint-spaced">
                       Didn’t receive a code?{' '}
                       <button type="button" className="auth-link" onClick={handleResendCode} disabled={verifyLoading} tabIndex={tVerify}>
                         Resend code

@@ -498,6 +498,128 @@
   .vehicle-info-row { grid-template-columns: 120px 1fr; }
 }
 
+/* Tablet and small laptop */
+@media (max-width: 1024px) {
+  .vehicle-detail-header {
+    padding: 24px 24px 20px;
+  }
+
+  .vehicle-detail-tabs {
+    padding: 0 20px;
+  }
+
+  .vehicle-detail-content {
+    padding: 22px;
+  }
+
+  .photos-grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+  }
+
+  .record-form,
+  .photo-form {
+    padding: 20px;
+    gap: 14px;
+  }
+
+  .photo-viewer {
+    padding: 20px;
+    gap: 16px;
+  }
+
+  .photo-viewer-image {
+    padding: 16px;
+    min-height: 260px;
+  }
+}
+
+/* Phone portrait hardening */
+@media (max-width: 640px) {
+  .record-form,
+  .photo-form {
+    grid-template-columns: 1fr;
+    padding: 16px;
+    margin-top: 18px;
+  }
+
+  .form-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding-top: 14px;
+  }
+
+  .btn-sm {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .photo-viewer {
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .photo-viewer-header h3 {
+    font-size: 18px;
+  }
+
+  .photo-viewer-image {
+    padding: 10px;
+    min-height: 200px;
+    max-height: 55vh;
+  }
+
+  .photo-viewer-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+}
+
+/* Very small phones */
+@media (max-width: 480px) {
+  .vehicle-detail {
+    border-radius: 12px;
+  }
+
+  .vehicle-detail-header {
+    padding: 14px 12px 12px;
+  }
+
+  .vehicle-detail-tabs {
+    padding: 0 6px;
+  }
+
+  .vehicle-detail-content {
+    padding: 12px;
+  }
+
+  .vehicle-meta {
+    gap: 6px;
+  }
+
+  .vehicle-info-row,
+  .vh-details-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .vehicle-info-label,
+  .vh-details-label {
+    font-size: 11px;
+  }
+
+  .photos-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .photo-image {
+    height: 180px;
+  }
+}
+
 .timeline-header {
   display: flex;
   justify-content: space-between;

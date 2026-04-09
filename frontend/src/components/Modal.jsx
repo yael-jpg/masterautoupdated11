@@ -21,13 +21,12 @@ export function Modal({ isOpen, onClose, title, children, wide = false, classNam
   if (!isOpen) return null
 
   return createPortal(
-    <div className="modal-overlay" onClick={onClose} style={{ pointerEvents: 'all' }}>
+    <div className="modal-overlay" onClick={onClose}>
       <div 
         className={`modal-content ${wide ? 'modal-wide' : ''} ${className}`.trim()}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        style={{ pointerEvents: 'all' }}
       >
         {title && (
           <div className="modal-header">

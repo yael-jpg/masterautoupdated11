@@ -22,6 +22,168 @@ const db          = require('../config/db')
 const mailer      = require('./mailer')
 const { writeAuditLog } = require('../utils/auditLog')
 const ConfigurationService = require('./configurationService')
+const NotificationService = require('./notificationService')
+const env = require('../config/env')
+
+const EMAIL_MAX_RETRIES = Number(process.env.EMAIL_MAX_RETRIES || 3)
+const EMAIL_RETRY_BASE_MS = Number(process.env.EMAIL_RETRY_BASE_MS || 800)
+const EMAIL_QUEUE_CONCURRENCY = Math.max(1, Number(process.env.EMAIL_QUEUE_CONCURRENCY || 2))
+
+const _jobQueue = []
+let _activeJobs = 0
+let _emailLogsEnsured = false
+
+function _isValidEmail(email) {
+  if (!email) return false
+  const value = String(email).trim()
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+function _sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function _drainEmailQueue() {
+  while (_activeJobs < EMAIL_QUEUE_CONCURRENCY && _jobQueue.length > 0) {
+    const next = _jobQueue.shift()
+    _activeJobs += 1
+
+    Promise.resolve()
+      .then(next.job)
+      .then((res) => next.resolve(res))
+      .catch((err) => next.reject(err))
+      .finally(() => {
+        _activeJobs -= 1
+        _drainEmailQueue()
+      })
+  }
+}
+
+function _enqueueEmailJob(job) {
+  return new Promise((resolve, reject) => {
+    _jobQueue.push({ job, resolve, reject })
+    _drainEmailQueue()
+  })
+}
+
+async function _sendWithRetry(label, sendFn) {
+  let lastErr = null
+  for (let attempt = 1; attempt <= EMAIL_MAX_RETRIES; attempt += 1) {
+    try {
+      return await sendFn()
+    } catch (err) {
+      lastErr = err
+      if (attempt < EMAIL_MAX_RETRIES) {
+        const waitMs = EMAIL_RETRY_BASE_MS * attempt
+        console.warn(`[EmailNotification] ${label} failed (attempt ${attempt}/${EMAIL_MAX_RETRIES}), retrying in ${waitMs}ms: ${err.message}`)
+        await _sleep(waitMs)
+      }
+    }
+  }
+  throw lastErr
+}
+
+async function _ensureEmailLogsTable() {
+  if (_emailLogsEnsured) return
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS email_logs (
+      id SERIAL PRIMARY KEY,
+      user_id INT,
+      email VARCHAR(255) NOT NULL,
+      subject VARCHAR(255) NOT NULL,
+      status VARCHAR(20) NOT NULL CHECK (status IN ('sent', 'failed')),
+      error_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+  await db.query('CREATE INDEX IF NOT EXISTS idx_email_logs_user_created ON email_logs (user_id, created_at DESC)')
+  await db.query('CREATE INDEX IF NOT EXISTS idx_email_logs_status_created ON email_logs (status, created_at DESC)')
+  _emailLogsEnsured = true
+}
+
+async function _logEmailResult({ userId, email, subject, status, errorMessage }) {
+  try {
+    await _ensureEmailLogsTable()
+    await db.query(
+      `INSERT INTO email_logs (user_id, email, subject, status, error_message, created_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())`,
+      [userId || null, email || '', subject || 'Automated Email', status, errorMessage || null],
+    )
+  } catch (err) {
+    console.warn('[EmailNotification] email_logs write failed:', err.message)
+  }
+}
+
+function _buildClientNotification(eventType, payload = {}) {
+  const mapping = {
+    quotation_approved: {
+      title: 'Quotation Approved',
+      message: 'Your quotation has been approved.',
+      page: 'appointments',
+    },
+    schedule_approved: {
+      title: 'Schedule Approved',
+      message: 'Your service schedule is confirmed.',
+      page: 'appointments',
+    },
+    payment_received: {
+      title: 'Payment Received',
+      message: 'Payment received successfully.',
+      page: 'receipts',
+    },
+    job_order_confirmed: {
+      title: 'Job Order Confirmed',
+      message: 'Your job order is confirmed.',
+      page: 'jobs',
+    },
+    subscription_confirmed: {
+      title: 'Subscription Confirmed',
+      message: 'Your subscription is now active.',
+      page: 'subscriptions',
+    },
+    pms_booking_confirmed: {
+      title: 'PMS Booking Confirmed',
+      message: 'Your PMS schedule is confirmed.',
+      page: 'pms',
+    },
+  }
+
+  const jobStatusEvent = eventType.startsWith('job_status_updated_')
+    ? {
+        title: 'Job Status Updated',
+        message: `Your job order status is now ${payload.status || 'updated'}.`,
+        page: 'jobs',
+      }
+    : null
+
+  const base = mapping[eventType] || jobStatusEvent
+  if (!base) return null
+
+  return {
+    title: base.title,
+    message: base.message,
+    payload: {
+      ...payload,
+      type: 'email-event',
+      event_type: eventType,
+      navigate: { page: base.page },
+    },
+  }
+}
+
+async function _syncClientNotification({ customerId, eventType, payload }) {
+  if (!customerId) return
+  const notif = _buildClientNotification(eventType, payload)
+  if (!notif) return
+
+  await NotificationService.create({
+    role: 'client',
+    userId: customerId,
+    title: notif.title,
+    message: notif.message,
+    payload: notif.payload,
+  }).catch(() => {})
+}
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
@@ -143,7 +305,11 @@ async function notifyQuotationApproved(quotationId, actorUserId) {
             q.quotation_no,
             q.services,
             q.total_amount,
+            q.apply_vat,
+            q.vat_rate,
+            q.vat_amount,
             q.notes,
+          c.id          AS customer_id,
             c.full_name   AS customer_name,
             c.email       AS customer_email,
             v.plate_number,
@@ -171,6 +337,22 @@ async function notifyQuotationApproved(quotationId, actorUserId) {
       eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: quotationId,
       recipientEmail: '(no email)', status: 'skipped',
       errorMessage: 'Customer has no email address', triggeredBy: actorUserId,
+    })
+    return
+  }
+
+  if (!_isValidEmail(q.customer_email)) {
+    await _logNotification({
+      eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: quotationId,
+      recipientEmail: q.customer_email, status: 'failed',
+      errorMessage: 'Invalid recipient email format', triggeredBy: actorUserId,
+    })
+    await _logEmailResult({
+      userId: q.customer_id,
+      email: q.customer_email,
+      subject: `Service Confirmed: ${q.quotation_no}`,
+      status: 'failed',
+      errorMessage: 'Invalid recipient email format',
     })
     return
   }
@@ -209,35 +391,42 @@ async function notifyQuotationApproved(quotationId, actorUserId) {
   const hasExteriorDetail = services.some((s) => String(s.code || '').toLowerCase() === 'detail-exterior')
   const hasInteriorDetail = services.some((s) => String(s.code || '').toLowerCase() === 'detail-interior')
   const subtotal  = services.reduce((sum, s) => sum + Number(s.total || s.unitPrice || 0), 0)
-  const vatAmount = Math.round((Number(q.total_amount) - subtotal) * 100) / 100
+  const hasExplicitVatFlag = typeof q.apply_vat === 'boolean'
+  const applyVat = hasExplicitVatFlag ? !!q.apply_vat : (Math.round((Number(q.total_amount) - subtotal) * 100) / 100) > 0
+  const vatRate = applyVat ? Number(q.vat_rate || 12) : 0
+  const vatAmount = applyVat
+    ? Math.max(Number(q.vat_amount || (Math.round((Number(q.total_amount) - subtotal) * 100) / 100)) || 0, 0)
+    : 0
 
   // ── 4. Send ───────────────────────────────────────────────────────────────
   let sendResult
   try {
-    sendResult = await mailer.sendServiceConfirmationEmail({
-      to:          q.customer_email,
+    sendResult = await _enqueueEmailJob(() => _sendWithRetry(`${EVENT_TYPE}#${quotationId}`, () => mailer.sendServiceConfirmationEmail({
+      to: q.customer_email,
       customerName: q.customer_name,
-      quotationNo:  q.quotation_no,
-      plateNumber:  q.plate_number,
-      make:         q.make,
-      model:        q.model,
-      vehicleYear:  q.vehicle_year,
-      color:        q.color,
+      quotationNo: q.quotation_no,
+      plateNumber: q.plate_number,
+      make: q.make,
+      model: q.model,
+      vehicleYear: q.vehicle_year,
+      color: q.color,
       services,
-      totalAmount:  q.total_amount,
+      totalAmount: q.total_amount,
       subtotal,
+      applyVat,
+      vatRate,
       vatAmount,
-      notes:        q.notes,
+      notes: q.notes,
       hasCoating,
       hasPpf,
       hasTint,
       hasExteriorDetail,
       hasInteriorDetail,
-      configSubject:   cfgSubject   || undefined,
-      configGreeting:  cfgGreeting  || undefined,
+      configSubject: cfgSubject || undefined,
+      configGreeting: cfgGreeting || undefined,
       configReminders: cfgReminders || undefined,
-      configClosing:   cfgClosing   || undefined,
-    })
+      configClosing: cfgClosing || undefined,
+    })))
   } catch (err) {
     // ── 4a. Log failure ───────────────────────────────────────────────────
     await _logNotification({
@@ -249,6 +438,13 @@ async function notifyQuotationApproved(quotationId, actorUserId) {
       userId: actorUserId, action: 'EMAIL_FAILED', entity: ENTITY_TYPE, entityId: quotationId,
       meta: { event: EVENT_TYPE, to: q.customer_email, error: err.message },
     }).catch(() => {})
+    await _logEmailResult({
+      userId: q.customer_id,
+      email: q.customer_email,
+      subject: `Service Confirmed: ${q.quotation_no}`,
+      status: 'failed',
+      errorMessage: err.message,
+    })
     console.error(`[EmailNotification] ${EVENT_TYPE} #${quotationId} FAILED:`, err.message)
     return
   }
@@ -266,6 +462,17 @@ async function notifyQuotationApproved(quotationId, actorUserId) {
       userId: actorUserId, action: 'EMAIL_SENT', entity: ENTITY_TYPE, entityId: quotationId,
       meta: { event: EVENT_TYPE, to: q.customer_email, subject: `Service Confirmed: ${q.quotation_no}` },
     }).catch(() => {})
+    await _logEmailResult({
+      userId: q.customer_id,
+      email: q.customer_email,
+      subject: `Service Confirmed: ${q.quotation_no}`,
+      status: 'sent',
+    })
+    await _syncClientNotification({
+      customerId: q.customer_id,
+      eventType: EVENT_TYPE,
+      payload: { quotation_id: quotationId },
+    })
     console.info(`[EmailNotification] ${EVENT_TYPE} #${quotationId} → sent to ${q.customer_email}`)
   }
 }
@@ -305,6 +512,7 @@ async function notifyJobStarted(jobOrderId, actorUserId, { resend = false } = {}
             jo.assigned_installers,
             jo.started_at,
             q.quotation_no,
+          c.id          AS customer_id,
             c.full_name   AS customer_name,
             c.email       AS customer_email,
             c.bay         AS customer_bay,
@@ -341,6 +549,22 @@ async function notifyJobStarted(jobOrderId, actorUserId, { resend = false } = {}
     return
   }
 
+  if (!_isValidEmail(jo.customer_email)) {
+    await _logNotification({
+      eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: jobOrderId,
+      recipientEmail: jo.customer_email, status: 'failed',
+      errorMessage: 'Invalid recipient email format', triggeredBy: actorUserId,
+    })
+    await _logEmailResult({
+      userId: jo.customer_id,
+      email: jo.customer_email,
+      subject: `Work Started: ${jo.job_order_no}`,
+      status: 'failed',
+      errorMessage: 'Invalid recipient email format',
+    })
+    return
+  }
+
   // ── 3. Resolve technician names ───────────────────────────────────────────
   const installerIds = Array.isArray(jo.assigned_installers) ? jo.assigned_installers : []
   let technicianNames = []
@@ -366,22 +590,22 @@ async function notifyJobStarted(jobOrderId, actorUserId, { resend = false } = {}
 
   let sendResult
   try {
-    sendResult = await mailer.sendWorkStartedEmail({
-      to:             jo.customer_email,
-      customerName:   jo.customer_name,
-      jobOrderNo:     displayJobOrderNo,
-      quotationNo:    jo.quotation_no,
-      plateNumber:    jo.plate_number,
-      make:           jo.make,
-      model:          jo.model,
-      vehicleYear:    jo.vehicle_year,
-      color:          jo.color,
+    sendResult = await _enqueueEmailJob(() => _sendWithRetry(`${EVENT_TYPE}#${jobOrderId}`, () => mailer.sendWorkStartedEmail({
+      to: jo.customer_email,
+      customerName: jo.customer_name,
+      jobOrderNo: displayJobOrderNo,
+      quotationNo: jo.quotation_no,
+      plateNumber: jo.plate_number,
+      make: jo.make,
+      model: jo.model,
+      vehicleYear: jo.vehicle_year,
+      color: jo.color,
       services,
       technicianNames,
-      startedAt:      jo.started_at || new Date(),
-      scheduleEnd:    jo.schedule_end,
-      scheduleBay:    jo.schedule_bay,
-    })
+      startedAt: jo.started_at || new Date(),
+      scheduleEnd: jo.schedule_end,
+      scheduleBay: jo.schedule_bay,
+    })))
   } catch (err) {
     await _logNotification({
       eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: jobOrderId,
@@ -392,6 +616,13 @@ async function notifyJobStarted(jobOrderId, actorUserId, { resend = false } = {}
       userId: actorUserId, action: 'EMAIL_FAILED', entity: ENTITY_TYPE, entityId: jobOrderId,
       meta: { event: EVENT_TYPE, to: jo.customer_email, error: err.message },
     }).catch(() => {})
+    await _logEmailResult({
+      userId: jo.customer_id,
+      email: jo.customer_email,
+      subject: `Work Started: ${displayJobOrderNo}`,
+      status: 'failed',
+      errorMessage: err.message,
+    })
     console.error(`[EmailNotification] ${EVENT_TYPE} #${jobOrderId} FAILED:`, err.message)
     return
   }
@@ -409,6 +640,17 @@ async function notifyJobStarted(jobOrderId, actorUserId, { resend = false } = {}
       userId: actorUserId, action: 'EMAIL_SENT', entity: ENTITY_TYPE, entityId: jobOrderId,
       meta: { event: EVENT_TYPE, to: jo.customer_email, subject: `Work Started: ${displayJobOrderNo}` },
     }).catch(() => {})
+    await _logEmailResult({
+      userId: jo.customer_id,
+      email: jo.customer_email,
+      subject: `Work Started: ${displayJobOrderNo}`,
+      status: 'sent',
+    })
+    await _syncClientNotification({
+      customerId: jo.customer_id,
+      eventType: 'job_status_updated_in_progress',
+      payload: { job_order_id: jobOrderId, status: 'In Progress' },
+    })
     console.info(`[EmailNotification] ${EVENT_TYPE} #${jobOrderId} → sent to ${jo.customer_email}`)
   }
 }
@@ -439,6 +681,7 @@ async function notifyTechnicianAssigned(jobOrderId, actorUserId) {
             jo.services,
             jo.assigned_installers,
             q.quotation_no,
+          c.id          AS customer_id,
             c.full_name   AS customer_name,
             c.email       AS customer_email,
             c.bay         AS customer_bay,
@@ -476,6 +719,22 @@ async function notifyTechnicianAssigned(jobOrderId, actorUserId) {
     return
   }
 
+  if (!_isValidEmail(jo.customer_email)) {
+    await _logNotification({
+      eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: jobOrderId,
+      recipientEmail: jo.customer_email, status: 'failed',
+      errorMessage: 'Invalid recipient email format', triggeredBy: actorUserId,
+    })
+    await _logEmailResult({
+      userId: jo.customer_id,
+      email: jo.customer_email,
+      subject: `Technician Assigned: ${jo.job_order_no}`,
+      status: 'failed',
+      errorMessage: 'Invalid recipient email format',
+    })
+    return
+  }
+
   // Resolve technician names from users table
   const installerIds = Array.isArray(jo.assigned_installers) ? jo.assigned_installers : []
   let technicianNames = []
@@ -500,22 +759,22 @@ async function notifyTechnicianAssigned(jobOrderId, actorUserId) {
 
   let sendResult
   try {
-    sendResult = await mailer.sendTechnicianAssignedEmail({
-      to:             jo.customer_email,
-      customerName:   jo.customer_name,
-      jobOrderNo:     displayJobOrderNo,
-      quotationNo:    jo.quotation_no,
-      plateNumber:    jo.plate_number,
-      make:           jo.make,
-      model:          jo.model,
-      vehicleYear:    jo.vehicle_year,
-      color:          jo.color,
+    sendResult = await _enqueueEmailJob(() => _sendWithRetry(`${EVENT_TYPE}#${jobOrderId}`, () => mailer.sendTechnicianAssignedEmail({
+      to: jo.customer_email,
+      customerName: jo.customer_name,
+      jobOrderNo: displayJobOrderNo,
+      quotationNo: jo.quotation_no,
+      plateNumber: jo.plate_number,
+      make: jo.make,
+      model: jo.model,
+      vehicleYear: jo.vehicle_year,
+      color: jo.color,
       services,
       technicianNames,
-      scheduleStart:  jo.schedule_start,
-      scheduleEnd:    jo.schedule_end,
-      scheduleBay:    jo.schedule_bay,
-    })
+      scheduleStart: jo.schedule_start,
+      scheduleEnd: jo.schedule_end,
+      scheduleBay: jo.schedule_bay,
+    })))
   } catch (err) {
     await _logNotification({
       eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: jobOrderId,
@@ -526,6 +785,13 @@ async function notifyTechnicianAssigned(jobOrderId, actorUserId) {
       userId: actorUserId, action: 'EMAIL_FAILED', entity: ENTITY_TYPE, entityId: jobOrderId,
       meta: { event: EVENT_TYPE, to: jo.customer_email, error: err.message },
     }).catch(() => {})
+    await _logEmailResult({
+      userId: jo.customer_id,
+      email: jo.customer_email,
+      subject: `Technician Assigned: ${displayJobOrderNo}`,
+      status: 'failed',
+      errorMessage: err.message,
+    })
     console.error(`[EmailNotification] ${EVENT_TYPE} #${jobOrderId} FAILED:`, err.message)
     return
   }
@@ -542,6 +808,17 @@ async function notifyTechnicianAssigned(jobOrderId, actorUserId) {
       userId: actorUserId, action: 'EMAIL_SENT', entity: ENTITY_TYPE, entityId: jobOrderId,
       meta: { event: EVENT_TYPE, to: jo.customer_email, subject: `Technician Assigned: ${displayJobOrderNo}` },
     }).catch(() => {})
+    await _logEmailResult({
+      userId: jo.customer_id,
+      email: jo.customer_email,
+      subject: `Technician Assigned: ${displayJobOrderNo}`,
+      status: 'sent',
+    })
+    await _syncClientNotification({
+      customerId: jo.customer_id,
+      eventType: 'job_order_confirmed',
+      payload: { job_order_id: jobOrderId },
+    })
     console.info(`[EmailNotification] ${EVENT_TYPE} #${jobOrderId} → sent to ${jo.customer_email}`)
   }
 }
@@ -574,6 +851,7 @@ async function notifyJobCompleted(jobOrderId, actorUserId) {
             jo.completed_at,
             q.quotation_no,
             q.total_amount,
+          c.id          AS customer_id,
             c.full_name   AS customer_name,
             c.email       AS customer_email,
             c.mobile      AS customer_mobile,
@@ -610,6 +888,22 @@ async function notifyJobCompleted(jobOrderId, actorUserId) {
     return
   }
 
+  if (!_isValidEmail(jo.customer_email)) {
+    await _logNotification({
+      eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: jobOrderId,
+      recipientEmail: jo.customer_email, status: 'failed',
+      errorMessage: 'Invalid recipient email format', triggeredBy: actorUserId,
+    })
+    await _logEmailResult({
+      userId: jo.customer_id,
+      email: jo.customer_email,
+      subject: `Service Completed: ${displayJobOrderNo}`,
+      status: 'failed',
+      errorMessage: 'Invalid recipient email format',
+    })
+    return
+  }
+
   // ── 3. Resolve technician names ───────────────────────────────────────────────
   const installerIds = Array.isArray(jo.assigned_installers) ? jo.assigned_installers : []
   let technicianNames = []
@@ -634,25 +928,25 @@ async function notifyJobCompleted(jobOrderId, actorUserId) {
   // ── 4. Send ───────────────────────────────────────────────────────────────────────
   let sendResult
   try {
-    sendResult = await mailer.sendJobCompletedEmail({
-      to:             jo.customer_email,
-      customerName:   jo.customer_name,
-      jobOrderNo:     displayJobOrderNo,
-      quotationNo:    jo.quotation_no,
-      plateNumber:    jo.plate_number,
-      make:           jo.make,
-      model:          jo.model,
-      vehicleYear:    jo.vehicle_year,
-      color:          jo.color,
+    sendResult = await _enqueueEmailJob(() => _sendWithRetry(`${EVENT_TYPE}#${jobOrderId}`, () => mailer.sendJobCompletedEmail({
+      to: jo.customer_email,
+      customerName: jo.customer_name,
+      jobOrderNo: displayJobOrderNo,
+      quotationNo: jo.quotation_no,
+      plateNumber: jo.plate_number,
+      make: jo.make,
+      model: jo.model,
+      vehicleYear: jo.vehicle_year,
+      color: jo.color,
       services,
-      totalAmount:    jo.total_amount,
+      totalAmount: jo.total_amount,
       subtotal,
       vatAmount,
       technicianNames,
-      completedAt:    jo.completed_at || new Date(),
+      completedAt: jo.completed_at || new Date(),
       customerMobile: jo.customer_mobile,
-      customerEmail:  jo.customer_email,
-    })
+      customerEmail: jo.customer_email,
+    })))
   } catch (err) {
     await _logNotification({
       eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: jobOrderId,
@@ -663,6 +957,13 @@ async function notifyJobCompleted(jobOrderId, actorUserId) {
       userId: actorUserId, action: 'EMAIL_FAILED', entity: ENTITY_TYPE, entityId: jobOrderId,
       meta: { event: EVENT_TYPE, to: jo.customer_email, error: err.message },
     }).catch(() => {})
+    await _logEmailResult({
+      userId: jo.customer_id,
+      email: jo.customer_email,
+      subject: `Service Completed: ${displayJobOrderNo}`,
+      status: 'failed',
+      errorMessage: err.message,
+    })
     console.error(`[EmailNotification] ${EVENT_TYPE} #${jobOrderId} FAILED:`, err.message)
     return
   }
@@ -680,6 +981,17 @@ async function notifyJobCompleted(jobOrderId, actorUserId) {
       userId: actorUserId, action: 'EMAIL_SENT', entity: ENTITY_TYPE, entityId: jobOrderId,
       meta: { event: EVENT_TYPE, to: jo.customer_email, subject: `Service Completed: ${displayJobOrderNo}` },
     }).catch(() => {})
+    await _logEmailResult({
+      userId: jo.customer_id,
+      email: jo.customer_email,
+      subject: `Service Completed: ${displayJobOrderNo}`,
+      status: 'sent',
+    })
+    await _syncClientNotification({
+      customerId: jo.customer_id,
+      eventType: 'job_status_updated_completed',
+      payload: { job_order_id: jobOrderId, status: 'Completed' },
+    })
     console.info(`[EmailNotification] ${EVENT_TYPE} #${jobOrderId} → sent to ${jo.customer_email}`)
   }
 }
@@ -712,6 +1024,7 @@ async function notifyJobReleased(jobOrderId, actorUserId) {
             jo.released_at,
             q.quotation_no,
             q.total_amount,
+          c.id          AS customer_id,
             c.full_name   AS customer_name,
             c.email       AS customer_email,
             c.mobile      AS customer_mobile,
@@ -746,6 +1059,22 @@ async function notifyJobReleased(jobOrderId, actorUserId) {
     return
   }
 
+  if (!_isValidEmail(jo.customer_email)) {
+    await _logNotification({
+      eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: jobOrderId,
+      recipientEmail: jo.customer_email, status: 'failed',
+      errorMessage: 'Invalid recipient email format', triggeredBy: actorUserId,
+    })
+    await _logEmailResult({
+      userId: jo.customer_id,
+      email: jo.customer_email,
+      subject: `Vehicle Released: ${jo.job_order_no}`,
+      status: 'failed',
+      errorMessage: 'Invalid recipient email format',
+    })
+    return
+  }
+
   // ── 3. Resolve technician names ──────────────────────────────────────────────
   const installerIds = Array.isArray(jo.assigned_installers) ? jo.assigned_installers : []
   let technicianNames = []
@@ -772,23 +1101,23 @@ async function notifyJobReleased(jobOrderId, actorUserId) {
 
   let sendResult
   try {
-    sendResult = await mailer.sendJobReleasedEmail({
-      to:             jo.customer_email,
-      customerName:   jo.customer_name,
-      jobOrderNo:     displayJobOrderNo,
-      quotationNo:    jo.quotation_no,
-      plateNumber:    jo.plate_number,
-      make:           jo.make,
-      model:          jo.model,
-      vehicleYear:    jo.vehicle_year,
-      color:          jo.color,
+    sendResult = await _enqueueEmailJob(() => _sendWithRetry(`${EVENT_TYPE}#${jobOrderId}`, () => mailer.sendJobReleasedEmail({
+      to: jo.customer_email,
+      customerName: jo.customer_name,
+      jobOrderNo: displayJobOrderNo,
+      quotationNo: jo.quotation_no,
+      plateNumber: jo.plate_number,
+      make: jo.make,
+      model: jo.model,
+      vehicleYear: jo.vehicle_year,
+      color: jo.color,
       services,
-      totalAmount:    jo.total_amount,
+      totalAmount: jo.total_amount,
       subtotal,
       vatAmount,
       technicianNames,
-      releasedAt:     jo.released_at || new Date(),
-    })
+      releasedAt: jo.released_at || new Date(),
+    })))
   } catch (err) {
     await _logNotification({
       eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: jobOrderId,
@@ -799,6 +1128,13 @@ async function notifyJobReleased(jobOrderId, actorUserId) {
       userId: actorUserId, action: 'EMAIL_FAILED', entity: ENTITY_TYPE, entityId: jobOrderId,
       meta: { event: EVENT_TYPE, to: jo.customer_email, error: err.message },
     }).catch(() => {})
+    await _logEmailResult({
+      userId: jo.customer_id,
+      email: jo.customer_email,
+      subject: `Vehicle Released: ${displayJobOrderNo}`,
+      status: 'failed',
+      errorMessage: err.message,
+    })
     console.error(`[EmailNotification] ${EVENT_TYPE} #${jobOrderId} FAILED:`, err.message)
     return
   }
@@ -816,6 +1152,17 @@ async function notifyJobReleased(jobOrderId, actorUserId) {
       userId: actorUserId, action: 'EMAIL_SENT', entity: ENTITY_TYPE, entityId: jobOrderId,
       meta: { event: EVENT_TYPE, to: jo.customer_email, subject: `Vehicle Released: ${displayJobOrderNo}` },
     }).catch(() => {})
+    await _logEmailResult({
+      userId: jo.customer_id,
+      email: jo.customer_email,
+      subject: `Vehicle Released: ${displayJobOrderNo}`,
+      status: 'sent',
+    })
+    await _syncClientNotification({
+      customerId: jo.customer_id,
+      eventType: 'job_status_updated_released',
+      payload: { job_order_id: jobOrderId, status: 'Released' },
+    })
     console.info(`[EmailNotification] ${EVENT_TYPE} #${jobOrderId} → sent to ${jo.customer_email}`)
   }
 }
@@ -856,6 +1203,7 @@ async function notifyPaymentReceived(paymentId, actorUserId, { resend = false } 
             q.total_amount,
             qps.total_paid,
             qps.outstanding_balance,
+            c.id AS customer_id,
             c.full_name AS customer_name,
             c.email AS customer_email,
             v.plate_number,
@@ -889,6 +1237,22 @@ async function notifyPaymentReceived(paymentId, actorUserId, { resend = false } 
     return
   }
 
+  if (!_isValidEmail(data.customer_email)) {
+    await _logNotification({
+      eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: paymentId,
+      recipientEmail: data.customer_email, status: 'failed',
+      errorMessage: 'Invalid recipient email format', triggeredBy: actorUserId,
+    })
+    await _logEmailResult({
+      userId: data.customer_id,
+      email: data.customer_email,
+      subject: `Payment Receipt: ${data.quotation_no}`,
+      status: 'failed',
+      errorMessage: 'Invalid recipient email format',
+    })
+    return
+  }
+
   // Optional config gate (if settings exist)
   const cfgEnabled = await ConfigurationService.get('payment_email', 'enabled').catch(() => null)
   if (String(cfgEnabled) === 'false') {
@@ -907,7 +1271,7 @@ async function notifyPaymentReceived(paymentId, actorUserId, { resend = false } 
 
   let sendResult
   try {
-    sendResult = await mailer.sendPaymentReceiptEmail({
+    sendResult = await _enqueueEmailJob(() => _sendWithRetry(`${EVENT_TYPE}#${paymentId}`, () => mailer.sendPaymentReceiptEmail({
       to: data.customer_email,
       customerName: data.customer_name,
       quotationNo: data.quotation_no,
@@ -925,7 +1289,7 @@ async function notifyPaymentReceived(paymentId, actorUserId, { resend = false } 
       model: data.model,
       vehicleYear: data.vehicle_year,
       color: data.color,
-    })
+    })))
   } catch (err) {
     await _logNotification({
       eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: paymentId,
@@ -936,6 +1300,13 @@ async function notifyPaymentReceived(paymentId, actorUserId, { resend = false } 
       userId: actorUserId, action: 'EMAIL_FAILED', entity: ENTITY_TYPE, entityId: paymentId,
       meta: { event: EVENT_TYPE, to: data.customer_email, error: err.message },
     }).catch(() => {})
+    await _logEmailResult({
+      userId: data.customer_id,
+      email: data.customer_email,
+      subject: `Payment Receipt: ${data.quotation_no}`,
+      status: 'failed',
+      errorMessage: err.message,
+    })
     console.error(`[EmailNotification] ${EVENT_TYPE} #${paymentId} FAILED:`, err.message)
     return
   }
@@ -952,15 +1323,349 @@ async function notifyPaymentReceived(paymentId, actorUserId, { resend = false } 
       userId: actorUserId, action: 'EMAIL_SENT', entity: ENTITY_TYPE, entityId: paymentId,
       meta: { event: EVENT_TYPE, to: data.customer_email, subject: `Payment Receipt: ${data.quotation_no}` },
     }).catch(() => {})
+    await _logEmailResult({
+      userId: data.customer_id,
+      email: data.customer_email,
+      subject: `Payment Receipt: ${data.quotation_no}`,
+      status: 'sent',
+    })
+    await _syncClientNotification({
+      customerId: data.customer_id,
+      eventType: EVENT_TYPE,
+      payload: { payment_id: paymentId, quotation_id: data.quotation_id },
+    })
     console.info(`[EmailNotification] ${EVENT_TYPE} #${paymentId} → sent to ${data.customer_email}`)
+  }
+}
+
+async function notifyScheduleApproved(appointmentId, actorUserId, { resend = false } = {}) {
+  const EVENT_TYPE = 'schedule_approved'
+  const ENTITY_TYPE = 'appointment'
+
+  if (resend) {
+    await db.query(
+      `DELETE FROM email_notifications WHERE event_type = $1 AND entity_id = $2`,
+      [EVENT_TYPE, appointmentId],
+    ).catch(() => {})
+  } else if (await _alreadySent(EVENT_TYPE, appointmentId)) {
+    return
+  }
+
+  const { rows } = await db.query(
+    `SELECT a.id,
+            a.customer_id,
+            a.schedule_start,
+            a.schedule_end,
+            a.bay,
+            a.installer_team,
+            a.notes,
+            c.full_name AS customer_name,
+            c.email AS customer_email,
+            v.plate_number,
+            v.make,
+            v.model,
+            v.year AS vehicle_year,
+            v.color,
+            sv.name AS service_name,
+            COALESCE(q.quotation_no, s.reference_no) AS reference_no,
+            q.notes AS quotation_notes,
+            q.created_by AS quotation_created_by
+     FROM appointments a
+     JOIN customers c ON c.id = a.customer_id
+     JOIN vehicles v ON v.id = a.vehicle_id
+     LEFT JOIN services sv ON sv.id = a.service_id
+     LEFT JOIN quotations q ON q.id = a.quotation_id
+     LEFT JOIN sales s ON s.id = a.sale_id
+     WHERE a.id = $1
+     LIMIT 1`,
+    [appointmentId],
+  )
+
+  if (!rows.length) return
+  const row = rows[0]
+  if (!row.customer_email || !_isValidEmail(row.customer_email)) return
+
+  const isPortalQuotation =
+    Boolean(row.reference_no) &&
+    String(row.quotation_notes || '').includes('[PORTAL BOOKING REQUEST]') &&
+    (row.quotation_created_by === null || row.quotation_created_by === undefined)
+
+  let sendResult
+  try {
+    sendResult = await _enqueueEmailJob(() => _sendWithRetry(`${EVENT_TYPE}#${appointmentId}`, () => {
+      if (isPortalQuotation) {
+        return mailer.sendQuotationApprovedScheduledEmail({
+          to: row.customer_email,
+          customerName: row.customer_name,
+          plateNumber: row.plate_number,
+          make: row.make,
+          model: row.model,
+          vehicleYear: row.vehicle_year,
+          color: row.color,
+          scheduleStart: row.schedule_start,
+          scheduleEnd: row.schedule_end,
+          bay: row.bay,
+          installerTeam: row.installer_team,
+          serviceName: row.service_name,
+          referenceNo: row.reference_no,
+        })
+      }
+
+      return mailer.sendBookingConfirmationEmail({
+        to: row.customer_email,
+        customerName: row.customer_name,
+        plateNumber: row.plate_number,
+        make: row.make,
+        model: row.model,
+        vehicleYear: row.vehicle_year,
+        color: row.color,
+        scheduleStart: row.schedule_start,
+        scheduleEnd: row.schedule_end,
+        bay: row.bay,
+        installerTeam: row.installer_team,
+        serviceName: row.service_name,
+        referenceNo: row.reference_no,
+        notes: row.notes,
+      })
+    }))
+  } catch (err) {
+    await _logNotification({
+      eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: appointmentId,
+      recipientEmail: row.customer_email, status: 'failed',
+      errorMessage: err.message, triggeredBy: actorUserId,
+    })
+    await _logEmailResult({
+      userId: row.customer_id,
+      email: row.customer_email,
+      subject: `Schedule Approved: ${row.reference_no || `APPT-${appointmentId}`}`,
+      status: 'failed',
+      errorMessage: err.message,
+    })
+    return
+  }
+
+  const status = sendResult?.skipped ? 'skipped' : 'sent'
+  await _logNotification({
+    eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: appointmentId,
+    recipientEmail: row.customer_email, status, triggeredBy: actorUserId,
+  })
+
+  if (!sendResult?.skipped) {
+    await _logEmailResult({
+      userId: row.customer_id,
+      email: row.customer_email,
+      subject: `Schedule Approved: ${row.reference_no || `APPT-${appointmentId}`}`,
+      status: 'sent',
+    })
+    await _syncClientNotification({
+      customerId: row.customer_id,
+      eventType: EVENT_TYPE,
+      payload: { appointment_id: appointmentId, quotation_no: row.reference_no },
+    })
+  }
+}
+
+async function notifySubscriptionConfirmed(userId, actorUserId, data = {}) {
+  const eventEntityId = Number(data.subscriptionId || 0) || Date.now()
+  const EVENT_TYPE = 'subscription_confirmed'
+  const ENTITY_TYPE = 'subscription'
+
+  if (await _alreadySent(EVENT_TYPE, eventEntityId)) return
+  if (!data.email || !_isValidEmail(data.email)) return
+
+  let sendResult
+  try {
+    sendResult = await _enqueueEmailJob(() => _sendWithRetry(`${EVENT_TYPE}#${eventEntityId}`, () => mailer.sendSubscriptionConfirmationEmail({
+      to: data.email,
+      customerName: data.customerName,
+      packageName: data.packageName,
+      frequency: data.frequency,
+      startDate: data.startDate,
+      endDate: data.endDate,
+      amount: data.amount,
+      plateNumber: data.plateNumber,
+      ctaUrl: data.ctaUrl || env.portalUrl,
+    })))
+  } catch (err) {
+    await _logNotification({
+      eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: eventEntityId,
+      recipientEmail: data.email, status: 'failed', errorMessage: err.message, triggeredBy: actorUserId,
+    })
+    await _logEmailResult({ userId, email: data.email, subject: 'Subscription Confirmation', status: 'failed', errorMessage: err.message })
+    return
+  }
+
+  const status = sendResult?.skipped ? 'skipped' : 'sent'
+  await _logNotification({
+    eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: eventEntityId,
+    recipientEmail: data.email, status, triggeredBy: actorUserId,
+  })
+  if (!sendResult?.skipped) {
+    await _logEmailResult({ userId, email: data.email, subject: 'Subscription Confirmation', status: 'sent' })
+    await _syncClientNotification({
+      customerId: userId,
+      eventType: EVENT_TYPE,
+      payload: { subscription_id: data.subscriptionId || null },
+    })
+  }
+}
+
+async function notifyPmsBookingConfirmed(userId, actorUserId, data = {}) {
+  const eventEntityId = Number(data.appointmentId || 0) || Date.now()
+  const EVENT_TYPE = 'pms_booking_confirmed'
+  const ENTITY_TYPE = 'appointment'
+
+  if (await _alreadySent(EVENT_TYPE, eventEntityId)) return
+  if (!data.email || !_isValidEmail(data.email)) return
+
+  let sendResult
+  try {
+    sendResult = await _enqueueEmailJob(() => _sendWithRetry(`${EVENT_TYPE}#${eventEntityId}`, () => mailer.sendPmsBookingConfirmationEmail({
+      to: data.email,
+      customerName: data.customerName,
+      packageName: data.packageName,
+      scheduleStart: data.scheduleStart,
+      scheduleEnd: data.scheduleEnd,
+      bay: data.bay,
+      plateNumber: data.plateNumber,
+      referenceNo: data.referenceNo,
+      ctaUrl: data.ctaUrl || env.portalUrl,
+    })))
+  } catch (err) {
+    await _logNotification({
+      eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: eventEntityId,
+      recipientEmail: data.email, status: 'failed', errorMessage: err.message, triggeredBy: actorUserId,
+    })
+    await _logEmailResult({ userId, email: data.email, subject: 'PMS Booking Confirmation', status: 'failed', errorMessage: err.message })
+    return
+  }
+
+  const status = sendResult?.skipped ? 'skipped' : 'sent'
+  await _logNotification({
+    eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: eventEntityId,
+    recipientEmail: data.email, status, triggeredBy: actorUserId,
+  })
+  if (!sendResult?.skipped) {
+    await _logEmailResult({ userId, email: data.email, subject: 'PMS Booking Confirmation', status: 'sent' })
+    await _syncClientNotification({
+      customerId: userId,
+      eventType: EVENT_TYPE,
+      payload: { appointment_id: data.appointmentId || null },
+    })
+  }
+}
+
+async function notifyJobStatusUpdated(jobOrderId, status, actorUserId, extra = {}) {
+  const normalized = String(status || '').trim()
+  const lower = normalized.toLowerCase().replace(/\s+/g, '_')
+  if (!normalized) return
+
+  if (normalized === 'In Progress') return notifyJobStarted(jobOrderId, actorUserId, extra)
+  if (normalized === 'Completed') return notifyJobCompleted(jobOrderId, actorUserId)
+  if (normalized === 'Released') return notifyJobReleased(jobOrderId, actorUserId)
+
+  const EVENT_TYPE = `job_status_updated_${lower}`
+  const ENTITY_TYPE = 'job_order'
+
+  if (await _alreadySent(EVENT_TYPE, jobOrderId)) return
+
+  const { rows } = await db.query(
+    `SELECT jo.id,
+            jo.job_order_no,
+            q.quotation_no,
+            c.id AS customer_id,
+            c.full_name AS customer_name,
+            c.email AS customer_email,
+            v.plate_number,
+            v.make,
+            v.model,
+            v.year AS vehicle_year,
+            v.color
+     FROM job_orders jo
+     JOIN customers c ON c.id = jo.customer_id
+     LEFT JOIN quotations q ON q.id = jo.quotation_id
+     LEFT JOIN vehicles v ON v.id = jo.vehicle_id
+     WHERE jo.id = $1`,
+    [jobOrderId],
+  )
+  if (!rows.length) return
+  const row = rows[0]
+  if (!row.customer_email || !_isValidEmail(row.customer_email)) return
+
+  let sendResult
+  try {
+    sendResult = await _enqueueEmailJob(() => _sendWithRetry(`${EVENT_TYPE}#${jobOrderId}`, () => mailer.sendJobStatusUpdateEmail({
+      to: row.customer_email,
+      customerName: row.customer_name,
+      jobOrderNo: row.job_order_no,
+      quotationNo: row.quotation_no,
+      plateNumber: row.plate_number,
+      make: row.make,
+      model: row.model,
+      vehicleYear: row.vehicle_year,
+      color: row.color,
+      status: normalized,
+      statusAt: new Date(),
+      notes: extra.cancelReason || null,
+      ctaUrl: env.portalUrl,
+    })))
+  } catch (err) {
+    await _logNotification({
+      eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: jobOrderId,
+      recipientEmail: row.customer_email, status: 'failed', errorMessage: err.message, triggeredBy: actorUserId,
+    })
+    await _logEmailResult({ userId: row.customer_id, email: row.customer_email, subject: `Job Status Update: ${normalized}`, status: 'failed', errorMessage: err.message })
+    return
+  }
+
+  const statusResult = sendResult?.skipped ? 'skipped' : 'sent'
+  await _logNotification({
+    eventType: EVENT_TYPE, entityType: ENTITY_TYPE, entityId: jobOrderId,
+    recipientEmail: row.customer_email, status: statusResult, triggeredBy: actorUserId,
+  })
+  if (!sendResult?.skipped) {
+    await _logEmailResult({ userId: row.customer_id, email: row.customer_email, subject: `Job Status Update: ${normalized}`, status: 'sent' })
+    await _syncClientNotification({
+      customerId: row.customer_id,
+      eventType: EVENT_TYPE,
+      payload: { job_order_id: jobOrderId, status: normalized },
+    })
+  }
+}
+
+async function sendEmail(eventType, userId, data = {}) {
+  const type = String(eventType || '').trim()
+  switch (type) {
+    case 'quotation_approved':
+      return notifyQuotationApproved(Number(data.quotationId), userId)
+    case 'schedule_approved':
+      return notifyScheduleApproved(Number(data.appointmentId), userId, { resend: Boolean(data.resend) })
+    case 'job_order_confirmed':
+      return notifyTechnicianAssigned(Number(data.jobOrderId), userId)
+    case 'payment_completed':
+    case 'payment_received':
+      return notifyPaymentReceived(Number(data.paymentId), userId, { resend: Boolean(data.resend) })
+    case 'job_status_updated':
+      return notifyJobStatusUpdated(Number(data.jobOrderId), data.status, userId, data)
+    case 'subscription_confirmed':
+      return notifySubscriptionConfirmed(Number(data.userId || userId), userId, data)
+    case 'pms_booking_confirmed':
+      return notifyPmsBookingConfirmed(Number(data.userId || userId), userId, data)
+    default:
+      throw new Error(`Unsupported email event type: ${type}`)
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 module.exports = {
+  sendEmail,
   notifyQuotationApproved,
+  notifyScheduleApproved,
   notifyJobStarted,
+  notifyJobStatusUpdated,
+  notifySubscriptionConfirmed,
+  notifyPmsBookingConfirmed,
   notifyTechnicianAssigned,
   notifyJobCompleted,
   notifyJobReleased,

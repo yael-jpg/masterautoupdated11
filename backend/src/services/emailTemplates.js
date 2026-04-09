@@ -180,6 +180,8 @@ function buildServiceConfirmationEmail({
   services = [],
   totalAmount,
   subtotal,
+  applyVat = false,
+  vatRate = 12,
   vatAmount,
   notes,
   hasCoating = false,
@@ -247,13 +249,13 @@ function buildServiceConfirmationEmail({
         </thead>
         <tbody>
           ${serviceRows || '<tr><td colspan="2">No services listed</td></tr>'}
-          ${(vatAmount > 0) ? `
+          ${(applyVat && Number(vatAmount) > 0) ? `
           <tr style="border-top:1px solid #e2e8f0;">
             <td style="color:#475569;">Subtotal</td>
             <td class="price" style="color:#475569;">${formatCurrency(subtotal)}</td>
           </tr>
           <tr>
-            <td style="color:#475569;">VAT</td>
+            <td style="color:#475569;">VAT (${Number(vatRate) || 12}%)</td>
             <td class="price" style="color:#475569;">+ ${formatCurrency(vatAmount)}</td>
           </tr>` : ''}
           <tr class="total-row">
@@ -333,7 +335,7 @@ function buildServiceConfirmationEmail({
     ...services.map((s) => `  - ${s.name || 'Service'}: ${formatCurrency(s.unitPrice || s.total || s.price || 0)}`),  
     '',
     `ESTIMATED TOTAL: ${formatCurrency(totalAmount)}`,
-    ...(vatAmount > 0 ? [`  (Subtotal: ${formatCurrency(subtotal)} + VAT: ${formatCurrency(vatAmount)})`] : []),
+    ...(applyVat && Number(vatAmount) > 0 ? [`  (Subtotal: ${formatCurrency(subtotal)} + VAT (${Number(vatRate) || 12}%): ${formatCurrency(vatAmount)})`] : []),
     '',
     ...(hasCoating ? [
       'COATING SERVICE PROCESS:',
@@ -1227,6 +1229,123 @@ function buildPortalBookingRequestEmail({
   }
 }
 
+function buildPortalAvailRequestEmail({
+  requestType = 'subscription',
+  customerName,
+  plateNumber,
+  make,
+  model,
+  vehicleYear,
+  color,
+  preferredStart,
+  preferredEnd,
+  serviceName,
+  referenceNo,
+  notes,
+} = {}) {
+  const vehicleLabel = buildVehicleLabel({ make, model, year: vehicleYear, color })
+  const isPms = String(requestType || '').toLowerCase() === 'pms'
+  const requestLabel = isPms ? 'PMS' : 'Subscription'
+
+  const html = wrapLayout(`
+    <div class="header">
+      <img class="header-logo" src="cid:masterauto_logo" alt="${BRAND_NAME}" />
+      <h1>📩 ${requestLabel} Request Received</h1>
+      <p>We will review your request and confirm after approval</p>
+    </div>
+    <div class="body">
+      <p>Dear <strong>${customerName || 'Valued Client'}</strong>,</p>
+      <p>
+        Thank you! We received your <strong>${requestLabel.toLowerCase()} request</strong>.
+        Our team will review and approve it, then send your final confirmation.
+      </p>
+
+      <table class="info-table">
+        <thead><tr><th colspan="2">Request Details</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Vehicle</strong></td><td>${vehicleLabel || '—'}</td></tr>
+          ${plateNumber ? `<tr><td><strong>Plate No.</strong></td><td>${plateNumber}</td></tr>` : ''}
+          ${serviceName ? `<tr><td><strong>Requested Package</strong></td><td>${serviceName}</td></tr>` : ''}
+          ${referenceNo ? `<tr><td><strong>Reference No.</strong></td><td>${referenceNo}</td></tr>` : ''}
+          ${preferredStart ? `<tr><td><strong>Preferred Start</strong></td><td><strong>${formatDateTime(preferredStart)}</strong></td></tr>` : ''}
+          ${preferredEnd ? `<tr><td><strong>Estimated End</strong></td><td>${formatDateTime(preferredEnd)}</td></tr>` : ''}
+        </tbody>
+      </table>
+
+      ${notes ? `<p><strong>Notes:</strong> ${escapeHtml(notes)}</p>` : ''}
+
+      <div class="reminders">
+        <strong>⚠️ Next Steps</strong>
+        <ul>
+          <li>Wait for approval — we will review your ${requestLabel.toLowerCase()} request as soon as possible.</li>
+          <li>Once approved, we will confirm your request and send a follow-up email.</li>
+          <li>For urgent inquiries, reach us at <a href="mailto:${SUPPORT_EMAIL}" style="color:${BRAND_COLOR}">${SUPPORT_EMAIL}</a>.</li>
+        </ul>
+      </div>
+
+      <hr class="divider" />
+      <p>Thank you for choosing <strong>${BRAND_NAME}</strong>!</p>
+      <p style="margin-top:20px;"><em>— The ${BRAND_NAME} Team</em></p>
+    </div>
+  `)
+
+  const text = [
+    `Dear ${customerName || 'Valued Client'},`,
+    '',
+    `We received your ${requestLabel.toLowerCase()} request.`,
+    `Our team will review and confirm it after approval.`,
+    '',
+    `Vehicle: ${vehicleLabel || '—'}`,
+    plateNumber ? `Plate No.: ${plateNumber}` : null,
+    serviceName ? `Requested Package: ${serviceName}` : null,
+    referenceNo ? `Reference No.: ${referenceNo}` : null,
+    preferredStart ? `Preferred Start: ${formatDateTime(preferredStart)}` : null,
+    preferredEnd ? `Estimated End: ${formatDateTime(preferredEnd)}` : null,
+    notes ? `Notes: ${String(notes)}` : null,
+    '',
+    `For urgent inquiries: ${SUPPORT_EMAIL}`,
+    '',
+    `— The ${BRAND_NAME} Team`,
+  ].filter(Boolean).join('\n')
+
+  return {
+    subject: `${requestLabel} Request Received${plateNumber ? ` — ${plateNumber}` : ''}${referenceNo ? ` (${referenceNo})` : ''} | ${BRAND_NAME}`,
+    html,
+    text,
+  }
+}
+
+function buildPortalSubscriptionRequestEmail(params = {}) {
+  return buildPortalAvailRequestEmail({ ...params, requestType: 'subscription' })
+}
+
+function buildPortalPmsRequestEmail(params = {}) {
+  return buildPortalAvailRequestEmail({ ...params, requestType: 'pms' })
+}
+
+function buildPortalAvailStaffEmail({ requestType = 'subscription', ...payload } = {}) {
+  const isPms = String(requestType || '').toLowerCase() === 'pms'
+  const requestLabel = isPms ? 'PMS' : 'Subscription'
+  const base = buildQuotationRequestStaffEmail(payload)
+  return {
+    subject: `New Online ${requestLabel} Request — ${payload?.quotationNo || ''} | ${BRAND_NAME}`.trim(),
+    html: base.html
+      .replace('📥 New Online Quotation Request', `📥 New Online ${requestLabel} Request`)
+      .replace('Guest Portal request submitted', 'Guest Portal request submitted')
+      .replace('A new online quotation request has been received.', `A new online ${requestLabel.toLowerCase()} request has been received.`),
+    text: base.text
+      .replace('New online quotation request received.', `New online ${requestLabel.toLowerCase()} request received.`),
+  }
+}
+
+function buildSubscriptionRequestStaffEmail(params = {}) {
+  return buildPortalAvailStaffEmail({ ...params, requestType: 'subscription' })
+}
+
+function buildPmsRequestStaffEmail(params = {}) {
+  return buildPortalAvailStaffEmail({ ...params, requestType: 'pms' })
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Portal Quotation Approved & Scheduled — sent when staff schedules the booking
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1644,6 +1763,206 @@ function buildCampaignEmail({
   return { subject, html, text: content.replace(/<[^>]+>/g, '') }
 }
 
+function buildSimpleDetailsRows(details = []) {
+  return details
+    .filter((item) => item && item.label && item.value !== undefined && item.value !== null && String(item.value).trim() !== '')
+    .map((item) => `<tr><td><strong>${escapeHtml(item.label)}</strong></td><td>${escapeHtml(String(item.value))}</td></tr>`)
+    .join('')
+}
+
+function buildCtaButton({ label, url }) {
+  if (!label || !url) return ''
+  return `
+    <div style="margin:20px 0 10px; text-align:center;">
+      <a href="${escapeHtml(url)}" style="display:inline-block;background:${BRAND_COLOR};color:#ffffff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:800;">
+        ${escapeHtml(label)}
+      </a>
+    </div>
+  `
+}
+
+function buildJobStatusUpdateEmail({
+  customerName,
+  jobOrderNo,
+  quotationNo,
+  plateNumber,
+  make,
+  model,
+  vehicleYear,
+  color,
+  status,
+  statusAt,
+  notes,
+  ctaUrl,
+}) {
+  const vehicleLabel = buildVehicleLabel({ make, model, year: vehicleYear, color })
+  const safeStatus = String(status || 'Updated')
+
+  const html = wrapLayout(`
+    <div class="header">
+      <img class="header-logo" src="cid:masterauto_logo" alt="${BRAND_NAME}" />
+      <h1>Job Order Status Update</h1>
+      <p>${escapeHtml(jobOrderNo || 'Job Order')} is now ${escapeHtml(safeStatus)}</p>
+    </div>
+    <div class="body">
+      <p>Hi <strong>${escapeHtml(customerName || 'Client')}</strong>,</p>
+      <p>Your job order status has been updated to <strong>${escapeHtml(safeStatus)}</strong>.</p>
+
+      <table class="info-table">
+        <thead><tr><th colspan="2">Status Details</th></tr></thead>
+        <tbody>
+          ${buildSimpleDetailsRows([
+            { label: 'Job Order No.', value: jobOrderNo },
+            { label: 'Quotation No.', value: quotationNo },
+            { label: 'Vehicle', value: vehicleLabel || '—' },
+            { label: 'Plate No.', value: plateNumber },
+            { label: 'New Status', value: safeStatus },
+            { label: 'Updated At', value: formatDateTime(statusAt || new Date()) },
+          ])}
+        </tbody>
+      </table>
+
+      ${notes ? `<p><strong>Notes:</strong> ${escapeHtml(notes)}</p>` : ''}
+      ${buildCtaButton({ label: 'View in Portal', url: ctaUrl })}
+
+      <hr class="divider" />
+      <p>If you have any questions, contact us at <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>.</p>
+      <p style="margin-top:20px;"><em>— The ${BRAND_NAME} Team</em></p>
+    </div>
+  `)
+
+  const text = [
+    `Hi ${customerName || 'Client'},`,
+    `Your job order status is now ${safeStatus}.`,
+    jobOrderNo ? `Job Order: ${jobOrderNo}` : null,
+    quotationNo ? `Quotation: ${quotationNo}` : null,
+    vehicleLabel ? `Vehicle: ${vehicleLabel}` : null,
+    plateNumber ? `Plate No.: ${plateNumber}` : null,
+    `Updated At: ${formatDateTime(statusAt || new Date())}`,
+    notes ? `Notes: ${notes}` : null,
+    ctaUrl ? `Portal: ${ctaUrl}` : null,
+    `Contact: ${SUPPORT_EMAIL}`,
+  ].filter(Boolean).join('\n')
+
+  return {
+    subject: `Job Status Update: ${safeStatus}${jobOrderNo ? ` — ${jobOrderNo}` : ''} | ${BRAND_NAME}`,
+    html,
+    text,
+  }
+}
+
+function buildSubscriptionConfirmationEmail({
+  customerName,
+  packageName,
+  frequency,
+  startDate,
+  endDate,
+  amount,
+  plateNumber,
+  ctaUrl,
+}) {
+  const html = wrapLayout(`
+    <div class="header">
+      <img class="header-logo" src="cid:masterauto_logo" alt="${BRAND_NAME}" />
+      <h1>Subscription Approved</h1>
+      <p>Your subscription has been activated</p>
+    </div>
+    <div class="body">
+      <p>Hi <strong>${escapeHtml(customerName || 'Client')}</strong>,</p>
+      <p>Your subscription request has been approved and your plan is now active.</p>
+      <table class="info-table">
+        <thead><tr><th colspan="2">Subscription Details</th></tr></thead>
+        <tbody>
+          ${buildSimpleDetailsRows([
+            { label: 'Package', value: packageName },
+            { label: 'Frequency', value: frequency },
+            { label: 'Vehicle Plate', value: plateNumber },
+            { label: 'Start Date', value: formatDate(startDate) },
+            { label: 'End Date', value: endDate ? formatDate(endDate) : null },
+            { label: 'Amount', value: amount != null ? formatCurrency(amount) : null },
+          ])}
+        </tbody>
+      </table>
+      ${buildCtaButton({ label: 'View in Portal', url: ctaUrl })}
+      <p style="margin-top:20px;"><em>— The ${BRAND_NAME} Team</em></p>
+    </div>
+  `)
+
+  const text = [
+    `Hi ${customerName || 'Client'},`,
+    'Your subscription request has been approved and is now active.',
+    packageName ? `Package: ${packageName}` : null,
+    frequency ? `Frequency: ${frequency}` : null,
+    plateNumber ? `Vehicle Plate: ${plateNumber}` : null,
+    startDate ? `Start Date: ${formatDate(startDate)}` : null,
+    endDate ? `End Date: ${formatDate(endDate)}` : null,
+    amount != null ? `Amount: ${formatCurrency(amount)}` : null,
+    ctaUrl ? `Portal: ${ctaUrl}` : null,
+  ].filter(Boolean).join('\n')
+
+  return {
+    subject: `Subscription Approved & Active${packageName ? ` — ${packageName}` : ''} | ${BRAND_NAME}`,
+    html,
+    text,
+  }
+}
+
+function buildPmsBookingConfirmationEmail({
+  customerName,
+  packageName,
+  scheduleStart,
+  scheduleEnd,
+  bay,
+  plateNumber,
+  referenceNo,
+  ctaUrl,
+}) {
+  const html = wrapLayout(`
+    <div class="header">
+      <img class="header-logo" src="cid:masterauto_logo" alt="${BRAND_NAME}" />
+      <h1>PMS Booking Confirmed</h1>
+      <p>Your preventive maintenance schedule is confirmed</p>
+    </div>
+    <div class="body">
+      <p>Hi <strong>${escapeHtml(customerName || 'Client')}</strong>,</p>
+      <p>Your PMS booking has been confirmed. See details below.</p>
+      <table class="info-table">
+        <thead><tr><th colspan="2">PMS Booking Details</th></tr></thead>
+        <tbody>
+          ${buildSimpleDetailsRows([
+            { label: 'Package', value: packageName },
+            { label: 'Reference No.', value: referenceNo },
+            { label: 'Vehicle Plate', value: plateNumber },
+            { label: 'Schedule Start', value: formatDateTime(scheduleStart) },
+            { label: 'Schedule End', value: scheduleEnd ? formatDateTime(scheduleEnd) : null },
+            { label: 'Branch/Bay', value: bay },
+          ])}
+        </tbody>
+      </table>
+      ${buildCtaButton({ label: 'View in Portal', url: ctaUrl })}
+      <p style="margin-top:20px;"><em>— The ${BRAND_NAME} Team</em></p>
+    </div>
+  `)
+
+  const text = [
+    `Hi ${customerName || 'Client'},`,
+    'Your PMS booking is confirmed.',
+    packageName ? `Package: ${packageName}` : null,
+    referenceNo ? `Reference No.: ${referenceNo}` : null,
+    plateNumber ? `Vehicle Plate: ${plateNumber}` : null,
+    scheduleStart ? `Start: ${formatDateTime(scheduleStart)}` : null,
+    scheduleEnd ? `End: ${formatDateTime(scheduleEnd)}` : null,
+    bay ? `Branch/Bay: ${bay}` : null,
+    ctaUrl ? `Portal: ${ctaUrl}` : null,
+  ].filter(Boolean).join('\n')
+
+  return {
+    subject: `PMS Booking Confirmed${referenceNo ? ` — ${referenceNo}` : ''} | ${BRAND_NAME}`,
+    html,
+    text,
+  }
+}
+
 module.exports = {
   wrapLayout,
   buildServiceConfirmationEmail,
@@ -1654,12 +1973,19 @@ module.exports = {
   buildCancellationEmail,
   buildBookingConfirmationEmail,
   buildPortalBookingRequestEmail,
+  buildPortalSubscriptionRequestEmail,
+  buildPortalPmsRequestEmail,
   buildQuotationApprovedScheduledEmail,
   buildPortalAccessEmail,
   buildPortalEmailVerificationEmail,
   buildPaymentReceiptEmail,
   buildQuotationRequestReceivedEmail,
   buildQuotationRequestStaffEmail,
+  buildSubscriptionRequestStaffEmail,
+  buildPmsRequestStaffEmail,
   buildCampaignEmail,
+  buildJobStatusUpdateEmail,
+  buildSubscriptionConfirmationEmail,
+  buildPmsBookingConfirmationEmail,
 }
 

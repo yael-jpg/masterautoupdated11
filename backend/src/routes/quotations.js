@@ -50,6 +50,18 @@ async function quotationsHasBayColumn() {
   return _quotationsHasBayColumn
 }
 
+let _quotationVatSchemaReady = false
+async function ensureQuotationVatSchema() {
+  if (_quotationVatSchemaReady) return
+  await db.query(`
+    ALTER TABLE quotations
+      ADD COLUMN IF NOT EXISTS apply_vat BOOLEAN NOT NULL DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS vat_rate NUMERIC(5,2) NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(12,2) NOT NULL DEFAULT 0
+  `)
+  _quotationVatSchemaReady = true
+}
+
 const BRANCH_CODES = { cubao: 'CBO', manila: 'MNL' }
 function getBranchCode(bay) {
   if (!bay) return 'BR'
@@ -76,6 +88,7 @@ async function nextQuotationNo(client, branchCode = 'BR') {
 router.get(
   '/',
   asyncHandler(async (req, res) => {
+    await ensureQuotationVatSchema()
     const usePaymentSummary = await hasQuotationPaymentSummaryView()
 
     const search   = String(req.query.search || '').trim().toLowerCase()
@@ -213,6 +226,7 @@ router.get(
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {
+    await ensureQuotationVatSchema()
     const { rows } = await db.query(
       `SELECT q.*,
               c.full_name   AS customer_name,
@@ -288,7 +302,8 @@ router.get(
 router.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { customerId, vehicleId, services, notes, totalAmount, overrideBalance, vehicleSize, coatingProcess, promoCode, bay } = req.body
+    await ensureQuotationVatSchema()
+    const { customerId, vehicleId, services, notes, totalAmount, overrideBalance, vehicleSize, coatingProcess, promoCode, bay, applyVat, vatRate, vatAmount } = req.body
 
     if (!customerId || !vehicleId) {
       return res.status(400).json({ message: 'Customer and vehicle are required' })
@@ -387,6 +402,10 @@ router.post(
     }
     const branchCode = getBranchCode(resolvedBay)
 
+    const applyVatFlag = !!applyVat
+    const normalizedVatRate = applyVatFlag ? 12 : 0
+    const normalizedVatAmount = applyVatFlag ? Math.max(Number(vatAmount) || 0, 0) : 0
+
     const hasBayColumn = await quotationsHasBayColumn()
 
     const client = await db.pool.connect()
@@ -408,6 +427,9 @@ router.post(
         'coating_process',
         'promo_code',
         'discount_amount',
+        'apply_vat',
+        'vat_rate',
+        'vat_amount',
       ]
       const insertValues = [
         quotationNo,
@@ -421,6 +443,9 @@ router.post(
         coatingProcess || null,
         appliedPromoCode,
         discountAmount,
+        applyVatFlag,
+        normalizedVatRate,
+        normalizedVatAmount,
       ]
       if (hasBayColumn) {
         insertColumns.push('bay')
@@ -589,7 +614,7 @@ router.patch(
     // Non-blocking: email failure must never break the HTTP response.
     if (isApproving) {
       emailNotificationService
-        .notifyQuotationApproved(rows[0].id, req.user?.id)
+        .sendEmail('quotation_approved', req.user?.id, { quotationId: rows[0].id })
         .catch((err) => console.error('[EmailNotification] quotation_approved error:', err.message))
     }
 
@@ -665,7 +690,8 @@ router.post(
 
 router.patch(
   '/:id',  requireRole('SuperAdmin'),  asyncHandler(async (req, res) => {
-    const { services, notes, totalAmount, vehicleSize, coatingProcess, promoCode, bay } = req.body
+    await ensureQuotationVatSchema()
+    const { services, notes, totalAmount, vehicleSize, coatingProcess, promoCode, bay, applyVat, vatRate, vatAmount } = req.body
 
     const { rows: existing } = await db.query(
       'SELECT * FROM quotations WHERE id = $1',
@@ -718,6 +744,9 @@ router.patch(
     }
 
     const finalTotal = Math.max((Number(totalAmount) || 0) - discountAmount, 0)
+    const nextApplyVat = (applyVat === undefined || applyVat === null) ? !!cur.apply_vat : !!applyVat
+    const nextVatRate = nextApplyVat ? 12 : 0
+    const nextVatAmount = nextApplyVat ? Math.max(Number(vatAmount) || 0, 0) : 0
 
     const hasBayColumn = await quotationsHasBayColumn()
 
@@ -729,6 +758,9 @@ router.patch(
       'coating_process = $5',
       'promo_code = $6',
       'discount_amount = $7',
+      'apply_vat = $8',
+      'vat_rate = $9',
+      'vat_amount = $10',
     ]
     const params = [
       JSON.stringify(services || []),
@@ -738,6 +770,9 @@ router.patch(
       coatingProcess || null,
       appliedPromoCode,
       discountAmount,
+      nextApplyVat,
+      nextVatRate,
+      nextVatAmount,
     ]
 
     if (hasBayColumn) {

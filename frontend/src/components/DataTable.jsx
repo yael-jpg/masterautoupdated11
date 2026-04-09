@@ -2,6 +2,9 @@ export function DataTable({
   headers,
   rows,
   rowActions,
+  loading = false,
+  loadingMessage = 'Loading data...',
+  emptyMessage = 'No data available',
   selectable = false,
   selectedKeys = new Set(),
   onToggleRow,
@@ -89,50 +92,70 @@ export function DataTable({
           </tr>
         </thead>
         <tbody>
-          {normalizedRows.map((normalized, rowIndex) => {
-            return (
-              <tr
-                key={normalized.key || `${rowIndex}`}
-                style={clickable ? { cursor: 'pointer' } : undefined}
-                onClick={clickable ? (e) => {
-                  if (e.target && typeof e.target.closest === 'function') {
-                    if (e.target.closest('.col-actions') || e.target.closest('input[type="checkbox"]')) return
-                  }
-                  onRowClick(normalized.raw, rowIndex)
-                } : undefined}
+          {loading ? (
+            <tr>
+              <td
+                className="table-empty"
+                colSpan={headers.length + (selectable ? 1 : 0) + (rowActions ? 1 : 0)}
               >
-                {selectable ? (
-                  <td className="col-static col-priority-1">
-                    <input
-                      type="checkbox"
-                      checked={selectedKeys.has(normalized.key)}
-                      onChange={(event) => onToggleRow?.(normalized, event.target.checked)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </td>
-                ) : null}
-                {normalized.cells.map((cell, cellIndex) => {
-                  const isPlainText = typeof cell === 'string' || typeof cell === 'number'
-                  return (
-                    <td
-                      key={`${cellIndex}-${isPlainText ? cell : cellIndex}`}
-                      className={`col-priority-${getColumnPriority(headers[cellIndex], cellIndex)} td-truncate`}
-                      data-label={String(headers[cellIndex])}
-                      title={isPlainText ? String(cell) : undefined}
-                      onClick={clickable ? () => onRowClick(normalized.raw, rowIndex) : undefined}
-                    >
-                      {cell}
+                {loadingMessage}
+              </td>
+            </tr>
+          ) : normalizedRows.length === 0 ? (
+            <tr>
+              <td
+                className="table-empty"
+                colSpan={headers.length + (selectable ? 1 : 0) + (rowActions ? 1 : 0)}
+              >
+                {emptyMessage}
+              </td>
+            </tr>
+          ) : (
+            normalizedRows.map((normalized, rowIndex) => {
+              return (
+                <tr
+                  key={normalized.key || `${rowIndex}`}
+                  style={clickable ? { cursor: 'pointer' } : undefined}
+                  onClick={clickable ? (e) => {
+                    if (e.target && typeof e.target.closest === 'function') {
+                      if (e.target.closest('.col-actions') || e.target.closest('input[type="checkbox"]')) return
+                    }
+                    onRowClick(normalized.raw, rowIndex)
+                  } : undefined}
+                >
+                  {selectable ? (
+                    <td className="col-static col-priority-1">
+                      <input
+                        type="checkbox"
+                        checked={selectedKeys.has(normalized.key)}
+                        onChange={(event) => onToggleRow?.(normalized, event.target.checked)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
                     </td>
-                  )
-                })}
-                {rowActions ? (
-                  <td className="col-actions col-priority-1">
-                    {rowActions(normalized.raw, rowIndex)}
-                  </td>
-                ) : null}
-              </tr>
-            )
-          })}
+                  ) : null}
+                  {normalized.cells.map((cell, cellIndex) => {
+                    const isPlainText = typeof cell === 'string' || typeof cell === 'number'
+                    return (
+                      <td
+                        key={`${cellIndex}-${isPlainText ? cell : cellIndex}`}
+                        className={`col-priority-${getColumnPriority(headers[cellIndex], cellIndex)} td-truncate`}
+                        data-label={String(headers[cellIndex])}
+                        title={isPlainText ? String(cell) : undefined}
+                        onClick={clickable ? () => onRowClick(normalized.raw, rowIndex) : undefined}
+                      >
+                        {cell}
+                      </td>
+                    )
+                  })}
+                  {rowActions ? (
+                    <td className="col-actions col-priority-1">
+                      {rowActions(normalized.raw, rowIndex)}
+                    </td>
+                  ) : null}
+                </tr>
+              )
+            })
+          )}
         </tbody>
       </table>
     </div>

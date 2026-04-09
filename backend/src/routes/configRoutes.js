@@ -56,6 +56,10 @@ const PRICE_SENSITIVE_KEYS = new Set([
  */
 router.get('/', optionalAuth, async (req, res) => {
   try {
+    if (req.user?.role === 'Admin') {
+      return res.status(403).json({ error: 'SuperAdmin access required' });
+    }
+
     const config = await ConfigurationService.getAllSettings();
     
     // For non-admin users, return only safe settings

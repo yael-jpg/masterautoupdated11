@@ -286,7 +286,19 @@ function PortalVehicleRegisterModal({
   })()
 
   const submitVehicle = async (payload) => {
-    await portalPost('/vehicles', payload)
+    const rawMake = String(payload.make || '').trim()
+    const matchedMake = localMakes.find((m) => String(m?.name || '').trim().toLowerCase() === rawMake.toLowerCase())
+    const explicitOther = rawMake.toLowerCase() === 'other'
+    const resolvedMake = matchedMake ? matchedMake.name : 'Other'
+    const resolvedCustomMake = explicitOther
+      ? String(payload.customMake || '').trim()
+      : (matchedMake ? '' : rawMake)
+
+    await portalPost('/vehicles', {
+      ...payload,
+      make: resolvedMake,
+      customMake: resolvedMake === 'Other' ? resolvedCustomMake : null,
+    })
     pushToast('success', 'Vehicle registered successfully')
     await onCreated?.()
     onClose?.()
@@ -422,7 +434,7 @@ function PortalVehicleRegisterModal({
                   ...prev,
                   make: String(val || '').trim(),
                   model: '',
-                  customMake: '',
+                  customMake: String(val || '').trim().toLowerCase() === 'other' ? prev.customMake : '',
                   variant: '',
                   _customModel: false,
                   _customVariant: false,
@@ -430,6 +442,8 @@ function PortalVehicleRegisterModal({
               placeholder="Search brand…"
               required
               grouped
+              allowCustomValue
+              customValueText={(q) => `Use "${q}" as custom make`}
             />
           </div>
 

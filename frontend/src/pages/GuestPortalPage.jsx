@@ -111,6 +111,93 @@ function getServicePriceForSize(service, vehicleSize, priceOverrides = {}) {
     return Number.isFinite(fallback) ? fallback : 0
 }
 
+function normalizeVehicleSizeKey(value) {
+    const raw = String(value || '').trim().toLowerCase()
+    if (!raw) return null
+    const keyMatch = VEHICLE_SIZE_OPTIONS.find((opt) => opt.key === raw)
+    if (keyMatch) return keyMatch.key
+    const labelMatch = VEHICLE_SIZE_OPTIONS.find((opt) => opt.label.toLowerCase() === raw)
+    return labelMatch ? labelMatch.key : null
+}
+
+function explicitServiceSizeKey(service) {
+    const fields = [
+        service?.vehicle_size,
+        service?.vehicleSize,
+        service?.size_key,
+        service?.sizeKey,
+        service?.size,
+    ]
+    for (const candidate of fields) {
+        const normalized = normalizeVehicleSizeKey(candidate)
+        if (normalized) return normalized
+    }
+
+    const name = String(service?.name || '')
+    const byLabelLength = [...VEHICLE_SIZE_OPTIONS].sort((a, b) => b.label.length - a.label.length)
+    for (const option of byLabelLength) {
+        const suffix = ` - ${option.label}`.toLowerCase()
+        if (name.toLowerCase().endsWith(suffix)) return option.key
+    }
+    return null
+}
+
+function getAvailableVehicleSizes(services = [], priceOverrides = {}) {
+    const used = new Set()
+
+    for (const svc of services) {
+        const explicitSize = explicitServiceSizeKey(svc)
+        if (explicitSize) {
+            used.add(explicitSize)
+            continue
+        }
+
+        const lookupCodes = [String(svc?.code || '').trim(), dbCodeToCatalogCode(svc?.code)].filter(Boolean)
+        let foundFromPriceMatrix = false
+
+        for (const opt of VEHICLE_SIZE_OPTIONS) {
+            const hasPrice = lookupCodes.some((code) => Number(getEffectivePrice(code, opt.key, priceOverrides) || 0) > 0)
+            if (hasPrice) {
+                used.add(opt.key)
+                foundFromPriceMatrix = true
+            }
+        }
+
+        // If a service has no explicit per-size data, keep all sizes available
+        // so the guest can still request a quote for any vehicle type.
+        if (!foundFromPriceMatrix) {
+            VEHICLE_SIZE_OPTIONS.forEach((opt) => used.add(opt.key))
+        }
+    }
+
+    const options = VEHICLE_SIZE_OPTIONS.filter((opt) => used.has(opt.key))
+    return options.length ? options : VEHICLE_SIZE_OPTIONS
+}
+
+function serviceSupportsVehicleSize(service, vehicleSize, priceOverrides = {}) {
+    const sizeKey = vehicleSize || 'medium'
+
+    const explicitSize = explicitServiceSizeKey(service)
+    if (explicitSize) return explicitSize === sizeKey
+
+    const lookupCodes = [String(service?.code || '').trim(), dbCodeToCatalogCode(service?.code)].filter(Boolean)
+    if (!lookupCodes.length) return true
+
+    let hasAnyPriceMatrix = false
+    for (const opt of VEHICLE_SIZE_OPTIONS) {
+        const hasPrice = lookupCodes.some((code) => Number(getEffectivePrice(code, opt.key, priceOverrides) || 0) > 0)
+        if (hasPrice) {
+            hasAnyPriceMatrix = true
+            break
+        }
+    }
+
+    // No size/price matrix configured: treat as available for all sizes.
+    if (!hasAnyPriceMatrix) return true
+
+    return lookupCodes.some((code) => Number(getEffectivePrice(code, sizeKey, priceOverrides) || 0) > 0)
+}
+
 const PHONE_COUNTRIES = [
     { code: '63',  flag: '\uD83C\uDDF5\uD83C\uDDED', name: 'Philippines',   local: v => v.startsWith('09') || (v.startsWith('9') && v.replace(/\D/g,'').length === 10) },
     { code: '1',   flag: '\uD83C\uDDFA\uD83C\uDDF8', name: 'US / Canada' },
@@ -252,7 +339,7 @@ function GpServicePicker({ services, value, onChange, vehicleSize, priceOverride
         })).filter((s) => isAllowedForCategory(s))
 
   const isServiceAvailableForSize = (svc) => {
-        return getServicePriceForSize(svc, vehicleSize, priceOverrides) > 0
+      return serviceSupportsVehicleSize(svc, vehicleSize, priceOverrides)
   }
 
   const qStr = query.toLowerCase()
@@ -819,23 +906,19 @@ function ServicesTab({ onRequestQuote }) {
     const sizeLabelForFilter = VEHICLE_SIZE_OPTIONS.find(s => s.key === vehicleSize)?.label || null
 
     const serviceSupportsSize = (svc) => {
-        return getServicePriceForSize(svc, vehicleSize, priceOverrides) > 0
+        return serviceSupportsVehicleSize(svc, vehicleSize, priceOverrides)
     }
 
     const servicesForSize = fullCatalog.filter(serviceSupportsSize)
     const categories = ['All', ...new Set(servicesForSize.map(s => normalizePortalServiceCategory(s.category, s.name)).filter(Boolean))]
 
-    const availableVehicleSizes = useMemo(() => {
-        const used = new Set()
-        fullCatalog.forEach(svc => {
-            VEHICLE_SIZE_OPTIONS.forEach(opt => {
-                const price = getEffectivePrice(svc.code, opt.key, priceOverrides)
-                if (price > 0) used.add(opt.key)
-            })
-        })
-        const opts = VEHICLE_SIZE_OPTIONS.filter(o => used.has(o.key))
-        return opts.length ? opts : VEHICLE_SIZE_OPTIONS
-    }, [fullCatalog, priceOverrides])
+    const availableVehicleSizes = useMemo(() => getAvailableVehicleSizes(fullCatalog, priceOverrides), [fullCatalog, priceOverrides])
+
+    useEffect(() => {
+        if (!availableVehicleSizes.some((s) => s.key === vehicleSize)) {
+            setVehicleSize(availableVehicleSizes[0]?.key || 'medium')
+        }
+    }, [availableVehicleSizes, vehicleSize])
 
     const filtered = servicesForSize.filter(s => {
         const cat = normalizePortalServiceCategory(s.category, s.name)
@@ -970,6 +1053,7 @@ function QuotationTab({ prefillService }) {
     }, [services])
 
     const selectedService = form.serviceId ? fullCatalog.find(s => s.code === form.serviceId) : null
+    const availableVehicleSizes = useMemo(() => getAvailableVehicleSizes(fullCatalog, priceOverrides), [fullCatalog, priceOverrides])
     const selectedServiceSchedule = useMemo(() => {
         return selectedService ? getServiceScheduleProfile({ code: 'CAT-' + selectedService.code.toUpperCase(), name: selectedService.name }) : null
     }, [selectedService])
@@ -981,6 +1065,11 @@ function QuotationTab({ prefillService }) {
         const p = getServicePriceForSize(selectedService, form.vehicleSize, priceOverrides)
         return p > 0 ? p : null
     })()
+
+    useEffect(() => {
+        if (availableVehicleSizes.some((s) => s.key === form.vehicleSize)) return
+        setForm((f) => ({ ...f, vehicleSize: availableVehicleSizes[0]?.key || 'medium' }))
+    }, [availableVehicleSizes, form.vehicleSize])
 
 
     useEffect(() => {
@@ -1409,7 +1498,7 @@ function QuotationTab({ prefillService }) {
                             value={form.vehicleSize}
                             onChange={v => set('vehicleSize', v)}
                             placeholder="— Select Size —"
-                            options={VEHICLE_SIZE_OPTIONS.map(s => ({
+                            options={availableVehicleSizes.map(s => ({
                                 value: s.key,
                                 label: s.label,
                             }))}

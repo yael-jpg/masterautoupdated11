@@ -11,6 +11,56 @@ const { createSqlGzipBackup } = require('../utils/pgDumpBackup')
 
 const router = express.Router()
 
+const ROLE_MODULES = [
+  { key: 'dashboard', label: 'Dashboard', group: 'general', superAdminOnly: false, defaultAdminAccess: true },
+  { key: 'crm', label: 'CRM', group: 'master', superAdminOnly: false, defaultAdminAccess: true },
+  { key: 'services', label: 'Services', group: 'master', superAdminOnly: false, defaultAdminAccess: true },
+  { key: 'pms', label: 'PMS Management', group: 'master', superAdminOnly: false, defaultAdminAccess: true },
+  { key: 'online-quotation', label: 'Online Quotation', group: 'operations', superAdminOnly: false, defaultAdminAccess: true },
+  { key: 'quotations', label: 'Quotations', group: 'operations', superAdminOnly: false, defaultAdminAccess: true },
+  { key: 'scheduling', label: 'Scheduling', group: 'operations', superAdminOnly: false, defaultAdminAccess: true },
+  { key: 'job-orders', label: 'Job Orders', group: 'operations', superAdminOnly: false, defaultAdminAccess: true },
+  { key: 'jo-approval', label: 'JO Approval', group: 'operations', superAdminOnly: true, defaultAdminAccess: false },
+  { key: 'subscriptions', label: 'Subscriptions', group: 'operations', superAdminOnly: false, defaultAdminAccess: true },
+  { key: 'payments', label: 'Payments & POS', group: 'finance', superAdminOnly: false, defaultAdminAccess: true },
+  { key: 'sales', label: 'Sales & Invoices', group: 'finance', superAdminOnly: false, defaultAdminAccess: true },
+  { key: 'inventory', label: 'Inventory', group: 'management', superAdminOnly: false, defaultAdminAccess: true },
+  { key: 'admin', label: 'Admin & Security', group: 'management', superAdminOnly: true, defaultAdminAccess: false },
+  { key: 'settings', label: 'Configuration', group: 'settings', superAdminOnly: true, defaultAdminAccess: false },
+]
+
+function getDefaultAdminModules() {
+  return ROLE_MODULES.filter((m) => !m.superAdminOnly && m.defaultAdminAccess).map((m) => m.key)
+}
+
+function normalizeAdminModules(candidate) {
+  const editableKeys = new Set(ROLE_MODULES.filter((m) => !m.superAdminOnly).map((m) => m.key))
+  const selected = Array.isArray(candidate) ? candidate : []
+  const unique = new Set(selected.filter((k) => editableKeys.has(k)))
+  unique.add('dashboard')
+  return ROLE_MODULES.map((m) => m.key).filter((k) => unique.has(k))
+}
+
+async function getAdminModuleAccess() {
+  const fallback = getDefaultAdminModules()
+  const raw = await getSystemConfigValue('rbac', 'admin_modules', null)
+  if (!raw) {
+    await setSystemConfigValue({ category: 'rbac', key: 'admin_modules', value: JSON.stringify(fallback) })
+    return fallback
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    const normalized = normalizeAdminModules(parsed)
+    if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
+      await setSystemConfigValue({ category: 'rbac', key: 'admin_modules', value: JSON.stringify(normalized) })
+    }
+    return normalized
+  } catch {
+    await setSystemConfigValue({ category: 'rbac', key: 'admin_modules', value: JSON.stringify(fallback) })
+    return fallback
+  }
+}
+
 async function getSystemConfigValue(category, key, fallback = null) {
   const { rows } = await db.query(
     'SELECT value FROM system_config WHERE category = $1 AND key = $2',
@@ -55,6 +105,72 @@ router.get(
 )
 
 router.get(
+  '/module-access',
+  requireRole('SuperAdmin', 'Admin'),
+  asyncHandler(async (req, res) => {
+    const adminAllowedModules = await getAdminModuleAccess()
+    const isSuperAdmin = req.user?.role === 'SuperAdmin'
+    const effective = isSuperAdmin
+      ? ROLE_MODULES.map((m) => m.key)
+      : adminAllowedModules
+
+    res.json({
+      role: req.user?.role,
+      canEdit: isSuperAdmin,
+      adminAllowedModules,
+      modules: ROLE_MODULES.map((m) => ({
+        key: m.key,
+        label: m.label,
+        group: m.group,
+        superAdminOnly: m.superAdminOnly,
+        editable: isSuperAdmin && !m.superAdminOnly,
+        enabled: effective.includes(m.key),
+      })),
+    })
+  }),
+)
+
+router.patch(
+  '/module-access',
+  requireRole('SuperAdmin'),
+  body('modules').isArray().withMessage('modules must be an array'),
+  validateRequest,
+  asyncHandler(async (req, res) => {
+    const modules = normalizeAdminModules(req.body.modules)
+    await setSystemConfigValue({
+      category: 'rbac',
+      key: 'admin_modules',
+      value: JSON.stringify(modules),
+      userId: req.user?.id || null,
+      changedByName: req.user?.email || 'System',
+      ipAddress: req.ip || req.connection?.remoteAddress || null,
+    })
+
+    await writeAuditLog({
+      userId: req.user?.id,
+      action: 'UPDATE_ROLE_MODULE_ACCESS',
+      entity: 'rbac',
+      entityId: null,
+      meta: { role: 'Admin', modules },
+    })
+
+    res.json({
+      role: req.user?.role,
+      canEdit: true,
+      adminAllowedModules: modules,
+      modules: ROLE_MODULES.map((m) => ({
+        key: m.key,
+        label: m.label,
+        group: m.group,
+        superAdminOnly: m.superAdminOnly,
+        editable: !m.superAdminOnly,
+        enabled: m.superAdminOnly ? true : modules.includes(m.key),
+      })),
+    })
+  }),
+)
+
+router.get(
   '/users',
   requireRole('SuperAdmin'),
   asyncHandler(async (req, res) => {
@@ -79,6 +195,17 @@ router.post(
   asyncHandler(async (req, res) => {
     const { fullName, email, password, roleId } = req.body
 
+    const roleLookup = await db.query('SELECT id, name FROM roles WHERE id = $1', [roleId])
+    if (!roleLookup.rows.length) {
+      return res.status(400).json({ message: 'Selected role does not exist' })
+    }
+    const targetRole = roleLookup.rows[0]
+
+    // Defense in depth: SuperAdmin assignment is always restricted.
+    if (targetRole.name === 'SuperAdmin' && req.user?.role !== 'SuperAdmin') {
+      return res.status(403).json({ message: 'Only SuperAdmin can assign the SuperAdmin role' })
+    }
+
     const existing = await db.query('SELECT id FROM users WHERE email = $1', [email])
     if (existing.rows.length > 0) {
       return res.status(409).json({ message: 'A user with this email already exists' })
@@ -92,17 +219,15 @@ router.post(
       [fullName, email, hash, roleId],
     )
 
-    const role = await db.query('SELECT name FROM roles WHERE id = $1', [roleId])
-
     await writeAuditLog({
       userId: req.user.id,
       action: 'CREATE_USER',
       entity: 'users',
       entityId: rows[0].id,
-      meta: { email, role: role.rows[0]?.name },
+      meta: { email, role: targetRole.name },
     })
 
-    res.status(201).json({ ...rows[0], role: role.rows[0]?.name })
+    res.status(201).json({ ...rows[0], role: targetRole.name })
   }),
 )
 

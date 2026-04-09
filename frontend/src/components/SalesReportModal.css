@@ -604,3 +604,76 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   }
 }
+
+/* Tablet: keep two panes but improve touch/spacing */
+@media (min-width: 641px) and (max-width: 768px) {
+  .srm-overlay {
+    padding: 10px;
+  }
+
+  .srm-panel {
+    max-height: calc(100dvh - 20px);
+    border-radius: 14px;
+  }
+
+  .srm-body {
+    grid-template-columns: 210px 1fr;
+  }
+
+  .srm-header,
+  .srm-footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .srm-preview-area {
+    padding: 14px 14px 10px;
+  }
+
+  .srm-btn {
+    min-height: 40px;
+  }
+}
+
+/* Very small mobile: full-screen modal and sticky controls */
+@media (max-width: 480px) {
+  .srm-overlay {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .srm-panel {
+    width: 100vw;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .srm-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: rgba(16, 16, 16, 0.96);
+    backdrop-filter: blur(8px);
+  }
+
+  .srm-filters {
+    max-height: 220px;
+    padding: 14px 12px;
+  }
+
+  .srm-preview-area {
+    padding: 12px;
+  }
+
+  .srm-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: rgba(16, 16, 16, 0.96);
+    backdrop-filter: blur(8px);
+  }
+
+  .srm-btn {
+    min-height: 44px;
+  }
+}

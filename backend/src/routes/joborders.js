@@ -582,25 +582,14 @@ router.post(
       appointmentSynced,
     })
 
-    // ── Fire "Work Started" email when job order → In Progress ─────────────
-    if (nextStatus === 'In Progress') {
-      emailNotificationService
-        .notifyJobStarted(updatedJo.id, req.user?.id)
-        .catch((err) => console.error('[EmailNotification] job_started error:', err.message))
-    }
-
-    // ── Fire "Job Completed" email when job order → Completed ────────────
-    if (nextStatus === 'Completed') {
-      emailNotificationService
-        .notifyJobCompleted(updatedJo.id, req.user?.id)
-        .catch((err) => console.error('[EmailNotification] job_completed error:', err.message))
-    }
-    // ── Fire "Vehicle Released" email when job order → Released
-    if (nextStatus === 'Released') {
-      emailNotificationService
-        .notifyJobReleased(updatedJo.id, req.user?.id)
-        .catch((err) => console.error('[EmailNotification] job_released error:', err.message))
-    }  }),
+    emailNotificationService
+      .sendEmail('job_status_updated', req.user?.id, {
+        jobOrderId: updatedJo.id,
+        status: nextStatus,
+        cancelReason,
+      })
+      .catch((err) => console.error('[EmailNotification] job_status_updated error:', err.message))
+  }),
 )
 
 // ── POST /job-orders/:id/approve ─────────────────────────────────────────────
@@ -846,27 +835,13 @@ router.patch(
 
     res.json({ ...updatedJo, appointmentSynced })
 
-    // ── Fire "Work Started" email when job order → In Progress ─────────────
-    // Non-blocking: email failure must never break the HTTP response.
-    if (nextStatus === 'In Progress') {
-      emailNotificationService
-        .notifyJobStarted(updatedJo.id, req.user?.id)
-        .catch((err) => console.error('[EmailNotification] job_started (legacy) error:', err.message))
-    }
-
-    // ── Fire "Job Completed" email when job order → Completed
-    if (nextStatus === 'Completed') {
-      emailNotificationService
-        .notifyJobCompleted(updatedJo.id, req.user?.id)
-        .catch((err) => console.error('[EmailNotification] job_completed (legacy) error:', err.message))
-    }
-
-    // ── Fire "Vehicle Released" email when job order → Released
-    if (nextStatus === 'Released') {
-      emailNotificationService
-        .notifyJobReleased(updatedJo.id, req.user?.id)
-        .catch((err) => console.error('[EmailNotification] job_released (legacy) error:', err.message))
-    }
+    emailNotificationService
+      .sendEmail('job_status_updated', req.user?.id, {
+        jobOrderId: updatedJo.id,
+        status: nextStatus,
+        cancelReason,
+      })
+      .catch((err) => console.error('[EmailNotification] job_status_updated (legacy) error:', err.message))
   }),
 )
 

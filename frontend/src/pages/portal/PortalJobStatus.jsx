@@ -8,6 +8,14 @@ function normalizeServiceCode(code) {
   return raw.replace(/^CAT-/i, '').toLowerCase()
 }
 
+function normalizeWorkflowStatus(status) {
+  const raw = String(status || '').trim()
+  if (!raw) return 'Pending'
+  if (raw === 'Complete') return 'Released'
+  if (raw === 'QA Check') return 'For QA'
+  return raw
+}
+
 // ── Job Order pipeline (driven by jo.status) ────────────────
 const JO_STEPS = [
   { key: 'Pending',      label: 'Pending' },
@@ -18,7 +26,7 @@ const JO_STEPS = [
 ]
 
 function getJOStepIndex(status) {
-  const idx = JO_STEPS.findIndex((s) => s.key === status)
+  const idx = JO_STEPS.findIndex((s) => s.key === normalizeWorkflowStatus(status))
   return idx >= 0 ? idx : 0
 }
 
@@ -82,7 +90,7 @@ function JOStepper({ status }) {
 // ── Job Order card ───────────────────────────────────────────
 function JobOrderCard({ job, materialsNotesByCode = {} }) {
   const [open, setOpen] = useState(false)
-  const joStatus = job.workflow_status || 'Pending'
+  const joStatus = normalizeWorkflowStatus(job.workflow_status)
   const badgeClass = JO_STATUS_CLASS[joStatus] || 'badge badge-neutral'
   const isDone = joStatus === 'Completed' || joStatus === 'Released' || joStatus === 'Closed'
 
@@ -268,18 +276,19 @@ export function PortalJobStatus() {
 
   // JO sub-filters (use workflow_status — the jo.status column)
   const activeJOs = jobOrders.filter((j) => {
-    const s = j.workflow_status
+    const s = normalizeWorkflowStatus(j.workflow_status)
     return s !== 'Completed' && s !== 'Released' && s !== 'Closed' && s !== 'Cancelled'
   })
   const doneJOs = jobOrders.filter((j) => {
-    const s = j.workflow_status
+    const s = normalizeWorkflowStatus(j.workflow_status)
     return s === 'Completed' || s === 'Released' || s === 'Closed'
   })
 
-  const joVisible = (joTab === 'active' ? activeJOs : joTab === 'done' ? doneJOs : jobOrders)
+  const allJOs = activeJOs
+  const joVisible = (joTab === 'active' ? activeJOs : joTab === 'done' ? doneJOs : allJOs)
 
   const JO_TABS = [
-    { key: 'all',    label: 'All',         count: jobOrders.length },
+    { key: 'all',    label: 'All',         count: allJOs.length },
     { key: 'active', label: 'In Progress', count: activeJOs.length },
     { key: 'done',   label: 'Completed',   count: doneJOs.length },
   ]

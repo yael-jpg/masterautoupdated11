@@ -622,7 +622,7 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
               <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
                 {model.banner_image_url ? (
                   <div style={{ position: 'relative' }}>
-                    <img src={getImageUrl(model.banner_image_url)} alt="Banner" style={{ width: 120, height: 60, objectFit: 'cover', borderRadius: 6, border: '1px solid #2d3748' }} />
+                    <img src={getImageUrl(model.banner_image_url)} alt="Banner" loading="lazy" decoding="async" style={{ width: 120, height: 60, objectFit: 'cover', borderRadius: 6, border: '1px solid #2d3748' }} />
                     <button 
                       onClick={() => change('banner_image_url', null)}
                       style={{ position: 'absolute', top: -8, right: -8, background: '#ef4444', color: '#fff', border: 'none', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -755,6 +755,8 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
                 <img
                   src="/images/logo.png"
                   alt="MasterAuto"
+                  loading="lazy"
+                  decoding="async"
                   style={{ width: 40, height: 40, objectFit: 'contain', display: 'block', filter: 'brightness(0) invert(1)', opacity: 0.95 }}
                 />
                 <div style={{ color: '#fff', fontSize: 18, fontWeight: 800, letterSpacing: '-0.2px' }}>MasterAuto Special Update</div>
@@ -767,6 +769,8 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
                   <img 
                     src={getImageUrl(model.banner_image_url)} 
                     alt="Promotion Banner" 
+                    loading="lazy"
+                    decoding="async"
                     style={{ maxWidth: '100%', height: 'auto', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', display: 'block', margin: '0 auto' }} 
                   />
                 </div>

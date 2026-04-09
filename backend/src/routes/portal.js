@@ -33,8 +33,8 @@ const { validateRequest } = require('../middleware/validateRequest')
 const { normalizePlate, validatePlateFormat, isSuspiciousPlate } = require('../utils/plateValidator')
 const ConfigurationService = require('../services/configurationService')
 const NotificationService = require('../services/notificationService')
-const { sendPortalBookingRequestEmail, sendRawEmail } = require('../services/mailer')
-const { buildQuotationRequestStaffEmail } = require('../services/emailTemplates')
+const { sendPortalBookingRequestEmail, sendPortalSubscriptionRequestEmail, sendPortalPmsRequestEmail, sendRawEmail } = require('../services/mailer')
+const { buildQuotationRequestStaffEmail, buildSubscriptionRequestStaffEmail, buildPmsRequestStaffEmail } = require('../services/emailTemplates')
 const { emitDataChanged } = require('../realtime/hub')
 const { randomB64url, deriveVerifierFromPassword, computeProof, timingSafeEqualB64url } = require('../utils/hashedLogin')
 const { normalizeEmail, normalizeMobileDigits, normalizeMobileForStorage } = require('../utils/customerIdentity')
@@ -911,7 +911,7 @@ router.get(
         `SELECT COUNT(*) AS active
          FROM job_orders jo
          WHERE jo.customer_id = $1
-           AND jo.status NOT IN ('Completed','Closed','Cancelled','Deleted')`,
+           AND jo.status NOT IN ('Complete','Completed','Released','Closed','Cancelled','Deleted')`,
         [req.customerId],
       ),
       db.query(
@@ -1036,6 +1036,11 @@ router.post(
     let createdQuotation
     let createdAppointment
     let resolvedService = null
+    let finalBranch = null
+    let sizeKey = null
+    let finalNotes = ''
+    let isSubscriptionAvailRequest = false
+    let isPmsAvailRequest = false
     try {
       await client.query('BEGIN')
 
@@ -1060,7 +1065,7 @@ router.post(
       const resolvedBay = custRows[0]?.bay || null
 
       const requestedBranch = String(branch || '').trim() || null
-      const finalBranch = requestedBranch || resolvedBay
+      finalBranch = requestedBranch || resolvedBay
 
       const quotationNo = await nextQuotationNo(client, getBranchCode(finalBranch))
 
@@ -1069,7 +1074,7 @@ router.post(
       const dpAmt = Number(downPaymentAmount || 0)
       const dpMethod = downPaymentMethod ? String(downPaymentMethod) : null
       const dpRef = downPaymentRef ? String(downPaymentRef) : null
-      const sizeKey = vehicleSize ? String(vehicleSize).trim() : null
+      sizeKey = vehicleSize ? String(vehicleSize).trim() : null
 
       const reqUnitPrice = Number(serviceUnitPrice)
       const resolvedUnitPrice = (Number.isFinite(reqUnitPrice) && reqUnitPrice > 0)
@@ -1088,7 +1093,9 @@ router.post(
         (dpMethod === 'cash') ? 'Down payment: Pay on arrival (cash)' : null,
         notes ? String(notes).trim() : null,
       ].filter(Boolean)
-      const finalNotes = noteParts.join('\n')
+      finalNotes = noteParts.join('\n')
+      isSubscriptionAvailRequest = finalNotes.includes('[PORTAL SUBSCRIPTION AVAIL REQUEST]')
+      isPmsAvailRequest = finalNotes.includes('[PORTAL PMS AVAIL REQUEST]')
 
       const totalAmount = resolvedService ? resolvedUnitPrice : 0
       const servicesJson = resolvedService
@@ -1219,7 +1226,7 @@ router.post(
         )
 
         if (detail[0]?.customer_email) {
-          await sendPortalBookingRequestEmail({
+          const commonEmailPayload = {
             to:            detail[0].customer_email,
             customerName:  detail[0].customer_name,
             plateNumber:   detail[0].plate_number,
@@ -1232,14 +1239,22 @@ router.post(
             serviceName:    resolvedService?.name || detail[0].service_name,
             referenceNo:    createdQuotation?.quotation_no || null,
             notes:          String(finalNotes || '').trim() || null,
-          }).catch(() => {})
+          }
+
+          if (isSubscriptionAvailRequest) {
+            await sendPortalSubscriptionRequestEmail(commonEmailPayload).catch(() => {})
+          } else if (isPmsAvailRequest) {
+            await sendPortalPmsRequestEmail(commonEmailPayload).catch(() => {})
+          } else {
+            await sendPortalBookingRequestEmail(commonEmailPayload).catch(() => {})
+          }
         }
 
         // Admin/staff notification (email) for portal quotation requests
         try {
           const businessEmail = await ConfigurationService.get('business', 'business_email')
           if (businessEmail) {
-            const staffTemplate = buildQuotationRequestStaffEmail({
+            const staffPayload = {
               quotationNo: createdQuotation?.quotation_no || null,
               branch: finalBranch,
               customerName: detail[0]?.customer_name,
@@ -1250,7 +1265,13 @@ router.post(
               vehicleSize: sizeKey,
               serviceName: resolvedService?.name || detail[0]?.service_name,
               notes: String(finalNotes || '').trim() || null,
-            })
+            }
+
+            const staffTemplate = isSubscriptionAvailRequest
+              ? buildSubscriptionRequestStaffEmail(staffPayload)
+              : isPmsAvailRequest
+                ? buildPmsRequestStaffEmail(staffPayload)
+                : buildQuotationRequestStaffEmail(staffPayload)
 
             await sendRawEmail({
               to: businessEmail,
@@ -1277,10 +1298,14 @@ router.post(
 
     await NotificationService.create({
       role: 'admin',
-      title: 'New Booking Request',
-      message: `Client submitted a booking request (${createdQuotation?.quotation_no || 'new quotation'}).`,
+      title: isSubscriptionAvailRequest ? 'New Subscription Request' : isPmsAvailRequest ? 'New PMS Request' : 'New Booking Request',
+      message: isSubscriptionAvailRequest
+        ? `Client submitted a subscription request (${createdQuotation?.quotation_no || 'new quotation'}).`
+        : isPmsAvailRequest
+          ? `Client submitted a PMS request (${createdQuotation?.quotation_no || 'new quotation'}).`
+          : `Client submitted a booking request (${createdQuotation?.quotation_no || 'new quotation'}).`,
       payload: {
-        type: 'booking-request',
+        type: isSubscriptionAvailRequest ? 'subscription-request' : isPmsAvailRequest ? 'pms-request' : 'booking-request',
         quotation_id: createdQuotation?.id || null,
         appointment_id: createdAppointment?.id || null,
         customer_id: req.customerId,
@@ -1290,10 +1315,14 @@ router.post(
     await NotificationService.create({
       role: 'client',
       userId: req.customerId,
-      title: 'Booking Request Submitted',
-      message: 'Your booking request was sent to admin for approval.',
+      title: isSubscriptionAvailRequest ? 'Subscription Request Submitted' : isPmsAvailRequest ? 'PMS Request Submitted' : 'Booking Request Submitted',
+      message: isSubscriptionAvailRequest
+        ? 'Your subscription request was sent to admin for approval.'
+        : isPmsAvailRequest
+          ? 'Your PMS request was sent to admin for approval.'
+          : 'Your booking request was sent to admin for approval.',
       payload: {
-        type: 'booking-request',
+        type: isSubscriptionAvailRequest ? 'subscription-request' : isPmsAvailRequest ? 'pms-request' : 'booking-request',
         quotation_id: createdQuotation?.id || null,
         appointment_id: createdAppointment?.id || null,
       },
@@ -1303,7 +1332,11 @@ router.post(
       id: createdQuotation?.id,
       appointmentId: createdAppointment?.id || null,
       quotationNo: createdQuotation?.quotation_no,
-      message: 'Booking request submitted. A quotation has been created for approval.',
+      message: isSubscriptionAvailRequest
+        ? 'Subscription request submitted. A quotation has been created for approval.'
+        : isPmsAvailRequest
+          ? 'PMS request submitted. A quotation has been created for approval.'
+        : 'Booking request submitted. A quotation has been created for approval.',
     })
   }),
 )
@@ -1891,6 +1924,7 @@ router.get(
          q.total_amount,
          q.status                 AS quotation_approval_status,
          (POSITION('[PORTAL BOOKING REQUEST]' IN COALESCE(q.notes, '')) > 0) AS is_portal_request,
+         (POSITION('[PORTAL SUBSCRIPTION AVAIL REQUEST]' IN COALESCE(q.notes, '')) > 0) AS is_subscription_request,
          v.make, v.model, v.year, v.plate_number,
          a.status                 AS appointment_status,
          a.schedule_start, a.schedule_end, a.bay, a.installer_team
@@ -1916,6 +1950,7 @@ router.get(
          q.services               AS services_json,
          q.total_amount,
          (POSITION('[PORTAL BOOKING REQUEST]' IN COALESCE(q.notes, '')) > 0) AS is_portal_request,
+         (POSITION('[PORTAL SUBSCRIPTION AVAIL REQUEST]' IN COALESCE(q.notes, '')) > 0) AS is_subscription_request,
          NULL::text               AS workflow_status,
          NULL::text               AS appointment_status,
          NULL::timestamp          AS schedule_start,

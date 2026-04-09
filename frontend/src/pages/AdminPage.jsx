@@ -6,8 +6,33 @@ import { SectionCard } from '../components/SectionCard'
 import { Modal } from '../components/Modal'
 
 const PAGE_SIZE = 8
+const ACCESS_PREVIEW_VISIBLE_COUNT = 6
 
 const emptyUserForm = { fullName: '', email: '', password: '', roleId: '' }
+
+const ACCESS_MODULE_FALLBACK = [
+  { key: 'dashboard', label: 'Dashboard', group: 'general', superAdminOnly: false },
+  { key: 'crm', label: 'CRM', group: 'master', superAdminOnly: false },
+  { key: 'services', label: 'Services', group: 'master', superAdminOnly: false },
+  { key: 'pms', label: 'PMS Management', group: 'master', superAdminOnly: false },
+  { key: 'online-quotation', label: 'Online Quotation', group: 'operations', superAdminOnly: false },
+  { key: 'quotations', label: 'Quotations', group: 'operations', superAdminOnly: false },
+  { key: 'scheduling', label: 'Scheduling', group: 'operations', superAdminOnly: false },
+  { key: 'job-orders', label: 'Job Orders', group: 'operations', superAdminOnly: false },
+  { key: 'subscriptions', label: 'Subscriptions', group: 'operations', superAdminOnly: false },
+  { key: 'payments', label: 'Payments & POS', group: 'finance', superAdminOnly: false },
+  { key: 'sales', label: 'Sales & Invoices', group: 'finance', superAdminOnly: false },
+  { key: 'inventory', label: 'Inventory', group: 'management', superAdminOnly: false },
+  { key: 'admin', label: 'Admin & Security', group: 'management', superAdminOnly: true },
+  { key: 'settings', label: 'Configuration', group: 'settings', superAdminOnly: true },
+]
+
+function resolveDefaultRoleId(roleList) {
+  if (!Array.isArray(roleList) || roleList.length === 0) return ''
+  const adminRole = roleList.find((r) => r?.name === 'Admin')
+  if (adminRole?.id != null) return String(adminRole.id)
+  return String(roleList[0].id)
+}
 
 export function AdminPage({ token, user }) {
   const [users, setUsers] = useState([])
@@ -36,17 +61,77 @@ export function AdminPage({ token, user }) {
   const [lastBackup, setLastBackup] = useState(null)
   const [isBackingUp, setIsBackingUp] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const [moduleAccess, setModuleAccess] = useState(null)
+  const [createAdminModules, setCreateAdminModules] = useState([])
+  const [showAllAccessModules, setShowAllAccessModules] = useState(false)
+
+  const defaultRoleId = useMemo(() => resolveDefaultRoleId(roles), [roles])
+
+  const selectableRoles = useMemo(() => {
+    if (isSuperAdmin) return roles
+    return roles.filter((r) => r?.name !== 'SuperAdmin')
+  }, [isSuperAdmin, roles])
+
+  const selectedRole = useMemo(
+    () => selectableRoles.find((r) => String(r.id) === String(userForm.roleId)) || null,
+    [selectableRoles, userForm.roleId],
+  )
+
+  const canEditRolePreviewToggles = selectedRole?.name === 'Admin'
+
+  const selectedRoleModulesPreview = useMemo(() => {
+    const roleName = selectedRole?.name
+    const allModules = Array.isArray(moduleAccess?.modules) && moduleAccess.modules.length
+      ? moduleAccess.modules
+      : ACCESS_MODULE_FALLBACK
+
+    if (roleName === 'SuperAdmin') {
+      return allModules.map((m) => ({ key: m.key, label: m.label, enabled: true }))
+    }
+
+    if (roleName === 'Admin') {
+      const allowed = new Set(Array.isArray(createAdminModules) && createAdminModules.length ? createAdminModules : ['dashboard'])
+      return allModules
+        .filter((m) => !m.superAdminOnly)
+        .map((m) => ({ key: m.key, label: m.label, enabled: allowed.has(m.key) }))
+    }
+
+    return []
+  }, [selectedRole, moduleAccess, createAdminModules])
+
+  const hasMoreAccessModules = selectedRoleModulesPreview.length > ACCESS_PREVIEW_VISIBLE_COUNT
+  const visibleAccessModules = useMemo(() => {
+    if (showAllAccessModules) return selectedRoleModulesPreview
+    return selectedRoleModulesPreview.slice(0, ACCESS_PREVIEW_VISIBLE_COUNT)
+  }, [selectedRoleModulesPreview, showAllAccessModules])
+
+  useEffect(() => {
+    if (!showAddUser) return
+    const fallbackDefaults = ACCESS_MODULE_FALLBACK
+      .filter((m) => !m.superAdminOnly)
+      .map((m) => m.key)
+    const defaults = Array.isArray(moduleAccess?.adminAllowedModules) && moduleAccess.adminAllowedModules.length
+      ? moduleAccess.adminAllowedModules
+      : fallbackDefaults
+    setCreateAdminModules(defaults)
+    setShowAllAccessModules(false)
+  }, [showAddUser, moduleAccess])
+
+  useEffect(() => {
+    setShowAllAccessModules(false)
+  }, [selectedRole?.name])
 
   useEffect(() => {
     const load = async () => {
       try {
-              const [usersData, logs, master, rolesData, clientsData, backupStatus] = await Promise.all([
+                const [usersData, logs, master, rolesData, clientsData, backupStatus, moduleAccessData] = await Promise.all([
           apiGet('/admin/users', token),
           apiGet('/admin/audit-logs', token).catch(() => []),
           apiGet('/admin/master-data', token),
           apiGet('/admin/roles', token).catch(() => []),
           apiGet('/customers', token, { limit: 200, portal: 'true' }).catch(() => ({ data: [] })),
           apiGet('/admin/backup/status', token).catch(() => ({})),
+              apiGet('/admin/module-access', token).catch(() => null),
         ])
 
         setUsers(
@@ -91,9 +176,9 @@ export function AdminPage({ token, user }) {
             return Number(b?.id || 0) - Number(a?.id || 0)
           }),
         )
-        // Set default roleId to the first role returned (SuperAdmin)
+        // Prefer Admin as default role to avoid accidental privileged assignment.
         if (rolesData && rolesData.length > 0) {
-          setUserForm((prev) => ({ ...prev, roleId: String(rolesData[0].id) }))
+          setUserForm((prev) => ({ ...prev, roleId: resolveDefaultRoleId(rolesData) }))
         }
 
         // Backup panel
@@ -105,6 +190,10 @@ export function AdminPage({ token, user }) {
               setLastBackup(String(backupStatus.lastBackupAt))
             }
           }
+        }
+
+        if (moduleAccessData && typeof moduleAccessData === 'object') {
+          setModuleAccess(moduleAccessData)
         }
       } catch (loadError) {
         setError(loadError.message)
@@ -207,6 +296,14 @@ export function AdminPage({ token, user }) {
     e.preventDefault()
     setSubmitting(true)
     try {
+      if (selectedRole?.name === 'Admin' && isSuperAdmin) {
+        const nextModules = Array.from(new Set([...(createAdminModules || []), 'dashboard']))
+        const updated = await apiPatch('/admin/module-access', token, { modules: nextModules })
+        if (updated && typeof updated === 'object') {
+          setModuleAccess(updated)
+        }
+      }
+
       await apiPost('/admin/users', token, {
         fullName: userForm.fullName,
         email: userForm.email,
@@ -215,7 +312,7 @@ export function AdminPage({ token, user }) {
       })
       pushToast('add', `User "${userForm.fullName}" created successfully`)
       setShowAddUser(false)
-      setUserForm({ ...emptyUserForm, roleId: roles.length > 0 ? String(roles[0].id) : '' })
+      setUserForm({ ...emptyUserForm, roleId: defaultRoleId })
       await refreshUsers()
     } catch (err) {
       pushToast('error', err.message)
@@ -242,7 +339,26 @@ export function AdminPage({ token, user }) {
 
   const handleCloseAddUser = () => {
     setShowAddUser(false)
-    setUserForm({ ...emptyUserForm, roleId: roles.length > 0 ? String(roles[0].id) : '' })
+    setUserForm({ ...emptyUserForm, roleId: defaultRoleId })
+    const fallbackDefaults = ACCESS_MODULE_FALLBACK
+      .filter((m) => !m.superAdminOnly)
+      .map((m) => m.key)
+    setCreateAdminModules(
+      Array.isArray(moduleAccess?.adminAllowedModules) && moduleAccess.adminAllowedModules.length
+        ? moduleAccess.adminAllowedModules
+        : fallbackDefaults,
+    )
+  }
+
+  const handleToggleCreateAdminModule = (key) => {
+    if (!canEditRolePreviewToggles || key === 'dashboard') return
+    setCreateAdminModules((prev) => {
+      const next = new Set(Array.isArray(prev) ? prev : [])
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      next.add('dashboard')
+      return Array.from(next)
+    })
   }
 
   // Backup handler
@@ -487,11 +603,50 @@ export function AdminPage({ token, user }) {
               <select
                 value={userForm.roleId}
                 onChange={(e) => setUserForm((p) => ({ ...p, roleId: e.target.value }))}
+                required
               >
-                {roles.map((r) => (
+                {selectableRoles.map((r) => (
                   <option key={r.id} value={r.id}>{r.name}</option>
                 ))}
               </select>
+              {selectedRole?.name !== 'SuperAdmin' ? (
+                <div className="adm-access-preview">
+                  <div className="adm-access-preview-title">
+                    Access Preview: {selectedRole?.name || 'Role'}
+                  </div>
+                  <div className="adm-access-preview-list">
+                    {visibleAccessModules.map((item) => (
+                      <label
+                        key={item.key}
+                        className={`adm-access-preview-item ${item.enabled ? 'is-enabled' : ''} ${item.key === 'dashboard' ? 'is-locked' : ''} ${canEditRolePreviewToggles && item.key !== 'dashboard' ? 'is-editable' : ''}`}
+                      >
+                        <span className="adm-access-preview-label">{item.label}</span>
+                        <input
+                          type="checkbox"
+                          checked={item.enabled}
+                          onChange={() => handleToggleCreateAdminModule(item.key)}
+                          disabled={!canEditRolePreviewToggles || item.key === 'dashboard'}
+                          className="adm-access-preview-checkbox"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  {hasMoreAccessModules ? (
+                    <button
+                      type="button"
+                      className="adm-access-preview-toggle"
+                      onClick={() => setShowAllAccessModules((prev) => !prev)}
+                    >
+                      {showAllAccessModules ? 'Show less modules' : `Show ${selectedRoleModulesPreview.length - ACCESS_PREVIEW_VISIBLE_COUNT} more modules`}
+                    </button>
+                  ) : null}
+                  {canEditRolePreviewToggles ? (
+                    <div className="adm-access-preview-hint">
+                      Toggle modules on/off. These Admin permissions will be applied when you create this user.
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             <div className="form-actions full-width">
               <button type="button" className="btn-secondary" onClick={handleCloseAddUser}>Cancel</button>
@@ -529,7 +684,7 @@ export function AdminPage({ token, user }) {
         </div>
 
         {pagedClients.length === 0 ? (
-          <p className="adm-stat-sub" style={{ padding: '12px 0', fontSize: '0.9rem' }}>
+          <p className="adm-stat-sub adm-stat-sub-empty">
             {clientSearch ? 'No clients match your search.' : 'No clients registered yet.'}
           </p>
         ) : (
@@ -557,7 +712,7 @@ export function AdminPage({ token, user }) {
                         ? new Date(client.created_at).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })
                         : <span className="adm-client-empty">—</span>}
                     </td>
-                    <td style={{ textAlign: 'center' }}>{client.vehicle_count ?? 0}</td>
+                    <td className="adm-client-cell-center">{client.vehicle_count ?? 0}</td>
                     <td>
                       <span className={`adm-client-status ${client.is_blocked ? 'adm-client-status--blocked' : 'adm-client-status--active'}`}>
                         {client.is_blocked ? '● Blocked' : '● Active'}

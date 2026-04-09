@@ -60,59 +60,37 @@ function PortalProcessPanel({ title, subtitle, steps }) {
   const pickColor = (i) => PALETTE[i] || '#94a3b8'
 
   return (
-    <div
-      style={{
-        marginTop: 10,
-        padding: '13px 16px',
-        borderRadius: 12,
-        border: '1px solid rgba(255,255,255,0.10)',
-        background: 'rgba(255,255,255,0.03)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 11 }}>
-        <span style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          width: 24, height: 24, borderRadius: 7,
-          background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)',
-          color: '#c0c0c0', flexShrink: 0,
-        }}>
+    <div className="portal-process-panel">
+      <div className="portal-process-panel-head">
+        <span className="portal-process-panel-icon">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
           </svg>
         </span>
         <div>
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: '#c0c0c0', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{title}</div>
-          {subtitle && <div style={{ fontSize: 11, color: 'rgba(189,200,218,0.50)', marginTop: 1 }}>{subtitle}</div>}
+          <div className="portal-process-panel-title">{title}</div>
+          {subtitle && <div className="portal-process-panel-subtitle">{subtitle}</div>}
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      <div className="portal-process-steps">
         {steps.map((s, i) => {
           const dayColor = s?.dayColor || pickColor(i)
           return (
-            <div key={s.num} style={{ display: 'flex', gap: 12, position: 'relative' }}>
+            <div key={s.num} className="portal-process-step">
               {i < steps.length - 1 && (
-                <div style={{ position: 'absolute', left: 11, top: 24, bottom: 0, width: 1, background: 'rgba(255,255,255,0.07)' }} />
+                <div className="portal-process-step-line" />
               )}
-              <div style={{
-                width: 23, height: 23, borderRadius: '50%', flexShrink: 0,
-                background: 'rgba(10,13,30,0.85)', border: `1px solid ${dayColor}55`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 10, fontWeight: 800, color: dayColor, zIndex: 1, marginTop: 1,
-              }}>{s.num}</div>
-              <div style={{ paddingBottom: i < steps.length - 1 ? 11 : 0, flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f2' }}>{s.name}</span>
+              <div className="portal-process-step-dot" style={{ '--step-color': dayColor }}>{s.num}</div>
+              <div className={`portal-process-step-content ${i < steps.length - 1 ? 'is-spaced' : ''}`}>
+                <div className="portal-process-step-top">
+                  <span className="portal-process-step-name">{s.name}</span>
                   {s.timing && (
-                    <span style={{
-                      fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
-                      background: `${dayColor}18`, border: `1px solid ${dayColor}40`,
-                      color: dayColor, letterSpacing: '0.03em', whiteSpace: 'nowrap',
-                    }}>{s.timing}</span>
+                    <span className="portal-process-step-timing" style={{ '--step-color': dayColor }}>{s.timing}</span>
                   )}
                 </div>
-                {s.note && <div style={{ fontSize: 11.5, color: 'rgba(189,200,218,0.45)', marginTop: 2, fontStyle: 'italic' }}>{s.note}</div>}
-                {s.warning && <div style={{ fontSize: 11.5, color: 'rgba(248,113,113,0.95)', marginTop: 2, fontWeight: 700 }}>{s.warning}</div>}
+                {s.note && <div className="portal-process-step-note">{s.note}</div>}
+                {s.warning && <div className="portal-process-step-warning">{s.warning}</div>}
               </div>
             </div>
           )
@@ -282,7 +260,7 @@ function PortalServicePicker({ services, value, onChange, vehicleSize, priceOver
             )}
           </div>
         )}
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`portal-svc-trigger-chevron ${open ? 'open' : ''}`}>
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </div>
@@ -493,7 +471,7 @@ export function PortalBooking({ initialServiceId = '' }) {
             {success.quotationNo && (
               <div className="portal-booking-success-row">
                 <span className="label">Reference</span>
-                <span className="value" style={{ fontFamily: 'var(--font-mono)' }}>{success.quotationNo}</span>
+                <span className="value portal-booking-success-mono">{success.quotationNo}</span>
               </div>
             )}
             {success.vehicle && (
@@ -530,14 +508,13 @@ export function PortalBooking({ initialServiceId = '' }) {
             </div>
           </div>
 
-          <div style={{ marginTop: 10, fontSize: 12, color: 'rgba(189,200,218,0.55)', textAlign: 'center' }}>
+          <div className="portal-booking-success-footnote">
             You can track this under <strong>Appointments</strong>.
           </div>
 
           <button
             type="button"
-            className="portal-submit-btn"
-            style={{ marginTop: '8px', maxWidth: 220 }}
+            className="portal-submit-btn portal-booking-success-btn"
             onClick={() => setSuccess(null)}
           >
             Request Another
@@ -555,7 +532,7 @@ export function PortalBooking({ initialServiceId = '' }) {
       </div>
 
       {error && (
-        <div className="portal-login-error" style={{ marginBottom: 16 }}>{error}</div>
+        <div className="portal-login-error portal-booking-error">{error}</div>
       )}
 
       <div className="portal-section">
@@ -565,7 +542,7 @@ export function PortalBooking({ initialServiceId = '' }) {
           <div className="portal-form-group">
             <label>Vehicle <span className="portal-required">*</span></label>
             {vehicles.length === 0 ? (
-              <p style={{ fontSize: 13, color: 'rgba(189,200,218,0.45)', margin: 0 }}>
+              <p className="portal-booking-empty-text">
                 No vehicles registered. Contact the shop to add your vehicle.
               </p>
             ) : (
@@ -611,15 +588,15 @@ export function PortalBooking({ initialServiceId = '' }) {
                 <option key={s.key} value={s.key}>{s.label}</option>
               ))}
             </select>
-            <small style={{ fontSize: 11, color: 'rgba(189,200,218,0.45)', marginTop: 4, display: 'block' }}>
+            <small className="portal-booking-help-text">
               Prices vary by size (same as Online Quotation).
             </small>
           </div>
 
           {/* Service */}
           <div className="portal-form-group">
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <label className="portal-booking-service-label">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="portal-booking-service-label-icon">
                 <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
               </svg>
               SERVICES <span className="portal-required">*</span>
@@ -699,19 +676,11 @@ export function PortalBooking({ initialServiceId = '' }) {
             })()}
 
             {selectedService?.materials_notes && String(selectedService.materials_notes).trim() && (
-              <div
-                style={{
-                  marginTop: 10,
-                  padding: '10px 12px',
-                  borderRadius: 12,
-                  border: '1px solid rgba(255,255,255,0.10)',
-                  background: 'rgba(0,0,0,0.25)',
-                }}
-              >
-                <div style={{ fontSize: 11, letterSpacing: '0.08em', color: 'rgba(189,200,218,0.65)', fontWeight: 700, textTransform: 'uppercase' }}>
+              <div className="portal-booking-materials-notes">
+                <div className="portal-booking-materials-title">
                   Materials Notes
                 </div>
-                <div style={{ marginTop: 6, whiteSpace: 'pre-wrap', fontSize: 12.5, color: 'rgba(189,200,218,0.85)', lineHeight: 1.5 }}>
+                <div className="portal-booking-materials-body">
                   {String(selectedService.materials_notes).trim()}
                 </div>
               </div>
@@ -723,16 +692,12 @@ export function PortalBooking({ initialServiceId = '' }) {
             <label>
               Preferred Start Date &amp; Time <span className="portal-required">*</span>
               {isCoating(selectedService?.name) && (
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#5eda98', marginLeft: 8,
-                  background: 'rgba(94,218,152,0.10)', border: '1px solid rgba(94,218,152,0.25)',
-                  borderRadius: 20, padding: '2px 9px' }}>
+                <span className="portal-booking-release-pill is-coating">
                   Est. release: next day afternoon
                 </span>
               )}
               {isPPF(selectedService?.name) && (
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#a888ff', marginLeft: 8,
-                  background: 'rgba(168,136,255,0.10)', border: '1px solid rgba(168,136,255,0.25)',
-                  borderRadius: 20, padding: '2px 9px' }}>
+                <span className="portal-booking-release-pill is-ppf">
                   Est. release: 7th day · 3:00 PM
                 </span>
               )}
@@ -760,7 +725,7 @@ export function PortalBooking({ initialServiceId = '' }) {
                 popperPlacement="bottom-start"
               />
             </div>
-            <small style={{ fontSize: 11, color: 'rgba(189,200,218,0.45)', marginTop: 4, display: 'block' }}>
+            <small className="portal-booking-help-text">
               Shop hours: Mon – Sat, 7:00 AM – 6:00 PM
             </small>
           </div>
@@ -768,19 +733,19 @@ export function PortalBooking({ initialServiceId = '' }) {
           {/* Service process moved under the Service picker */}
 
           {/* Notes */}
-          <div className="portal-form-group" style={{ gridColumn: '1 / -1' }}>
+          <div className="portal-form-group portal-booking-full-row">
             <label>Special Requests / Notes</label>
             <textarea
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
               placeholder="Any specific concerns, parts needed, or instructions for our team…"
-              style={{ minHeight: 90 }}
+              className="portal-booking-notes-input"
             />
           </div>
 
           {/* Summary preview */}
           {(form.vehicleId || form.serviceId || form.scheduleStart) && (
-            <div className="portal-booking-preview" style={{ gridColumn: '1 / -1' }}>
+            <div className="portal-booking-preview portal-booking-full-row">
               <p className="portal-booking-preview-title">Booking Summary</p>
               {selectedVehicle && (
                 <div className="portal-booking-preview-row">
@@ -791,7 +756,7 @@ export function PortalBooking({ initialServiceId = '' }) {
               {selectedService && (
                 <div className="portal-booking-preview-row">
                   <span>Service</span>
-                  <strong>{selectedService.name} <em style={{ fontWeight: 400, fontSize: 12, opacity: 0.7 }}>₱{Number(selectedServicePrice || 0).toLocaleString()}</em></strong>
+                  <strong>{selectedService.name} <em className="portal-booking-inline-subprice">₱{Number(selectedServicePrice || 0).toLocaleString()}</em></strong>
                 </div>
               )}
               {form.scheduleStart && (
@@ -810,8 +775,8 @@ export function PortalBooking({ initialServiceId = '' }) {
                 est.setHours(17, 0, 0, 0)
                 return (
                   <div className="portal-booking-preview-row">
-                    <span style={{ color: '#5eda98' }}>Est. Release</span>
-                    <strong style={{ color: '#5eda98' }}>
+                    <span className="portal-booking-release-text is-coating">Est. Release</span>
+                    <strong className="portal-booking-release-text is-coating">
                       {est.toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
                       {' · 5:00 PM'}
                     </strong>
@@ -824,8 +789,8 @@ export function PortalBooking({ initialServiceId = '' }) {
                 est.setHours(15, 0, 0, 0)
                 return (
                   <div className="portal-booking-preview-row">
-                    <span style={{ color: '#a888ff' }}>Est. Release</span>
-                    <strong style={{ color: '#a888ff' }}>
+                    <span className="portal-booking-release-text is-ppf">Est. Release</span>
+                    <strong className="portal-booking-release-text is-ppf">
                       {est.toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
                       {' · 3:00 PM'}
                     </strong>
@@ -836,16 +801,15 @@ export function PortalBooking({ initialServiceId = '' }) {
           )}
 
           {/* Submit */}
-          <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <div className="portal-booking-submit-row portal-booking-full-row">
             <button
               type="submit"
-              className="portal-submit-btn"
+              className="portal-submit-btn portal-booking-submit-btn"
               disabled={loading || vehicles.length === 0}
-              style={{ maxWidth: 220 }}
             >
               {loading ? 'Submitting…' : 'Confirm Schedule'}
             </button>
-            <span style={{ fontSize: 12, color: 'rgba(189,200,218,0.40)' }}>
+            <span className="portal-booking-submit-hint">
               📞 Need to cancel or reschedule? Call us directly.
             </span>
           </div>
@@ -872,20 +836,20 @@ export function PortalBooking({ initialServiceId = '' }) {
 
                 {selectedService && (
                   <>
-                    <span className="portal-pay-summary-label" style={{ marginTop: 10 }}>Service</span>
+                    <span className="portal-pay-summary-label portal-pay-summary-label-spaced">Service</span>
                     <span className="portal-pay-summary-name">{selectedService.name}</span>
                     <span className="portal-pay-summary-price">₱{Number(selectedServicePrice || 0).toLocaleString()}</span>
                   </>
                 )}
 
-                <span className="portal-pay-summary-label" style={{ marginTop: 10 }}>Payment</span>
+                <span className="portal-pay-summary-label portal-pay-summary-label-spaced">Payment</span>
                 <div className="portal-pay-summary-notes">
                   <div className="portal-pay-summary-note">
                     Payment will be made at the selected branch (walk-in) when you bring your vehicle.
                   </div>
                 </div>
 
-                <span className="portal-pay-summary-label" style={{ marginTop: 10 }}>Approval</span>
+                <span className="portal-pay-summary-label portal-pay-summary-label-spaced">Approval</span>
                 <div className="portal-pay-summary-notes">
                   <div className="portal-pay-summary-subnote">
                     We will email you once the schedule is approved.
@@ -893,7 +857,7 @@ export function PortalBooking({ initialServiceId = '' }) {
                 </div>
               </div>
 
-              {error && <div className="portal-login-error" style={{ marginTop: 8 }}>{error}</div>}
+              {error && <div className="portal-login-error portal-booking-confirm-error">{error}</div>}
 
               <div className="portal-pay-actions">
                 <button type="button" className="portal-pay-back-btn" onClick={() => { setShowConfirm(false); setError('') }}>
@@ -901,8 +865,7 @@ export function PortalBooking({ initialServiceId = '' }) {
                 </button>
                 <button
                   type="button"
-                  className="portal-submit-btn"
-                  style={{ flex: 1 }}
+                  className="portal-submit-btn portal-booking-confirm-submit"
                   disabled={loading}
                   onClick={handleConfirmSchedule}
                 >

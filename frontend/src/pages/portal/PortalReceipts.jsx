@@ -129,6 +129,8 @@ export function PortalReceipts() {
     const inv = allInvoices.find((x) => x.invoiceRef === invoiceRef)
     const invoicePayments = inv?.payments || []
     const invoiceTotal = Number(inv?.invoiceTotal) || 0
+    const vatRate = 0.12
+    const vatAmount = invoiceTotal * (vatRate / (1 + vatRate))
     const totalPaid = Number(inv?.paidTotal) || 0
     const isSettled = isFullySettled(totalPaid, invoiceTotal)
     const printedAt = new Date()
@@ -202,6 +204,9 @@ export function PortalReceipts() {
 
               <div class="k">Invoice Total:</div>
               <div class="v"><strong>${escapeHtml(formatMoney(invoiceTotal))}</strong></div>
+
+              <div class="k">VAT (12%):</div>
+              <div class="v">${escapeHtml(formatMoney(vatAmount))}</div>
             </div>
 
             <hr class="rule" />

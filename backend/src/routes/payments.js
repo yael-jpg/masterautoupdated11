@@ -212,7 +212,7 @@ router.post(
 
     // ── Send Payment Receipt Email ──────────────────────────────────────────
     EmailService.safeFireAndForget('Payment Receipt', () => 
-      EmailService.notifyPaymentReceived(insertedPayment.id, req.user.id)
+      EmailService.sendEmail('payment_completed', req.user.id, { paymentId: insertedPayment.id })
     )
 
     return res.status(201).json({
@@ -315,7 +315,7 @@ router.patch(
 
     // ── Resend Payment Receipt Email on update ──────────────────────────────
     EmailService.safeFireAndForget('Payment Receipt Update', () => 
-      EmailService.notifyPaymentReceived(updatedPayment.id, req.user.id, { resend: true })
+      EmailService.sendEmail('payment_completed', req.user.id, { paymentId: updatedPayment.id, resend: true })
     )
 
     return res.json(rows[0])
