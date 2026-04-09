@@ -218,9 +218,7 @@ export function VehicleDetail({ vehicle, token, onClose, onOwnerClick }) {
     // Otherwise, prepend the backend base URL
     const baseUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
     const serverUrl = baseUrl.replace('/api', '')
-    const fullUrl = `${serverUrl}${fileUrl}`
-    console.log('Image URL:', { original: fileUrl, full: fullUrl })
-    return fullUrl
+    return `${serverUrl}${fileUrl}`
   }
 
   if (loading) {
@@ -799,10 +797,7 @@ export function VehicleDetail({ vehicle, token, onClose, onOwnerClick }) {
               <img
                 src={getImageUrl(viewingPhoto.file_url)}
                 alt={viewingPhoto.tag || 'Vehicle photo'}
-                onError={(e) => {
-                  console.error('Image failed to load:', viewingPhoto.file_url)
-                  console.log('Full URL:', getImageUrl(viewingPhoto.file_url))
-                }}
+                onError={() => {}}
               />
             </div>
             <div className="photo-viewer-footer">

@@ -1,32 +1,35 @@
 import './App.css'
 import './styles/design-system.css'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useTheme } from './hooks/useTheme'
 import { createPortal } from 'react-dom'
 import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
-import { DashboardHome } from './pages/DashboardHome'
-import { CRMPage } from './pages/CrmPage'
-import { SalesPage } from './pages/SalesPage'
-import { ServicesPage } from './pages/ServicesPage'
-import { PaymentsPage } from './pages/PaymentsPage'
-import { SchedulingPage } from './pages/SchedulingPage'
-import { AdminPage } from './pages/AdminPage'
 import { LoginPage } from './pages/LoginPage'
-import { QuotationsPage } from './pages/QuotationsPage'
-import { JobOrdersPage } from './pages/JobOrdersPage'
-import { JoApprovalPage } from './pages/JoApprovalPage'
-import { InventoryPage } from './pages/InventoryPage'
-import { OnlineQuotationRequestsPage } from './pages/OnlineQuotationRequestsPage'
-import { SettingsPage } from './pages/SettingsPage'
-import { SubscriptionsPage } from './pages/SubscriptionsPage'
-import { PMSPage } from './pages/PMSPage'
 import { apiDownload, apiGet, buildApiUrl, loginRequest, pushToast } from './api/client'
 import { createRealtimeClient } from './utils/realtime'
 import { emitConfigUpdated, emitPackagesUpdated, emitVehicleMakesUpdated } from './utils/events'
 import { ToastViewport } from './components/ToastViewport'
 import { computeNewPortalBookings, computeNewPortalCancellations, computeNewPortalCancellationRequests, computeNewPortalQuotationBookings, createPortalBookingWatchState } from './utils/portalBookingWatcher'
 import { getJwtExpMs } from './utils/jwt'
+
+const lazyNamed = (loader, exportName) => lazy(() => loader().then((m) => ({ default: m[exportName] })))
+
+const DashboardHome = lazyNamed(() => import('./pages/DashboardHome'), 'DashboardHome')
+const CRMPage = lazyNamed(() => import('./pages/CrmPage'), 'CRMPage')
+const SalesPage = lazyNamed(() => import('./pages/SalesPage'), 'SalesPage')
+const ServicesPage = lazyNamed(() => import('./pages/ServicesPage'), 'ServicesPage')
+const PaymentsPage = lazyNamed(() => import('./pages/PaymentsPage'), 'PaymentsPage')
+const SchedulingPage = lazyNamed(() => import('./pages/SchedulingPage'), 'SchedulingPage')
+const AdminPage = lazyNamed(() => import('./pages/AdminPage'), 'AdminPage')
+const QuotationsPage = lazyNamed(() => import('./pages/QuotationsPage'), 'QuotationsPage')
+const JobOrdersPage = lazyNamed(() => import('./pages/JobOrdersPage'), 'JobOrdersPage')
+const JoApprovalPage = lazyNamed(() => import('./pages/JoApprovalPage'), 'JoApprovalPage')
+const InventoryPage = lazyNamed(() => import('./pages/InventoryPage'), 'InventoryPage')
+const OnlineQuotationRequestsPage = lazyNamed(() => import('./pages/OnlineQuotationRequestsPage'), 'OnlineQuotationRequestsPage')
+const SettingsPage = lazyNamed(() => import('./pages/SettingsPage'), 'SettingsPage')
+const SubscriptionsPage = lazyNamed(() => import('./pages/SubscriptionsPage'), 'SubscriptionsPage')
+const PMSPage = lazyNamed(() => import('./pages/PMSPage'), 'PMSPage')
 
 function SessionExpiredOverlay({ message, onResignIn }) {
   return (
@@ -48,6 +51,10 @@ function SessionExpiredOverlay({ message, onResignIn }) {
       </div>
     </div>
   )
+}
+
+function PageLoadingFallback() {
+  return <div className="dashboard-page-loading">Loading page...</div>
 }
 
 function App() {
@@ -232,7 +239,9 @@ function App() {
     if (!session.token) return
 
     let stopped = false
-    const intervalMs = 5000
+    let timer = null
+
+    const getPollIntervalMs = () => (document.hidden ? 15000 : 5000)
 
     // Reset per-login session state
     portalWatchRef.current = createPortalBookingWatchState()
@@ -825,11 +834,27 @@ function App() {
       }
     }
 
-    // initial baseline + interval polling
+    const scheduleNextPoll = () => {
+      if (stopped) return
+      timer = setTimeout(async () => {
+        if (stopped) return
+        await poll(false)
+        scheduleNextPoll()
+      }, getPollIntervalMs())
+    }
+
+    // initial baseline + adaptive polling (slower when tab is hidden)
     poll(true)
-    const timer = setInterval(() => {
-      if (!stopped) poll(false)
-    }, intervalMs)
+    scheduleNextPoll()
+
+    const visibilityHandler = () => {
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+      scheduleNextPoll()
+    }
+    document.addEventListener('visibilitychange', visibilityHandler)
 
     const onlineUpdateHandler = (e) => {
       // If the update came from staff (promote/delete/status change), refresh the count immediately.
@@ -841,7 +866,8 @@ function App() {
 
     return () => {
       stopped = true
-      clearInterval(timer)
+      if (timer) clearTimeout(timer)
+      document.removeEventListener('visibilitychange', visibilityHandler)
       window.removeEventListener('ma:online-quotation-requests-updated', onlineUpdateHandler)
     }
   }, [session.token])
@@ -1594,7 +1620,11 @@ function App() {
             onClearAllNotifications={handleClearAllNotifications}
             onOpenNotification={handleOpenNotification}
           />
-          <div className="dashboard-content">{pageMap[activeKey]}</div>
+          <div className="dashboard-content">
+            <Suspense fallback={<PageLoadingFallback />}>
+              {pageMap[activeKey]}
+            </Suspense>
+          </div>
         </section>
       </div>
       {createPortal(

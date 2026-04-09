@@ -6,12 +6,41 @@ const { writeAuditLog } = require('../utils/auditLog')
 const { validateRequest } = require('../middleware/validateRequest')
 const { requireRole } = require('../middleware/auth')
 const { normalizeEmail, normalizeMobileDigits, normalizeMobileForStorage } = require('../utils/customerIdentity')
+const logger = require('../utils/logger')
 
 const bcrypt = require('bcryptjs')
 const crypto = require('crypto')
 const { URL } = require('url')
 
 const router = express.Router()
+
+const CUSTOMER_LIST_CACHE_TTL_MS = 15000
+const customerListCache = new Map()
+
+function buildCustomerListCacheKey({ search, portalOnly, page, limit }) {
+  return JSON.stringify({ search, portalOnly, page, limit })
+}
+
+function getCachedCustomerList(cacheKey) {
+  const hit = customerListCache.get(cacheKey)
+  if (!hit) return null
+  if (hit.expiresAt <= Date.now()) {
+    customerListCache.delete(cacheKey)
+    return null
+  }
+  return hit.payload
+}
+
+function setCachedCustomerList(cacheKey, payload) {
+  customerListCache.set(cacheKey, {
+    expiresAt: Date.now() + CUSTOMER_LIST_CACHE_TTL_MS,
+    payload,
+  })
+}
+
+function invalidateCustomerListCache() {
+  customerListCache.clear()
+}
 
 function generateTemporaryPortalPassword() {
   // Avoid ambiguous characters (0/O, 1/I/l)
@@ -303,12 +332,12 @@ router.post(
             await writeAuditLog({ userId: req.user?.id, action: 'EMAIL_BLAST_BACKGROUND_SEND', entity: 'email_campaigns', entityId: campaign.id, meta: { sent: sentCount } })
           } catch (bgErr) {
             // Log background error (don't throw)
-            console.error('Background email send failed', bgErr)
+            logger.error('Background email send failed', { error: String(bgErr?.message || bgErr) })
           }
         })()
       }
     } catch (bgOuterErr) {
-      console.error('Failed to start background sender', bgOuterErr)
+      logger.error('Failed to start background sender', { error: String(bgOuterErr?.message || bgOuterErr) })
     }
 
     await writeAuditLog({ userId: req.user?.id, action: 'EMAIL_BLAST_CREATED_CAMPAIGN', entity: 'email_campaigns', entityId: campaign.id, meta: { customerCount: customerIds.length } })
@@ -332,6 +361,8 @@ router.patch(
     )
     if (!rows.length) return res.status(404).json({ message: 'Customer not found' })
 
+    invalidateCustomerListCache()
+
     await writeAuditLog({ userId: req.user?.id, action: block ? 'BLOCK_CUSTOMER' : 'UNBLOCK_CUSTOMER', entity: 'customers', entityId: Number(id) })
     res.json(rows[0])
   }),
@@ -345,6 +376,11 @@ router.get(
     const page = Math.max(Number(req.query.page || 1), 1)
     const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 200)
     const offset = (page - 1) * limit
+    const cacheKey = buildCustomerListCacheKey({ search, portalOnly, page, limit })
+    const cached = getCachedCustomerList(cacheKey)
+    if (cached) {
+      return res.json(cached)
+    }
 
     // Build WHERE conditions
     const conditions = []
@@ -391,7 +427,7 @@ router.get(
       countParams,
     )
 
-    res.json({
+    const responsePayload = {
       data: rows,
       pagination: {
         page,
@@ -399,7 +435,10 @@ router.get(
         total: count.rows[0].total,
         totalPages: Math.max(Math.ceil(count.rows[0].total / limit), 1),
       },
-    })
+    }
+
+    setCachedCustomerList(cacheKey, responsePayload)
+    res.json(responsePayload)
   }),
 )
 
@@ -595,6 +634,8 @@ router.post(
       meta: { fullName },
     })
 
+    invalidateCustomerListCache()
+
     res.status(201).json(rows[0])
   }),
 )
@@ -681,6 +722,8 @@ router.patch(
       meta: { fullName },
     })
 
+    invalidateCustomerListCache()
+
     return res.json(rows[0])
   }),
 )
@@ -704,7 +747,18 @@ router.delete(
         return del.rowCount
       } catch (err) {
         // table does not exist in this schema/environment
-        if (String(err?.code) === '42P01') return null
+        if (String(err?.code) === '42P01' || String(err?.code) === '42703') return null
+        throw err
+      }
+    }
+
+    const safeDeleteWithQuery = async (sql, params = [customerId]) => {
+      try {
+        const del = await db.query(sql, params)
+        return del.rowCount
+      } catch (err) {
+        // table does not exist in this schema/environment
+        if (String(err?.code) === '42P01' || String(err?.code) === '42703') return null
         throw err
       }
     }
@@ -715,6 +769,7 @@ router.delete(
         return upd.rowCount
       } catch (err) {
         if (String(err?.code) === '42P01') return null
+        if (String(err?.code) === '42703') return null
         throw err
       }
     }
@@ -723,6 +778,30 @@ router.delete(
     try {
       // Keep logs but unlink from the deleted customer where the relationship is optional.
       await safeNullifyCustomerId('campaign_recipients')
+
+      // Remove dependent payment rows that can block quotation/sales deletion on older schemas.
+      await safeDeleteWithQuery(
+        `DELETE FROM payments p
+         USING quotations q
+         WHERE p.quotation_id = q.id AND q.customer_id = $1`,
+      )
+      await safeDeleteWithQuery(
+        `DELETE FROM payments p
+         USING sales s
+         WHERE p.sale_id = s.id AND s.customer_id = $1`,
+      )
+
+      // Remove common vehicle-linked dependents for schemas without ON DELETE CASCADE.
+      await safeDeleteWithQuery(
+        `DELETE FROM vehicle_service_records vsr
+         USING vehicles v
+         WHERE vsr.vehicle_id = v.id AND v.customer_id = $1`,
+      )
+      await safeDeleteWithQuery(
+        `DELETE FROM vehicle_photos vp
+         USING vehicles v
+         WHERE vp.vehicle_id = v.id AND v.customer_id = $1`,
+      )
 
       // Hard deletes (ordered to satisfy common FKs)
       await safeDeleteByCustomerId('job_orders')
@@ -746,6 +825,8 @@ router.delete(
         entity: 'customers',
         entityId: customerId,
       })
+
+      invalidateCustomerListCache()
 
       await db.query('COMMIT')
       return res.status(204).send()

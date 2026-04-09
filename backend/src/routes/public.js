@@ -17,6 +17,26 @@ const {
 
 const router = express.Router()
 
+const PUBLIC_CACHE_TTL_MS = 60000
+const publicEndpointCache = new Map()
+
+function getPublicCache(key) {
+  const entry = publicEndpointCache.get(key)
+  if (!entry) return null
+  if (entry.expiresAt <= Date.now()) {
+    publicEndpointCache.delete(key)
+    return null
+  }
+  return entry.value
+}
+
+function setPublicCache(key, value) {
+  publicEndpointCache.set(key, {
+    value,
+    expiresAt: Date.now() + PUBLIC_CACHE_TTL_MS,
+  })
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const BRANCH_CODES = { cubao: 'CBO', manila: 'MNL' }
@@ -65,6 +85,11 @@ async function nextQuotationNo(client, branchCode = 'BR') {
 router.get(
   '/services',
   asyncHandler(async (_req, res) => {
+    const cached = getPublicCache('public:services')
+    if (cached) {
+      return res.json(cached)
+    }
+
     // 1. Fetch base services from DB
     const { rows: baseRows } = await db.query(
       `SELECT id, code, name, category, base_price, description, materials_notes
@@ -177,6 +202,7 @@ router.get(
       return 0
     })
 
+    setPublicCache('public:services', services)
     return res.json(services)
   }),
 )
@@ -185,6 +211,11 @@ router.get(
 router.get(
   '/branch-locations',
   asyncHandler(async (_req, res) => {
+    const cached = getPublicCache('public:branch-locations')
+    if (cached) {
+      return res.json(cached)
+    }
+
     // Stored under booking.branch_locations as JSON array (migration 043)
     let value = await ConfigurationService.get('booking', 'branch_locations')
 
@@ -201,14 +232,18 @@ router.get(
     }
 
     if (!Array.isArray(value)) {
-      return res.json(['Cubao', 'Manila'])
+      const fallback = ['Cubao', 'Manila']
+      setPublicCache('public:branch-locations', fallback)
+      return res.json(fallback)
     }
 
     const cleaned = value
       .map((x) => String(x || '').trim())
       .filter(Boolean)
 
-    return res.json(cleaned.length ? cleaned : ['Cubao', 'Manila'])
+    const payload = cleaned.length ? cleaned : ['Cubao', 'Manila']
+    setPublicCache('public:branch-locations', payload)
+    return res.json(payload)
   }),
 )
 

@@ -18,6 +18,7 @@
 
 const cron = require('node-cron')
 const db = require('../config/db')
+const logger = require('./logger')
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ async function runAutoCancelJob() {
 
   if (!candidates.length) return
 
-  console.log(`[AutoCancel] Running — cutoff: ${cutoff.toISOString()}, candidates: ${candidates.length}`)
+  logger.info('[AutoCancel] Running', { cutoff: cutoff.toISOString(), candidates: candidates.length })
 
   for (const appt of candidates) {
     const client = await db.pool.connect()
@@ -131,10 +132,17 @@ async function runAutoCancelJob() {
       ).catch(() => {})
 
       await client.query('COMMIT')
-      console.log(`[AutoCancel] Cancelled booking #${appt.id} (${appt.customer_name} / ${appt.plate_number})`)
+      logger.info('[AutoCancel] Cancelled booking', {
+        appointmentId: appt.id,
+        customerName: appt.customer_name,
+        plateNumber: appt.plate_number,
+      })
     } catch (err) {
       await client.query('ROLLBACK')
-      console.error(`[AutoCancel] Failed to cancel booking #${appt.id}:`, err.message)
+      logger.error('[AutoCancel] Failed to cancel booking', {
+        appointmentId: appt.id,
+        error: err.message,
+      })
     } finally {
       client.release()
     }
@@ -147,10 +155,10 @@ function startAutoCancelJob() {
   // Run every 30 minutes
   cron.schedule('*/30 * * * *', () => {
     runAutoCancelJob().catch((err) =>
-      console.error('[AutoCancel] Unexpected error:', err.message),
+      logger.error('[AutoCancel] Unexpected error', { error: err.message }),
     )
   })
-  console.log('[AutoCancel] Scheduled — runs every 30 minutes')
+  logger.info('[AutoCancel] Scheduled', { schedule: '*/30 * * * *' })
 }
 
 module.exports = { startAutoCancelJob, runAutoCancelJob }

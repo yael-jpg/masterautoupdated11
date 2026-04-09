@@ -67,8 +67,15 @@ app.use(compression())
 app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'))
 app.use(express.json({ limit: '10mb' }))
 
-// Serve static files from public directory with CORS
-app.use('/uploads', cors(corsOptions), express.static(path.join(__dirname, '../public/uploads')))
+// Serve static files from public directory with CORS and explicit cache headers.
+app.use('/uploads', cors(corsOptions), express.static(path.join(__dirname, '../public/uploads'), {
+  etag: true,
+  lastModified: true,
+  maxAge: '7d',
+  setHeaders: (res) => {
+    res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400')
+  },
+}))
 
 const authRateLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,

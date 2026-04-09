@@ -1,5 +1,6 @@
 const db = require('../config/db')
 const vehicleValidation = require('../utils/vehicleValidation')
+const logger = require('../utils/logger')
 
 class VehicleService {
   static async createVehicle(vehicleData, customerId) {
@@ -39,7 +40,7 @@ class VehicleService {
 
       return { success: true, vehicleId: insertRes.rows[0].id, message: 'Vehicle created successfully' }
     } catch (error) {
-      console.error('Error creating vehicle:', error)
+      logger.error('Error creating vehicle', { error: error.message })
       return { success: false, error: error.message }
     }
   }
@@ -49,8 +50,6 @@ class VehicleService {
       const cols = (await db.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='vehicles'")).rows.map(r => r.column_name)
       const hasFKs = cols.includes('make_id') || cols.includes('model_id') || cols.includes('variant_id')
       const optional = (name) => cols.includes(name) ? `v.${name}` : `NULL AS ${name}`
-      console.log('VehicleService.getCustomerVehicles - vehicles columns:', cols)
-      console.log('VehicleService.getCustomerVehicles - hasFKs:', hasFKs)
 
       if (hasFKs) {
         const select = [
@@ -196,7 +195,7 @@ class VehicleService {
       if (!updateRes.rows.length) return { success: false, error: 'Failed to update vehicle' }
       return { success: true, message: 'Vehicle updated successfully', vehicleId }
     } catch (error) {
-      console.error('Error updating vehicle:', error)
+      logger.error('Error updating vehicle', { error: error.message })
       return { success: false, error: error.message }
     }
   }
@@ -207,7 +206,7 @@ class VehicleService {
       if (!delRes.rows.length) return { success: false, error: 'Vehicle not found' }
       return { success: true, message: 'Vehicle deleted successfully' }
     } catch (error) {
-      console.error('Error deleting vehicle:', error)
+      logger.error('Error deleting vehicle', { error: error.message })
       return { success: false, error: error.message }
     }
   }
