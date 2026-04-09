@@ -290,7 +290,7 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
   const getImageUrl = (url) => {
     if (!url) return ''
     if (url.startsWith('http')) return url
-    const apiBase = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
+    const apiBase = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
     const base = apiBase.endsWith('/api') ? apiBase.slice(0, -4) : apiBase
     return `${base}${url}`
   }

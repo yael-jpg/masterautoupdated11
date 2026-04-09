@@ -24,6 +24,10 @@ const pool = env.dbUrl
   ? new Pool({
       connectionString: normalizeDbUrl(env.dbUrl),
       ssl: { rejectUnauthorized: env.dbSslRejectUnauthorized },
+      max: env.dbPoolMax,
+      idleTimeoutMillis: env.dbPoolIdleTimeoutMs,
+      connectionTimeoutMillis: env.dbPoolConnectionTimeoutMs,
+      keepAlive: true,
     })
   : new Pool({
       host: env.dbHost,
@@ -31,6 +35,10 @@ const pool = env.dbUrl
       user: env.dbUser,
       password: env.dbPassword,
       database: env.dbName,
+      max: env.dbPoolMax,
+      idleTimeoutMillis: env.dbPoolIdleTimeoutMs,
+      connectionTimeoutMillis: env.dbPoolConnectionTimeoutMs,
+      keepAlive: true,
     })
 
 module.exports = {

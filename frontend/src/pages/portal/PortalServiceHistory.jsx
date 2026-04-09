@@ -13,7 +13,7 @@ import {
 const PHOTO_TYPES = ['before', 'after', 'damage', 'general']
 const TYPE_LABEL = { before: 'Before', after: 'After', damage: 'Damage', general: 'General' }
 
-const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
+const RAW_API_BASE = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
 const API_BASE = String(RAW_API_BASE || '').replace(/\/+$/, '')
 const SERVER_BASE = API_BASE.endsWith('/api') ? API_BASE.slice(0, -4) : API_BASE
 

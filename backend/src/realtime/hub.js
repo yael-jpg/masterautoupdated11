@@ -11,10 +11,19 @@ function normalizeRole(payload) {
 
 function initializeRealtimeHub(server) {
   const { Server } = require('socket.io')
+  const allowed = new Set(env.corsOrigins)
+  const isProduction = env.nodeEnv === 'production'
+
+  const socketOriginCheck = (origin, callback) => {
+    if (!origin) return callback(null, true)
+    if (!isProduction) return callback(null, true)
+    if (allowed.has(origin)) return callback(null, true)
+    return callback(new Error('Origin not allowed by CORS'))
+  }
 
   io = new Server(server, {
     cors: {
-      origin: true,
+      origin: socketOriginCheck,
       credentials: true,
     },
   })

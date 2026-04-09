@@ -1,6 +1,11 @@
 import { computeLoginProof } from '../utils/hashedLoginProof'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
+const RAW_API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
+
+export const API_BASE_URL = String(RAW_API_BASE_URL).replace(/\/+$/, '')
 let activeRequests = 0
 
 function emitNetwork() {

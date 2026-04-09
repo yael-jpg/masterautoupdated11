@@ -8,7 +8,7 @@ import { GenericServiceProcess, getServiceProcess, isCoating, isDetailing, isPPF
 import { onConfigUpdated, onVehicleMakesUpdated } from '../utils/events'
 
 const DEFAULT_API_BASE_URL = import.meta.env.DEV ? 'http://localhost:5000/api' : '/api'
-const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL
+const RAW_API_BASE = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL
 const API_BASE = (() => {
     const trimmed = String(RAW_API_BASE || '').replace(/\/+$/, '')
     return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`

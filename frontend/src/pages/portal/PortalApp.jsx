@@ -21,7 +21,7 @@ import { getJwtExpMs } from '../../utils/jwt'
 import { createRealtimeClient } from '../../utils/realtime'
 import { emitConfigUpdated, emitPackagesUpdated, emitVehicleMakesUpdated } from '../../utils/events'
 
-const ROOT_API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
+const ROOT_API_BASE = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
 
 function SessionExpiredOverlay({ message, onResignIn }) {
   return (

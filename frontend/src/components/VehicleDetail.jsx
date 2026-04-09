@@ -150,7 +150,7 @@ export function VehicleDetail({ vehicle, token, onClose, onOwnerClick }) {
 
       // Upload using fetch directly for FormData support
       const response = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')}/vehicles/${vehicle.id}/photos`,
+        `${import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')}/vehicles/${vehicle.id}/photos`,
         {
           method: 'POST',
           headers: {
@@ -216,7 +216,7 @@ export function VehicleDetail({ vehicle, token, onClose, onOwnerClick }) {
       return fileUrl
     }
     // Otherwise, prepend the backend base URL
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
+    const baseUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
     const serverUrl = baseUrl.replace('/api', '')
     const fullUrl = `${serverUrl}${fileUrl}`
     console.log('Image URL:', { original: fileUrl, full: fullUrl })

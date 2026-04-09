@@ -6,7 +6,7 @@ import { portalGet, portalPost } from '../../api/portalClient'
 import { CoatingProcess, PPFProcess, isCoating, isPPF } from '../../components/ServiceProcess'
 import { SERVICE_CATALOG, VEHICLE_SIZE_OPTIONS, getEffectivePrice } from '../../data/serviceCatalog'
 
-const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
+const RAW_API_BASE = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')
 const API_BASE = (() => {
   const trimmed = String(RAW_API_BASE || '').replace(/\/+$/, '')
   return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`

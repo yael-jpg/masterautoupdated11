@@ -1,6 +1,13 @@
 const path = require('path')
 const dotenv = require('dotenv')
 
+function parseCsvEnv(value) {
+  return String(value || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
 // Snapshot of environment variables before dotenv loads any .env file.
 // This lets us distinguish between values provided by the runtime (Docker/host)
 // and values coming from a checked-in .env file.
@@ -50,7 +57,7 @@ if (hasExplicitDbFields && !hasExplicitDbUrl) {
 const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT || 5000),
-  jwtSecret: process.env.JWT_SECRET || 'change-this-secret',
+  jwtSecret: process.env.JWT_SECRET || process.env.SECRET_KEY || '',
   dbUrl: process.env.DATABASE_URL || '',
   dbSslRejectUnauthorized:
     process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false',
@@ -78,6 +85,18 @@ const env = {
   apiBaseUrl: process.env.API_BASE_URL || 'http://localhost:5000',
   // Full URL to the client portal login page (e.g., https://app.example.com/portal)
   portalUrl: process.env.PORTAL_URL || '',
+  corsOrigins: parseCsvEnv(process.env.CORS_ORIGINS),
+  dbPoolMax: Number(process.env.DB_POOL_MAX || 20),
+  dbPoolIdleTimeoutMs: Number(process.env.DB_POOL_IDLE_TIMEOUT_MS || 30000),
+  dbPoolConnectionTimeoutMs: Number(process.env.DB_POOL_CONNECTION_TIMEOUT_MS || 10000),
+}
+
+if (env.nodeEnv === 'production' && !env.jwtSecret) {
+  throw new Error('JWT_SECRET is required in production')
+}
+
+if (!env.jwtSecret) {
+  env.jwtSecret = 'dev-only-secret-change-me'
 }
 
 module.exports = env

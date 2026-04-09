@@ -2,14 +2,41 @@ const express = require('express')
 const helmet = require('helmet')
 const cors = require('cors')
 const morgan = require('morgan')
+const compression = require('compression')
 const path = require('path')
 const routes = require('./routes')
 const db = require('./config/db')
 const { notFound, errorHandler } = require('./middleware/errorHandler')
 const { createRateLimiter } = require('./middleware/rateLimit')
 const systemController = require('./controllers/systemController')
+const env = require('./config/env')
 
 const app = express()
+
+function buildCorsOriginChecker() {
+  const allowed = new Set(env.corsOrigins)
+  const isProduction = env.nodeEnv === 'production'
+
+  return (origin, callback) => {
+    // Allow same-origin/curl/server-to-server requests without Origin header.
+    if (!origin) return callback(null, true)
+
+    if (!isProduction) {
+      return callback(null, true)
+    }
+
+    if (allowed.has(origin)) {
+      return callback(null, true)
+    }
+
+    return callback(new Error('Origin not allowed by CORS'))
+  }
+}
+
+const corsOptions = {
+  origin: buildCorsOriginChecker(),
+  credentials: true,
+}
 
 // Behind Render/Netlify proxies, trust X-Forwarded-* headers.
 app.set('trust proxy', 1)
@@ -35,25 +62,13 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   crossOriginEmbedderPolicy: false,
 }))
-app.use(cors())
-app.use(morgan('dev'))
+app.use(cors(corsOptions))
+app.use(compression())
+app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'))
 app.use(express.json({ limit: '10mb' }))
 
-// Simple request logger for /api routes to help diagnose 404/401 issues
-app.use((req, res, next) => {
-  try {
-    if (req.path && req.path.startsWith('/api')) {
-      const auth = req.headers.authorization || ''
-      console.log(`[API] ${req.method} ${req.originalUrl} Authorization:${auth ? 'yes' : 'no'}`)
-    }
-  } catch (err) {
-    // ignore
-  }
-  next()
-})
-
 // Serve static files from public directory with CORS
-app.use('/uploads', cors(), express.static(path.join(__dirname, '../public/uploads')))
+app.use('/uploads', cors(corsOptions), express.static(path.join(__dirname, '../public/uploads')))
 
 const authRateLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
