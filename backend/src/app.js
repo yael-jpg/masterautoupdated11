@@ -29,8 +29,13 @@ function buildCorsOriginChecker() {
   const allowed = new Set(env.corsOrigins.map(normalizeOrigin).filter(Boolean))
   const portalOrigin = normalizeOrigin(env.portalUrl)
   if (portalOrigin) allowed.add(portalOrigin)
+  const allowedOrigins = Array.from(allowed)
 
   const isProduction = env.nodeEnv === 'production'
+
+  if (isProduction && allowedOrigins.length === 0) {
+    console.warn('[CORS] Production mode with an empty allowlist. Set CORS_ORIGINS and/or PORTAL_URL.')
+  }
 
   return (origin, callback) => {
     // Allow same-origin/curl/server-to-server requests without Origin header.
@@ -46,6 +51,9 @@ function buildCorsOriginChecker() {
       return callback(null, true)
     }
 
+    console.warn(
+      `[CORS] Blocked origin: ${origin} (normalized: ${normalizedOrigin}). Allowed: ${allowedOrigins.join(', ') || '(none)'}`,
+    )
     return callback(new Error('Origin not allowed by CORS'))
   }
 }
@@ -58,6 +66,9 @@ const corsOptions = {
 // Behind Render/Netlify proxies, trust X-Forwarded-* headers.
 app.set('trust proxy', 1)
 
+// Apply CORS before redirect logic so browser preflight requests can complete.
+app.use(cors(corsOptions))
+
 // In production, ensure requests come over HTTPS when behind a proxy.
 // (This does not affect local dev; and should be safe on Render where x-forwarded-proto is set.)
 app.use((req, res, next) => {
@@ -65,7 +76,7 @@ app.use((req, res, next) => {
     const isProd = process.env.NODE_ENV === 'production'
     // req.secure will be set correctly when `trust proxy` is enabled.
     // Use a 308 redirect to preserve method/body for POST requests.
-    if (isProd && !req.secure && req.headers.host) {
+    if (isProd && req.method !== 'OPTIONS' && !req.secure && req.headers.host) {
       return res.redirect(308, `https://${req.headers.host}${req.originalUrl}`)
     }
   } catch (_) {
@@ -79,7 +90,6 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   crossOriginEmbedderPolicy: false,
 }))
-app.use(cors(corsOptions))
 app.use(compression())
 app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'))
 app.use(express.json({ limit: '10mb' }))
