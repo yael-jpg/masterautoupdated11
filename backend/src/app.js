@@ -14,7 +14,22 @@ const env = require('./config/env')
 const app = express()
 
 function buildCorsOriginChecker() {
-  const allowed = new Set(env.corsOrigins)
+  const normalizeOrigin = (value) => {
+    const raw = String(value || '').trim()
+    if (!raw) return ''
+
+    try {
+      const parsed = new URL(raw)
+      return `${parsed.protocol}//${parsed.host}`.toLowerCase()
+    } catch {
+      return raw.replace(/\/+$/, '').toLowerCase()
+    }
+  }
+
+  const allowed = new Set(env.corsOrigins.map(normalizeOrigin).filter(Boolean))
+  const portalOrigin = normalizeOrigin(env.portalUrl)
+  if (portalOrigin) allowed.add(portalOrigin)
+
   const isProduction = env.nodeEnv === 'production'
 
   return (origin, callback) => {
@@ -25,7 +40,9 @@ function buildCorsOriginChecker() {
       return callback(null, true)
     }
 
-    if (allowed.has(origin)) {
+    const normalizedOrigin = normalizeOrigin(origin)
+
+    if (allowed.has(normalizedOrigin)) {
       return callback(null, true)
     }
 
