@@ -11,10 +11,25 @@ const router = express.Router()
 
 let pricingSchemaReady = false
 let recordsSchemaReady = false
+let packageStatusTypeKnown = false
+let packageStatusIsBoolean = false
 
 async function ensureSubscriptionPricingSchema() {
   if (pricingSchemaReady) return
   await db.query('ALTER TABLE subscription_packages ADD COLUMN IF NOT EXISTS price_by_frequency JSONB')
+
+  const typeRes = await db.query(
+    `SELECT data_type
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'subscription_packages'
+       AND column_name = 'status'
+     LIMIT 1`,
+  )
+  const statusType = String(typeRes.rows?.[0]?.data_type || '').toLowerCase()
+  packageStatusIsBoolean = statusType === 'boolean'
+  packageStatusTypeKnown = true
+
   pricingSchemaReady = true
 }
 
@@ -224,8 +239,16 @@ function coerceFrequencyPricesForWrite(input = {}) {
 
 function formatPackageRow(row) {
   const frequencies = parseFrequencyPrices(row?.price_by_frequency, row?.price)
+  const normalizedStatus = (() => {
+    if (typeof row?.status === 'boolean') return row.status ? 'Active' : 'Inactive'
+    const raw = String(row?.status || '').trim().toLowerCase()
+    if (raw === 'active' || raw === 'true' || raw === 't' || raw === '1') return 'Active'
+    return 'Inactive'
+  })()
+
   return {
     ...row,
+    status: normalizedStatus,
     price: frequencies.monthly,
     price_by_frequency: frequencies,
   }
@@ -252,6 +275,17 @@ function normalizeStatus(value) {
   return 'Active'
 }
 
+function isPackageActive(value) {
+  if (typeof value === 'boolean') return value
+  const raw = String(value || '').trim().toLowerCase()
+  return raw === 'active' || raw === 'true' || raw === 't' || raw === '1'
+}
+
+function packageStatusWriteValue(cleanStatus) {
+  if (!packageStatusTypeKnown) return cleanStatus
+  return packageStatusIsBoolean ? cleanStatus === 'Active' : cleanStatus
+}
+
 router.get(
   '/',
   asyncHandler(async (req, res) => {
@@ -267,8 +301,13 @@ router.get(
     const where = []
     const params = []
     if (statusValue) {
-      params.push(statusValue)
-      where.push(`status = $${params.length}`)
+      if (packageStatusIsBoolean) {
+        params.push(statusValue === 'Active')
+        where.push(`COALESCE(status, TRUE) = $${params.length}`)
+      } else {
+        params.push(statusValue)
+        where.push(`LOWER(COALESCE(status::text, '')) = LOWER($${params.length})`)
+      }
     }
 
     const { rows } = await db.query(
@@ -442,8 +481,7 @@ router.post(
       }
 
       const pkg = packageRows[0]
-      const packageStatus = String(pkg.status || 'Active')
-      if (packageStatus !== 'Active') {
+      if (!isPackageActive(pkg.status)) {
         await client.query('ROLLBACK')
         return res.status(409).json({ message: 'Selected subscription package is not active.' })
       }
@@ -635,7 +673,7 @@ router.post(
         JSON.stringify(cleanFrequencyPrices),
         cleanDuration,
         JSON.stringify(cleanServices),
-        cleanStatus,
+        packageStatusWriteValue(cleanStatus),
       ],
     )
 
@@ -690,7 +728,7 @@ router.put(
         JSON.stringify(cleanFrequencyPrices),
         cleanDuration,
         JSON.stringify(cleanServices),
-        cleanStatus,
+        packageStatusWriteValue(cleanStatus),
         id,
       ],
     )
