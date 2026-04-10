@@ -45,9 +45,18 @@
     padding: 14px;
   }
 
+  .portal-pms-header {
+    margin-bottom: 16px;
+  }
+
+  .portal-pms-request-msg {
+    margin-bottom: 12px;
+  }
+
   .portal-pms-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
+    margin-bottom: 18px;
   }
 
   .portal-pms-packages-grid {
@@ -64,5 +73,10 @@
   .portal-pms-stats-grid {
     grid-template-columns: 1fr;
     gap: 10px;
+  }
+
+  .portal-pms-request-msg {
+    font-size: 12px;
+    padding: 9px 10px;
   }
 }

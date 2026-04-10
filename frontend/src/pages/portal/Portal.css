@@ -6388,3 +6388,210 @@
     font-size: 13px;
   }
 }
+
+/* Portal-wide mobile polish for page rhythm and readability */
+@media (max-width: 768px) {
+  .portal-content,
+  .portal-page,
+  .portal-page > * {
+    min-width: 0;
+  }
+
+  .portal-content > *:not(.portal-dash) {
+    margin: 0 8px;
+    padding: 16px 14px 22px;
+  }
+
+  .portal-topbar {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .portal-topbar-right {
+    gap: 8px;
+  }
+
+  .portal-hero {
+    margin-bottom: 14px;
+  }
+
+  .portal-hero p {
+    letter-spacing: 0.06em;
+    line-height: 1.45;
+  }
+
+  .portal-tabs,
+  .portal-tabs.portal-tabs--block {
+    display: flex;
+    flex-wrap: nowrap;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin: 8px 0 14px;
+  }
+
+  .portal-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .portal-tab-btn {
+    flex-shrink: 0;
+    min-height: 38px;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+  }
+
+  .portal-alert-strip {
+    margin-bottom: 14px;
+  }
+
+  .portal-alert-pill {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .portal-section {
+    margin-bottom: 14px;
+  }
+
+  .portal-section-head {
+    gap: 8px;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .portal-record-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .portal-record-side {
+    text-align: left;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .portal-record-togglehint {
+    margin-top: 0;
+    white-space: nowrap;
+  }
+
+  .portal-info-box--row {
+    gap: 10px;
+  }
+
+  .portal-details-row {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .portal-details-label {
+    min-width: 0;
+  }
+
+  .portal-toolbar {
+    margin-bottom: 14px;
+  }
+
+  .portal-toolbar .portal-control {
+    min-width: 0;
+  }
+
+  .portal-table-wrap {
+    margin: 0 -2px;
+    padding-bottom: 4px;
+  }
+
+  .portal-receipt-card {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .portal-receipt-actions {
+    justify-content: flex-start;
+  }
+
+  .portal-receipt-print-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .portal-vehicle-card,
+  .portal-service-card,
+  .portal-warranty-card,
+  .portal-timeline-card {
+    padding: 14px;
+  }
+
+  .portal-empty {
+    padding: 36px 16px;
+  }
+}
+
+@media (max-width: 520px) {
+  .portal-content > *:not(.portal-dash) {
+    margin: 0 4px;
+    padding: 14px 12px 18px;
+  }
+
+  .portal-topbar {
+    padding: 10px 12px;
+  }
+
+  .portal-topbar h2 {
+    font-size: 15px;
+  }
+
+  .portal-topbar-user {
+    padding: 5px;
+    border-radius: 999px;
+  }
+
+  .portal-topbar-user-role,
+  .portal-topbar-user-name {
+    display: none;
+  }
+
+  .portal-hero,
+  .portal-section {
+    border-radius: 12px;
+    padding: 12px;
+  }
+
+  .portal-hero h2 {
+    font-size: 0.98rem;
+  }
+
+  .portal-hero p {
+    font-size: 0.72rem;
+  }
+
+  .portal-tab-btn {
+    min-height: 36px;
+    font-size: 0.77rem;
+  }
+
+  .portal-record-title {
+    font-size: 13px;
+  }
+
+  .portal-record-amount {
+    font-size: 14px;
+  }
+
+  .portal-table th,
+  .portal-table td {
+    padding: 9px 8px;
+    font-size: 11.5px;
+  }
+
+  .portal-submit-btn {
+    min-height: 40px;
+  }
+}
