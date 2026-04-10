@@ -8,6 +8,23 @@ const db = require('../config/db')
 const NotificationService = require('../services/notificationService')
 
 const router = express.Router()
+let recordsSchemaReady = false
+
+async function ensureSubscriptionRecordsSchema() {
+  if (recordsSchemaReady) return
+
+  await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS subscription_service_id INT')
+  await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS package_id INT')
+  await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS price DECIMAL(10,2)')
+  await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS monthly_revenue DECIMAL(10,2)')
+
+  await db.query('UPDATE subscriptions SET package_id = subscription_service_id WHERE package_id IS NULL AND subscription_service_id IS NOT NULL')
+  await db.query('UPDATE subscriptions SET subscription_service_id = package_id WHERE subscription_service_id IS NULL AND package_id IS NOT NULL')
+  await db.query('UPDATE subscriptions SET price = monthly_revenue WHERE price IS NULL AND monthly_revenue IS NOT NULL')
+  await db.query('UPDATE subscriptions SET monthly_revenue = price WHERE monthly_revenue IS NULL AND price IS NOT NULL')
+
+  recordsSchemaReady = true
+}
 
 async function syncExpiredSubscriptions() {
   await db.query(
@@ -36,6 +53,8 @@ async function notificationExists({ role, userId = null, subscriptionId, endDate
 
 async function notifyExpiringSubscriptions({ customerId }) {
   if (!customerId) return
+
+  await ensureSubscriptionRecordsSchema()
 
   await NotificationService.ensureTable()
 
@@ -115,6 +134,7 @@ router.get('/stats', asyncHandler(async (req, res) => {
   const customerId = req.customerId
   if (!customerId) return res.status(401).json({ error: 'Unauthorized' })
 
+  await ensureSubscriptionRecordsSchema()
   await syncExpiredSubscriptions()
   await notifyExpiringSubscriptions({ customerId })
 
@@ -139,6 +159,7 @@ router.get('/', asyncHandler(async (req, res) => {
   const customerId = req.customerId
   if (!customerId) return res.status(401).json({ error: 'Unauthorized' })
 
+  await ensureSubscriptionRecordsSchema()
   await syncExpiredSubscriptions()
   await notifyExpiringSubscriptions({ customerId })
 
@@ -211,6 +232,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params
   if (!customerId) return res.status(401).json({ error: 'Unauthorized' })
 
+  await ensureSubscriptionRecordsSchema()
   await syncExpiredSubscriptions()
   await notifyExpiringSubscriptions({ customerId })
 
