@@ -23,6 +23,7 @@ async function ensureSubscriptionRecordsSchema() {
 
   await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS subscription_service_id INT')
   await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS package_id INT')
+  await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS subscription_name TEXT')
   await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS price DECIMAL(10,2)')
   await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS monthly_revenue DECIMAL(10,2)')
   await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS frequency VARCHAR(20)')
@@ -40,6 +41,13 @@ async function ensureSubscriptionRecordsSchema() {
        )`,
   )
   await db.query('UPDATE subscriptions SET package_id = subscription_service_id WHERE package_id IS NULL AND subscription_service_id IS NOT NULL')
+  await db.query(
+    `UPDATE subscriptions s
+     SET subscription_name = sp.name
+     FROM subscription_packages sp
+     WHERE s.subscription_name IS NULL
+       AND sp.id = COALESCE(s.package_id, s.subscription_service_id)`,
+  )
   await db.query('UPDATE subscriptions SET price = monthly_revenue WHERE price IS NULL AND monthly_revenue IS NOT NULL')
   await db.query('UPDATE subscriptions SET monthly_revenue = price WHERE monthly_revenue IS NULL AND price IS NOT NULL')
 
