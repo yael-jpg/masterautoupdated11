@@ -9,6 +9,25 @@ const { uploadEmail } = require('../middleware/upload')
 
 const router = express.Router()
 
+let emailCampaignSchemaReady = false
+
+async function ensureEmailCampaignSchemaCompat() {
+  if (emailCampaignSchemaReady) return
+
+  const { rows } = await db.query("SELECT to_regclass('public.email_campaigns') AS reg")
+  if (!rows?.[0]?.reg) return
+
+  await db.query('ALTER TABLE email_campaigns ADD COLUMN IF NOT EXISTS banner_image_url TEXT')
+  emailCampaignSchemaReady = true
+}
+
+router.use(
+  asyncHandler(async (_req, _res, next) => {
+    await ensureEmailCampaignSchemaCompat()
+    next()
+  }),
+)
+
 const VEHICLE_LABEL_SQL = `
   SELECT NULLIF(TRIM(CONCAT_WS(' ',
     COALESCE(NULLIF(vm.name, ''), NULLIF(to_jsonb(v) ->> 'make', ''), NULLIF(to_jsonb(v) ->> 'custom_make', '')),

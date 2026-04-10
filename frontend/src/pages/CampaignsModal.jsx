@@ -178,7 +178,7 @@ export function CampaignsModal({ token, onClose, customerIds = [] }) {
           <div className="campaign-modal-title">
             <h3>Email Campaigns</h3>
           </div>
-          <div style={{ display: 'flex', gap: 12 }}>
+          <div className="campaign-modal-header-actions" style={{ display: 'flex', gap: 12 }}>
             <button className="btn-secondary" onClick={onClose}>Close</button>
             <button className="btn-primary" onClick={openNew}>New Campaign</button>
           </div>
@@ -653,12 +653,12 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
       <div className="campaign-editor-scroll">
       {/* ── Mode Toggle & Templates ── */}
       <div className="editor-section" style={{ background: '#1c2230', border: '1px solid #2d3748' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: 12 }}>
+        <div className="campaign-editor-top-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="campaign-editor-mode-buttons" style={{ display: 'flex', gap: 12 }}>
             <button className={`btn-outline ${mode === 'simple' ? 'active' : ''}`} onClick={() => setMode('simple')} style={{ borderColor: mode === 'simple' ? '#4ade80' : '' }}>Simple Editor</button>
             <button className={`btn-outline ${mode === 'advanced' ? 'active' : ''}`} onClick={() => setMode('advanced')} style={{ borderColor: mode === 'advanced' ? '#4ade80' : '' }}>Advanced HTML</button>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="campaign-editor-templates" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <span style={{ fontSize: 12, color: '#94a3b8' }}>Load Template:</span>
             <button className="btn-tag" onClick={() => applyTemplate('PROMO')}>Offer</button>
             <button className="btn-tag" onClick={() => applyTemplate('REMINDER')}>Reminder</button>
@@ -697,13 +697,13 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
             </div>
             
             <div style={{ marginTop: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ display: 'flex', gap: 6 }}>
+              <div className="campaign-editor-toolbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div className="campaign-editor-format-buttons" style={{ display: 'flex', gap: 6 }}>
                   <button className="btn-tag" onClick={() => applyFormat('strong')} title="Bold"><strong>B</strong></button>
                   <button className="btn-tag" onClick={() => applyFormat('em')} title="Italic"><em>I</em></button>
                   <button className="btn-tag" onClick={() => applyFormat('u')} title="Underline"><u>U</u></button>
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div className="campaign-editor-merge-tags" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <span style={{ fontSize: 11, color: '#64748b' }}>Insert:</span>
                   <button className="btn-tag" onClick={() => insertVar('{{customer_name}}')}>Name</button>
                   <button className="btn-tag" onClick={() => insertVar('{{vehicle}}')}>Vehicle</button>
@@ -714,7 +714,7 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
 
             <div className="campaign-field" style={{ marginBottom: 20 }}>
               <label style={{ fontSize: 13, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.05em' }}>PROMOTION BANNER IMAGE</label>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
+              <div className="campaign-banner-upload-row" style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
                 {model.banner_image_url ? (
                   <div style={{ position: 'relative' }}>
                     <img src={getImageUrl(model.banner_image_url)} alt="Banner" loading="lazy" decoding="async" style={{ width: 120, height: 60, objectFit: 'cover', borderRadius: 6, border: '1px solid #2d3748' }} />

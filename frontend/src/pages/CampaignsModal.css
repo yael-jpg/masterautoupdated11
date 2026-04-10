@@ -450,3 +450,122 @@
   font-weight: 700;
   color: #4ade80;
 }
+
+@media (max-width: 768px) {
+  .campaign-modal-backdrop {
+    padding: 10px;
+    align-items: flex-end;
+  }
+
+  .campaign-modal-shell {
+    width: 100%;
+    max-height: calc(100vh - 20px);
+    max-height: calc(100dvh - 20px);
+    border-radius: 14px 14px 0 0;
+  }
+
+  .campaign-modal-header {
+    padding: 14px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .campaign-modal-header h3 {
+    font-size: 17px;
+  }
+
+  .campaign-modal-header-actions {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px !important;
+  }
+
+  .campaign-modal-header-actions .btn-secondary,
+  .campaign-modal-header-actions .btn-primary {
+    width: 100%;
+    padding: 10px 12px;
+  }
+
+  .campaign-modal-body {
+    padding: 14px;
+  }
+
+  .campaign-editor-scroll {
+    padding: 14px;
+    gap: 14px;
+  }
+
+  .editor-section {
+    padding: 14px;
+  }
+
+  .editor-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .campaign-editor-top-row {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 10px;
+  }
+
+  .campaign-editor-mode-buttons {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px !important;
+  }
+
+  .campaign-editor-mode-buttons .btn-outline {
+    width: 100%;
+    text-align: center;
+    padding: 10px 8px;
+  }
+
+  .campaign-editor-templates {
+    flex-wrap: wrap;
+    align-items: center !important;
+    gap: 6px !important;
+  }
+
+  .campaign-editor-templates span {
+    width: 100%;
+    margin-bottom: 2px;
+  }
+
+  .campaign-editor-toolbar {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 8px;
+  }
+
+  .campaign-editor-format-buttons,
+  .campaign-editor-merge-tags {
+    flex-wrap: wrap;
+  }
+
+  .campaign-banner-upload-row {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+
+  .preview-panel {
+    padding: 14px;
+    position: static;
+  }
+
+  .editor-footer {
+    padding: 10px 14px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .editor-footer .btn-secondary,
+  .editor-footer .btn-outline,
+  .editor-footer .btn-primary {
+    width: 100%;
+  }
+}

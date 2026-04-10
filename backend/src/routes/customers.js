@@ -14,6 +14,18 @@ const { URL } = require('url')
 
 const router = express.Router()
 
+let emailCampaignSchemaReady = false
+
+async function ensureEmailCampaignSchemaCompat() {
+  if (emailCampaignSchemaReady) return
+
+  const { rows } = await db.query("SELECT to_regclass('public.email_campaigns') AS reg")
+  if (!rows?.[0]?.reg) return
+
+  await db.query('ALTER TABLE email_campaigns ADD COLUMN IF NOT EXISTS banner_image_url TEXT')
+  emailCampaignSchemaReady = true
+}
+
 const VEHICLE_LABEL_SQL = `
   SELECT NULLIF(TRIM(CONCAT_WS(' ',
     COALESCE(NULLIF(vm.name, ''), NULLIF(to_jsonb(v) ->> 'make', ''), NULLIF(to_jsonb(v) ->> 'custom_make', '')),
@@ -147,6 +159,8 @@ router.post(
         return res.status(503).json({ message: 'Email Blasting schema appears unavailable. Please apply migrations.' })
       }
     }
+
+    await ensureEmailCampaignSchemaCompat()
 
     // Integration: create a lightweight campaign using configured defaults and queue recipients
     const ConfigurationService = require('../services/configurationService')
