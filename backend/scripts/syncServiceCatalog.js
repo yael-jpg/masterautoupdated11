@@ -81,7 +81,7 @@ async function main() {
 
     // Common bootstrap issue
     if (/relation\s+"?services"?\s+does not exist/i.test(String(err?.message || ''))) {
-      console.error('ERROR: services table not found. Run: npm run db:schema (against your Neon DATABASE_URL)')
+      console.error('ERROR: services table not found. Run: npm run db:schema (against your DATABASE_URL)')
     }
 
     throw err

@@ -272,11 +272,36 @@ const TEMPLATES = {
     body: 'Hi {{customer_name}},\n\nIt is almost time for your vehicle\'s scheduled maintenance. Regular check-ups for your <strong>{{vehicle}}</strong> are key to keeping it safe and reliable for years to come.\n\nBest regards,\nMasterAuto Team',
     cta_label: 'Schedule a Check-up',
   },
+  PMS_REMINDER: {
+    subject: '🔧 PMS Reminder for your {{vehicle}}',
+    body: 'Hi {{customer_name}},\n\nThis is your Preventive Maintenance Service reminder for <strong>{{vehicle}}</strong>. Keeping your PMS schedule updated helps keep your vehicle safe, reliable, and fuel-efficient.\n\nBest regards,\nMasterAuto Team',
+    cta_label: 'Book PMS Schedule',
+  },
+  SUBSCRIPTION_REMINDER: {
+    subject: '📅 Subscription Expiry Reminder',
+    body: 'Hi {{customer_name}},\n\nYour MasterAuto subscription for <strong>{{vehicle}}</strong> is nearing expiration. Renew now to continue enjoying your package benefits without interruption.\n\nBest regards,\nMasterAuto Team',
+    cta_label: 'Renew Subscription',
+  },
   THANK_YOU: {
     subject: '🙏 Thank You for Choosing Master Auto',
     body: 'Dear {{customer_name}},\n\nThank you for trusting us with your <strong>{{vehicle}}</strong>. We hope you enjoyed our service! Your satisfaction is our top priority, and we look forward to serving you again.\n\nBest regards,\nMasterAuto Team',
     cta_label: 'See Our Services',
   }
+}
+
+const PMS_REMINDER_LINE = 'PMS Service Reminder: Every 6 months or when your vehicle reaches the next kilometer interval (whichever comes first).'
+const SUBSCRIPTION_REMINDER_LINE = 'Subscription Reminder: Your subscription expires in 5 days. Renew early to avoid service interruption.'
+const DEFAULT_REMINDER_LINES = `${PMS_REMINDER_LINE}\n${SUBSCRIPTION_REMINDER_LINE}`
+
+function formatVehicleLabel(vehicle) {
+  if (!vehicle || typeof vehicle !== 'object') return ''
+  const make = String(vehicle.make_name || vehicle.make || vehicle.custom_make || '').trim()
+  const model = String(vehicle.model_name || vehicle.model || vehicle.custom_model || '').trim()
+  const variant = String(vehicle.variant_name || vehicle.variant || '').trim()
+  const plate = String(vehicle.plate_number || '').trim()
+  const label = [make, model, variant].filter(Boolean).join(' ').trim()
+  if (label && plate) return `${label} (${plate})`
+  return label || plate
 }
 
 function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast }) {
@@ -286,6 +311,7 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
   const [defaults, setDefaults] = useState({})
   const [mode, setMode] = useState('simple') // 'simple' | 'advanced'
   const [uploading, setUploading] = useState(false)
+  const [previewRecipient, setPreviewRecipient] = useState({ customerName: 'Valued Client', vehicleName: 'Your Vehicle' })
 
   const getImageUrl = (url) => {
     if (!url) return ''
@@ -400,6 +426,55 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
     }
   }, [initial])
 
+  useEffect(() => {
+    if (mode !== 'simple') return
+    if (model?.id) return
+    if (String(reminders || '').trim()) return
+    setReminders(DEFAULT_REMINDER_LINES)
+  }, [mode, model?.id, reminders])
+
+  useEffect(() => {
+    let stopped = false
+
+    const customerIds = Array.isArray(model.customer_ids) ? model.customer_ids : []
+    const isCustomAudience = String(model.audience || '').toUpperCase() === 'CUSTOM'
+    if (!isCustomAudience || customerIds.length === 0) {
+      setPreviewRecipient({ customerName: 'Valued Client', vehicleName: 'Your Vehicle' })
+      return () => { stopped = true }
+    }
+
+    const firstCustomerId = Number(customerIds[0])
+    if (!Number.isFinite(firstCustomerId) || firstCustomerId <= 0) {
+      setPreviewRecipient({ customerName: 'Valued Client', vehicleName: 'Your Vehicle' })
+      return () => { stopped = true }
+    }
+
+    ;(async () => {
+      try {
+        const [customer, vehicles] = await Promise.all([
+          apiGet(`/customers/${firstCustomerId}`, token).catch(() => null),
+          apiGet(`/vehicles/customer/${firstCustomerId}`, token).catch(() => []),
+        ])
+        if (stopped) return
+
+        const list = Array.isArray(vehicles?.data) ? vehicles.data : (Array.isArray(vehicles) ? vehicles : [])
+        const vehicleLabel = formatVehicleLabel(list[0])
+        const customerName = String(customer?.full_name || customer?.name || '').trim() || 'Valued Client'
+
+        setPreviewRecipient({
+          customerName,
+          vehicleName: vehicleLabel || 'Your Vehicle',
+        })
+      } catch (_e) {
+        if (!stopped) {
+          setPreviewRecipient({ customerName: 'Valued Client', vehicleName: 'Your Vehicle' })
+        }
+      }
+    })()
+
+    return () => { stopped = true }
+  }, [model.audience, model.customer_ids, token])
+
   function change(k, v) { setModel((p) => ({ ...p, [k]: v })) }
 
   // Sync simple mode fields to model.content
@@ -442,7 +517,15 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
     change('subject', t.subject)
     change('cta_label', t.cta_label)
     setIntro(t.body)
-    setReminders('')
+    if (tId === 'REMINDER') {
+      setReminders(DEFAULT_REMINDER_LINES)
+    } else if (tId === 'PMS_REMINDER') {
+      setReminders(PMS_REMINDER_LINE)
+    } else if (tId === 'SUBSCRIPTION_REMINDER') {
+      setReminders(SUBSCRIPTION_REMINDER_LINE)
+    } else {
+      setReminders('')
+    }
     setClosing('Thank you for choosing MasterAuto!')
     setMode('simple')
     if (tId === 'PROMO') setUsePromo(true)
@@ -527,8 +610,18 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
   async function save() {
     if (!model.subject) return pushToast('error', 'Subject is required')
     if (!model.content) return pushToast('error', 'Content is required')
+
+    if (mode === 'simple' && !model.id && !String(reminders || '').trim()) {
+      setReminders(DEFAULT_REMINDER_LINES)
+    }
     
     const toSave = { ...model, content: normalizeTokenSpacing(model.content || '') }
+
+    if (mode === 'simple' && !model.id && !String(toSave.content || '').includes('PMS Service Reminder:')) {
+      const compiled = `${String(toSave.content || '').trim()}<br/><br/><strong>⚠️ Important Reminders:</strong><br/><ul style="margin: 10px 0; padding-left: 20px;"><li>${PMS_REMINDER_LINE}</li><li>${SUBSCRIPTION_REMINDER_LINE}</li></ul>`
+      toSave.content = normalizeTokenSpacing(compiled)
+    }
+
     if (!toSave.name) toSave.name = `Campaign - ${new Date().toLocaleString()}`
 
     if (usePromo && promoCode.trim()) {
@@ -545,8 +638,8 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
 
   const renderPreview = () => {
     let html = normalizeTokenSpacing(model.content || '')
-      .replace(/\{\{customer_name\}\}/gi, '<strong>Valued Client</strong>')
-      .replace(/\{\{vehicle\}\}/gi, '<strong>Your Vehicle</strong>')
+      .replace(/\{\{customer_name\}\}/gi, `<strong>${previewRecipient.customerName || 'Valued Client'}</strong>`)
+      .replace(/\{\{vehicle\}\}/gi, `<strong>${previewRecipient.vehicleName || 'Your Vehicle'}</strong>`)
       .replace(/\{\{discount_value\}\}/gi, `<strong>${promoDiscType === 'percent' ? `${promoDiscVal}%` : `₱${promoDiscVal}`}</strong>`)
 
     const promoHtml = `<span style="background:#fefce8; padding:2px 6px; border:1px dashed #facc15; border-radius:4px; font-weight:700;">${usePromo ? promoCode : 'PROMO2026'}</span>`
@@ -569,6 +662,8 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
             <span style={{ fontSize: 12, color: '#94a3b8' }}>Load Template:</span>
             <button className="btn-tag" onClick={() => applyTemplate('PROMO')}>Offer</button>
             <button className="btn-tag" onClick={() => applyTemplate('REMINDER')}>Reminder</button>
+            <button className="btn-tag" onClick={() => applyTemplate('PMS_REMINDER')}>PMS Reminder</button>
+            <button className="btn-tag" onClick={() => applyTemplate('SUBSCRIPTION_REMINDER')}>Subscription</button>
             <button className="btn-tag" onClick={() => applyTemplate('THANK_YOU')}>Thanks</button>
           </div>
         </div>
@@ -669,6 +764,20 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
                 <div className="campaign-field">
                   <label style={{ fontSize: 13, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.05em' }}>IMPORTANT REMINDERS (ONE PER LINE)</label>
                   <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, marginBottom: 8 }}>Each line becomes a bullet point in the "⚠️ Important Reminders" section.</div>
+                  <div style={{
+                    background: 'rgba(74, 222, 128, 0.08)',
+                    border: '1px solid rgba(74, 222, 128, 0.35)',
+                    borderRadius: 8,
+                    padding: '10px 12px',
+                    marginBottom: 10,
+                    color: '#bbf7d0',
+                    fontSize: 12,
+                    lineHeight: 1.55,
+                  }}>
+                    <div style={{ fontWeight: 700, color: '#86efac', marginBottom: 6 }}>Always Included Default Reminders</div>
+                    <div>• {PMS_REMINDER_LINE}</div>
+                    <div>• {SUBSCRIPTION_REMINDER_LINE}</div>
+                  </div>
                   <textarea 
                     ref={remindersRef}
                     className="campaign-textarea" 

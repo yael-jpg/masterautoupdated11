@@ -9,6 +9,19 @@ const { uploadEmail } = require('../middleware/upload')
 
 const router = express.Router()
 
+const VEHICLE_LABEL_SQL = `
+  SELECT NULLIF(TRIM(CONCAT_WS(' ',
+    COALESCE(NULLIF(vm.name, ''), NULLIF(to_jsonb(v) ->> 'make', ''), NULLIF(to_jsonb(v) ->> 'custom_make', '')),
+    COALESCE(NULLIF(vmod.name, ''), NULLIF(to_jsonb(v) ->> 'model', ''), NULLIF(to_jsonb(v) ->> 'custom_model', ''))
+  )), '')
+  FROM vehicles v
+  LEFT JOIN vehicle_makes vm ON vm.id = NULLIF(to_jsonb(v) ->> 'make_id', '')::int
+  LEFT JOIN vehicle_models vmod ON vmod.id = NULLIF(to_jsonb(v) ->> 'model_id', '')::int
+  WHERE v.customer_id = c.id
+  ORDER BY v.id DESC
+  LIMIT 1
+`
+
 // List campaigns with basic pagination
 router.get(
   '/',
@@ -158,7 +171,7 @@ router.post(
     // Resolve queued recipients. If none exist, seed from all customers with an email.
     let recipients = (await db.query(
       `SELECT cr.id, cr.email, c.full_name AS customer_name,
-              (SELECT CONCAT(make, ' ', model) FROM vehicles WHERE customer_id = c.id LIMIT 1) AS vehicle_name
+              (${VEHICLE_LABEL_SQL}) AS vehicle_name
        FROM campaign_recipients cr
        LEFT JOIN customers c ON c.id = cr.customer_id
        WHERE cr.campaign_id = $1 AND cr.status = 'queued'`,
@@ -177,7 +190,8 @@ router.post(
         )
       }
       recipients = (await db.query(
-        `SELECT cr.id, cr.email, c.full_name AS customer_name
+        `SELECT cr.id, cr.email, c.full_name AS customer_name,
+                (${VEHICLE_LABEL_SQL}) AS vehicle_name
          FROM campaign_recipients cr
          LEFT JOIN customers c ON c.id = cr.customer_id
          WHERE cr.campaign_id = $1 AND cr.status = 'queued'`,
