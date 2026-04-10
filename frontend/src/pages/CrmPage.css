@@ -302,3 +302,69 @@
 }
 .crm-pay-date { font-size: 0.72rem; color: #5b7080; }
 .crm-pay-time { font-size: 0.68rem; color: #3d5060; }
+
+/* Keep CRM mobile layout pinned to viewport width (no horizontal panning). */
+@media (max-width: 900px) {
+  .crm-page {
+    overflow-x: hidden;
+  }
+
+  .crm-page .module-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .crm-page .module-toolbar input,
+  .crm-page .module-toolbar select,
+  .crm-page .module-toolbar button {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .crm-page .module-toolbar .btn-primary,
+  .crm-page .module-toolbar .btn-secondary,
+  .crm-page .module-toolbar .btn-danger {
+    padding-inline: 14px;
+  }
+
+  .crm-page .table-wrap {
+    margin: 0;
+    padding: 0 0 8px;
+    overflow-x: hidden;
+  }
+
+  .crm-page .data-table {
+    min-width: 100%;
+    table-layout: fixed;
+  }
+
+  .crm-page .data-table td,
+  .crm-page .data-table th {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .crm-page .data-table td[data-label]::before {
+    min-width: 84px;
+  }
+
+  .crm-page .data-table .col-actions {
+    width: 100%;
+  }
+
+  .crm-page .row-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .crm-page .row-actions .btn-secondary,
+  .crm-page .row-actions .btn-danger {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+  }
+}

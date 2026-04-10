@@ -723,7 +723,7 @@ export function CRMPage({
   }
 
   return (
-    <div className="page-grid">
+    <div className="page-grid crm-page">
       <SectionCard
         title="Customer Relationship Management"
         subtitle="Profiles, tags, lead sources, notes, interaction history, document links"

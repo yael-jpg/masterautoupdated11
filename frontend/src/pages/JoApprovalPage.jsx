@@ -139,78 +139,29 @@ export function JoApprovalPage({ token }) {
   })
 
   return (
-    <div className="page-container" style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }}>
+    <div className="page-container joa-page">
       <SectionCard 
         title="Job Order Approval Dashboard" 
         subtitle="Review and approve newly created job orders before they move to operations."
       >
-        <div style={{ marginBottom: '32px' }}>
+        <div className="joa-controls">
           {/* Underline Tabs */}
-          <div style={{ 
-            display: 'flex', 
-            gap: '32px', 
-            borderBottom: '1px solid rgba(255,255,255,0.1)', 
-            marginBottom: '24px',
-            paddingLeft: '8px'
-          }}>
+          <div className="joa-tabs" role="tablist" aria-label="JO approval views">
             <button 
               onClick={() => setViewMode('active')}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: '12px 4px',
-                cursor: 'pointer',
-                color: viewMode === 'active' ? '#fff' : 'rgba(255,255,255,0.5)',
-                fontWeight: 600,
-                fontSize: '0.95rem',
-                position: 'relative',
-                transition: 'color 0.2s'
-              }}
+              className={`joa-tab-btn ${viewMode === 'active' ? 'active' : ''}`}
             >
               Active Job Orders
-              {viewMode === 'active' && (
-                <div style={{
-                  position: 'absolute',
-                  bottom: -1,
-                  left: 0,
-                  right: 0,
-                  height: '3px',
-                  background: '#fff',
-                  borderRadius: '2px 2px 0 0'
-                }} />
-              )}
             </button>
             <button 
               onClick={() => setViewMode('history')}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: '12px 4px',
-                cursor: 'pointer',
-                color: viewMode === 'history' ? '#fff' : 'rgba(255,255,255,0.5)',
-                fontWeight: 600,
-                fontSize: '0.95rem',
-                position: 'relative',
-                transition: 'color 0.2s'
-              }}
+              className={`joa-tab-btn ${viewMode === 'history' ? 'active' : ''}`}
             >
               History
-              {viewMode === 'history' && (
-                <div style={{
-                  position: 'absolute',
-                  bottom: -1,
-                  left: 0,
-                  right: 0,
-                  height: '3px',
-                  background: '#fff',
-                  borderRadius: '2px 2px 0 0'
-                }} />
-              )}
             </button>
           </div>
 
-          {/* Styled Search Bar */}
-          <div style={{ position: 'relative', width: '100%' }}>
+          <div className="joa-search-row">
             <input
               type="search"
               placeholder="Search JO no., quotation no., customer, plate..."
@@ -219,36 +170,12 @@ export function JoApprovalPage({ token }) {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') setAppliedSearch(searchTerm)
               }}
-              style={{
-                width: '100%',
-                padding: '14px 20px',
-                borderRadius: '12px',
-                border: '1px solid rgba(255,255,255,0.15)',
-                background: 'rgba(255,255,255,0.03)',
-                color: '#fff',
-                fontSize: '1rem',
-                outline: 'none',
-                transition: 'all 0.2s'
-              }}
-              onFocus={(e) => e.target.style.border = '1px solid rgba(255,255,255,0.3)'}
-              onBlur={(e) => e.target.style.border = '1px solid rgba(255,255,255,0.15)'}
+              className="joa-search-input"
             />
             <button
               type="button"
               onClick={() => setAppliedSearch(searchTerm)}
-              style={{
-                position: 'absolute',
-                right: '10px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'var(--primary-color)',
-                border: 'none',
-                color: '#fff',
-                padding: '8px 20px',
-                borderRadius: '8px',
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
+              className="btn-primary joa-search-btn"
             >
               Search
             </button>

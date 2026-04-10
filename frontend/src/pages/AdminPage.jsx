@@ -141,7 +141,9 @@ export function AdminPage({ token, user }) {
               u.full_name,
               u.email,
               u.role,
-              u.is_active ? '● Active' : '○ Inactive',
+              <span className={`adm-user-status ${u.is_active ? 'adm-user-status--active' : 'adm-user-status--inactive'}`}>
+                {u.is_active ? '● Active' : '○ Inactive'}
+              </span>,
             ],
             raw: u,
           })),
@@ -282,7 +284,9 @@ export function AdminPage({ token, user }) {
             u.full_name,
             u.email,
             u.role,
-            u.is_active ? '● Active' : '○ Inactive',
+            <span className={`adm-user-status ${u.is_active ? 'adm-user-status--active' : 'adm-user-status--inactive'}`}>
+              {u.is_active ? '● Active' : '○ Inactive'}
+            </span>,
           ],
           raw: u,
         })),
@@ -491,7 +495,7 @@ export function AdminPage({ token, user }) {
   }, [masterData, activeTab])
 
   return (
-    <div className="page-grid">
+    <div className="page-grid admin-page">
       {error ? <p className="page-error">{error}</p> : null}
 
       {/* ── Stats Strip ── */}
@@ -704,21 +708,21 @@ export function AdminPage({ token, user }) {
               <tbody>
                 {pagedClients.map((client) => (
                   <tr key={client.id} className={client.is_blocked ? 'adm-client-row--blocked' : ''}>
-                    <td className="adm-client-name">{client.full_name}</td>
-                    <td>{client.mobile || <span className="adm-client-empty">—</span>}</td>
-                    <td>{client.email || <span className="adm-client-empty">—</span>}</td>
-                    <td>
+                    <td className="adm-client-name" data-label="Name">{client.full_name}</td>
+                    <td data-label="Mobile">{client.mobile || <span className="adm-client-empty">—</span>}</td>
+                    <td data-label="Email">{client.email || <span className="adm-client-empty">—</span>}</td>
+                    <td data-label="Registered">
                       {client.created_at
                         ? new Date(client.created_at).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })
                         : <span className="adm-client-empty">—</span>}
                     </td>
-                    <td className="adm-client-cell-center">{client.vehicle_count ?? 0}</td>
-                    <td>
+                    <td data-label="Vehicles">{client.vehicle_count ?? 0}</td>
+                    <td data-label="Status">
                       <span className={`adm-client-status ${client.is_blocked ? 'adm-client-status--blocked' : 'adm-client-status--active'}`}>
                         {client.is_blocked ? '● Blocked' : '● Active'}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Action">
                       <button
                         type="button"
                         className={`adm-block-btn ${client.is_blocked ? 'adm-block-btn--unblock' : 'adm-block-btn--block'}`}

@@ -297,11 +297,11 @@ export function PMSPage({ token }) {
         }}
       >
         {activeTab === 'requests' && (
-          <div className="filter-bar" style={{ marginBottom: 12 }}>
+          <div className="filter-bar pms-filter-bar" style={{ marginBottom: 12 }}>
             <input
               type="text"
               placeholder="Search customer, vehicle, reference..."
-              className="input-field"
+              className="input-field pms-search-input"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
