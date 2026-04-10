@@ -350,8 +350,7 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
     }
   }
   
-  // Structured fields for Simple Mode (matching the picture)
-  const [intro, setIntro] = useState('')
+  // Structured fields for Simple Mode
   const [reminders, setReminders] = useState('')
   const [closing, setClosing] = useState('')
   
@@ -362,12 +361,11 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
   const [promoExpiry, setPromoExpiry]     = useState('')
   const [promoDesc, setPromoDesc]         = useState('')
   
-  const introRef = useRef(null)
   const remindersRef = useRef(null)
   const closingRef = useRef(null)
   const advancedRef = useRef(null)
   
-  const [lastRef, setLastRef] = useState('intro') // 'intro' | 'reminders' | 'closing'
+  const [lastRef, setLastRef] = useState('closing') // 'reminders' | 'closing'
 
   const normalizeTokenSpacing = useCallback((value) => {
     if (!value) return ''
@@ -396,17 +394,17 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
     const fresh = { ...initial }
     setModel(fresh)
     
-    // Attempt to split content back to intro/reminders/closing for simple mode
+    // Attempt to split content back to message/reminders for simple mode
     if (fresh.content) {
       if (!fresh.content.includes('<table') && !fresh.content.includes('<div')) {
         setMode('simple')
         // Basic split logic if we can detect the delimiter we use below
         if (fresh.content.includes('⚠️ Important Reminders:')) {
           const parts = fresh.content.split('<strong>⚠️ Important Reminders:</strong><ul>')
-          let introPart = (parts[0] || '').replace(/<br\s*\/?>/gi, '\n').trim()
-          // Remove the default greeting if it exists to keep the textarea clean
-          introPart = introPart.replace(/^Hello \{\{customer_name\}\},(\n|<br\/?>)+/i, '')
-          setIntro(introPart)
+          const messagePart = (parts[0] || '')
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/^Hello \{\{customer_name\}\},(\n|<br\/?>)+/i, '')
+            .trim()
           const sub = parts[1] || ''
           const subParts = sub.split('</ul>')
           const listHtml = subParts[0] || ''
@@ -414,11 +412,12 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
           if (listEntries) {
             setReminders(listEntries.map(li => li.replace(/<\/?li>/gi, '').trim()).join('\n'))
           }
-          setClosing((subParts[1] || '').replace(/<br\s*\/?>/gi, '\n').trim())
+          const closingPart = (subParts[1] || '').replace(/<br\s*\/?>/gi, '\n').trim()
+          setClosing([messagePart, closingPart].filter(Boolean).join('\n\n'))
         } else {
-          let introPart = fresh.content.replace(/<br\s*\/?>/gi, '\n')
-          introPart = introPart.replace(/^Hello \{\{customer_name\}\},(\n|<br\/?>)+/i, '')
-          setIntro(introPart)
+          let messagePart = fresh.content.replace(/<br\s*\/?>/gi, '\n')
+          messagePart = messagePart.replace(/^Hello \{\{customer_name\}\},(\n|<br\/?>)+/i, '')
+          setClosing(messagePart.trim())
         }
       } else {
         setMode('advanced')
@@ -480,19 +479,17 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
   // Sync simple mode fields to model.content
   useEffect(() => {
     if (mode === 'simple') {
-      const greetingHtml = 'Hello {{customer_name}},<br/><br/>'
-      const introHtml = (intro || '').trim().replace(/\n/g, '<br/>')
+      const messageHtml = (closing || '').trim().replace(/\n/g, '<br/>')
       let remindersHtml = ''
       if (reminders && reminders.trim()) {
         const items = reminders.split('\n').map(l => l.trim()).filter(l => l.length > 0)
         remindersHtml = `<br/><br/><strong>⚠️ Important Reminders:</strong><br/><ul style="margin: 10px 0; padding-left: 20px;">${items.map(i => `<li>${i}</li>`).join('')}</ul>`
       }
-      const closingHtml = closing ? `<br/><br/>${closing.trim().replace(/\n/g, '<br/>')}` : ''
       
-      const compiled = `${greetingHtml}${introHtml}${remindersHtml}${closingHtml}`
+      const compiled = `${messageHtml}${remindersHtml}`
       setModel(p => ({ ...p, content: compiled }))
     }
-  }, [intro, reminders, closing, mode])
+  }, [reminders, closing, mode])
 
   useEffect(() => {
     let mounted = true
@@ -516,7 +513,7 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
     if (!t) return
     change('subject', t.subject)
     change('cta_label', t.cta_label)
-    setIntro(t.body)
+    setClosing(t.body)
     if (tId === 'REMINDER') {
       setReminders(DEFAULT_REMINDER_LINES)
     } else if (tId === 'PMS_REMINDER') {
@@ -535,7 +532,7 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
     if (mode === 'advanced') return { ref: advancedRef.current, val: model.content || '', set: (v) => change('content', v) }
     if (lastRef === 'reminders') return { ref: remindersRef.current, val: reminders || '', set: setReminders }
     if (lastRef === 'closing') return { ref: closingRef.current, val: closing || '', set: setClosing }
-    return { ref: introRef.current, val: intro || '', set: setIntro }
+    return { ref: closingRef.current, val: closing || '', set: setClosing }
   }
 
   function insertVar(v) {
@@ -747,21 +744,6 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
             {mode === 'simple' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                 <div className="campaign-field">
-                  <label style={{ fontSize: 13, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.05em' }}>GREETING / INTRO MESSAGE</label>
-                  <div style={{ fontSize: 13, color: '#4ade80', fontWeight: 600, margin: '8px 0' }}>Hello {"{{customer_name}}"},</div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>The opening paragraph shown after the greeting prefix.</div>
-                  <textarea 
-                    ref={introRef}
-                    className="campaign-textarea" 
-                    value={intro} 
-                    onFocus={() => setLastRef('intro')}
-                    onChange={(e) => setIntro(e.target.value)} 
-                    placeholder="e.g. Great news! Your service quotation has been APPROVED..." 
-                    rows={4} 
-                  />
-                </div>
-
-                <div className="campaign-field">
                   <label style={{ fontSize: 13, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.05em' }}>IMPORTANT REMINDERS (ONE PER LINE)</label>
                   <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, marginBottom: 8 }}>Each line becomes a bullet point in the "⚠️ Important Reminders" section.</div>
                   <div style={{
@@ -790,8 +772,8 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
                 </div>
 
                 <div className="campaign-field">
-                  <label style={{ fontSize: 13, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.05em' }}>CLOSING MESSAGE</label>
-                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, marginBottom: 8 }}>The final paragraph shown before the email signature.</div>
+                  <label style={{ fontSize: 13, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.05em' }}>MESSAGE</label>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, marginBottom: 8 }}>Main email content shown before reminders.</div>
                   <textarea 
                     ref={closingRef}
                     className="campaign-textarea" 
