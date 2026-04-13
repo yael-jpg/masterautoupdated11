@@ -1540,30 +1540,50 @@ export function SettingsPage({ token, user }) {
     const ok = window.confirm(`Delete service "${serviceName}"?\n\nThis will hide the row from Settings/Portal and remove related pricing/name overrides.`)
     if (!ok) return
 
-    setQuotDeletedServiceCodes((prev) => sanitizeDeletedServiceCodes([...prev, code]))
-    setQuotDeletedSvcDirty(true)
+    const nextDeleted = sanitizeDeletedServiceCodes([...quotDeletedServiceCodes, code])
+    const nextPrices = sanitizeServiceCodeMap(
+      Object.fromEntries(
+        Object.entries(quotPrices || {}).filter(([k]) => String(k || '').trim().toLowerCase() !== code),
+      ),
+    )
+    const nextNames = sanitizeServiceCodeMap(
+      Object.fromEntries(
+        Object.entries(quotServiceNames || {}).filter(([k]) => String(k || '').trim().toLowerCase() !== code),
+      ),
+    )
+    const nextCustom = sanitizeCustomServices(
+      (quotCustomServices || []).filter((s) => String(s?.code || '').trim().toLowerCase() !== code),
+    )
 
-    setQuotPrices((prev) => {
-      const next = { ...prev }
-      delete next[code]
-      return next
-    })
-    setQuotServiceNames((prev) => {
-      const next = { ...prev }
-      delete next[code]
-      return next
-    })
-    setQuotCustomServices((prev) => prev.filter((s) => String(s.code || '').trim().toLowerCase() !== code))
+    // Optimistic UI update
+    setQuotDeletedServiceCodes(nextDeleted)
+    setQuotPrices(nextPrices)
+    setQuotServiceNames(nextNames)
+    setQuotCustomServices(nextCustom)
 
-    setQuotPricesDirty(true)
-    setQuotServiceNamesDirty(true)
-    setQuotCustomSvcDirty(true)
-
-    // Best-effort physical delete from services table for matching code.
+    // Persist immediately so delete has visible effect right away.
     try {
+      await apiPut('/config/quotations/deleted_service_codes', token, { value: JSON.stringify(nextDeleted) })
+      await apiPut('/config/quotations/service_prices', token, { value: JSON.stringify(nextPrices) })
+      await apiPut('/config/quotations/service_name_overrides', token, { value: JSON.stringify(nextNames) })
+      await apiPut('/config/quotations/custom_services', token, { value: JSON.stringify(nextCustom) })
+
+      emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'deleted_service_codes' })
+      emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'service_prices' })
+      emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'service_name_overrides' })
+      emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'custom_services' })
+
+      setQuotDeletedSvcDirty(false)
+      setQuotPricesDirty(false)
+      setQuotServiceNamesDirty(false)
+      setQuotCustomSvcDirty(false)
+
+      // Best-effort physical delete from services table for matching code.
       await apiDelete(`/services/by-code/${encodeURIComponent(code)}`, token)
+      pushToast('success', `Service "${serviceName}" deleted.`)
+      await loadConfig()
     } catch {
-      // Ignore hard-delete failures (e.g., not present in DB) since config-level deletion still applies.
+      pushToast('error', `Failed to delete "${serviceName}". Please try again.`)
     }
   }
 
