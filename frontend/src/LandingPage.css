@@ -1732,22 +1732,39 @@
 
 /*  FOOTER  */
 .lp-footer {
-  background: var(--charcoal);
-  border-top: 1px solid var(--border);
-  padding: 60px 0 0;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(780px 280px at 82% -10%, rgba(255,255,255,0.07), rgba(255,255,255,0) 62%),
+    linear-gradient(180deg, #0a0a0a 0%, #070707 100%);
+  border-top: 1px solid rgba(255,255,255,0.1);
+  padding: 68px 0 0;
+}
+
+.lp-footer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.24), rgba(255,255,255,0.04));
+  pointer-events: none;
 }
 .lp-footer-in {
-  display: flex;
-  gap: 60px;
-  flex-wrap: wrap;
-  padding-bottom: 52px;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(280px, 1.18fr) minmax(0, 2fr);
+  gap: 56px;
+  align-items: start;
+  padding-bottom: 56px;
 }
 .lp-footer-brand {
   flex: 1;
   min-width: 220px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 13px;
 }
 .lp-footer-logo {
   height: 36px;
@@ -1757,43 +1774,63 @@
   filter: brightness(0.85);
 }
 .lp-footer-brand h4 {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 700;
-  letter-spacing: 2px;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--gray-500);
-  margin-bottom: 4px;
+  color: rgba(255,255,255,0.54);
+  margin-bottom: 6px;
 }
 .lp-footer-brand p {
-  font-size: 13px;
-  color: var(--gray-500);
-  line-height: 1.65;
-  max-width: 420px;
+  font-size: 14.5px;
+  color: rgba(255,255,255,0.66);
+  line-height: 1.7;
+  max-width: 46ch;
 }
-.lp-footer-cols { display: flex; gap: 52px; flex-wrap: wrap; }
-.lp-fcol { display: flex; flex-direction: column; gap: 10px; min-width: 130px; }
+.lp-footer-cols {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 28px 36px;
+}
+.lp-fcol {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  min-width: 0;
+}
 .lp-fcol h4 {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 700;
-  letter-spacing: 2px;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--gray-500);
-  margin-bottom: 4px;
+  color: rgba(255,255,255,0.56);
+  margin-bottom: 6px;
 }
 .lp-fcol a, .lp-fcol button, .lp-fcol span {
-  font-size: 13.5px;
-  color: var(--gray-300);
+  font-size: 15px;
+  color: rgba(255,255,255,0.86);
+  line-height: 1.35;
   text-align: left;
   cursor: pointer;
   font-family: inherit;
-  transition: color var(--t);
+  transition: color var(--t), opacity var(--t), transform var(--t);
 }
-.lp-fcol a:hover, .lp-fcol button:hover { color: var(--white); }
+.lp-fcol span {
+  color: rgba(255,255,255,0.56);
+}
+.lp-fcol a:hover, .lp-fcol button:hover {
+  color: #ffffff;
+  transform: translateX(1px);
+}
+.lp-footer .lp-fcol button {
+  padding: 0;
+}
 .lp-footer-bar {
-  border-top: 1px solid var(--border);
-  padding: 18px 0;
-  font-size: 12px;
-  color: var(--gray-700);
+  border-top: 1px solid rgba(255,255,255,0.1);
+  padding: 19px 0;
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
+  color: rgba(255,255,255,0.42);
 }
 
 /*  MODAL  */
@@ -2020,8 +2057,8 @@
   .lp-cta { padding: 96px 0; }
 
   /* Footer */
-  .lp-footer-in   { gap: 40px; }
-  .lp-footer-cols { gap: 32px; }
+  .lp-footer-in   { gap: 36px; grid-template-columns: minmax(260px, 1fr) minmax(0, 1.6fr); }
+  .lp-footer-cols { grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 28px; }
 }
 
 /* ── Tablet  ≤ 768px ───────────────────────────────── */
@@ -2068,10 +2105,10 @@
 
   /* Footer */
   .lp-footer      { padding: 48px 0 0; }
-  .lp-footer-in   { flex-direction: column; gap: 32px; padding-bottom: 40px; }
+  .lp-footer-in   { grid-template-columns: 1fr; gap: 32px; padding-bottom: 40px; }
   .lp-footer-brand { min-width: unset; }
-  .lp-footer-cols { gap: 28px; flex-wrap: wrap; }
-  .lp-fcol        { min-width: 140px; }
+  .lp-footer-cols { grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: 24px; }
+  .lp-fcol        { min-width: 0; }
 
   /* Modal */
   .lp-overlay    { padding: 16px; }
@@ -2146,9 +2183,9 @@
   /* Footer */
   .lp-footer      { padding: 40px 0 0; }
   .lp-footer-in   { gap: 24px; padding-bottom: 28px; }
-  .lp-footer-cols { flex-direction: column; gap: 20px; }
+  .lp-footer-cols { grid-template-columns: 1fr; gap: 18px; }
   .lp-fcol        { min-width: unset; }
-  .lp-footer-brand p { font-size: 12.5px; }
+  .lp-footer-brand p { font-size: 13px; }
   .lp-footer-bar  { font-size: 11.5px; }
 
   /* Modal — bottom sheet */
