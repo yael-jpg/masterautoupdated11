@@ -1605,10 +1605,21 @@ export function SettingsPage({ token, user }) {
   async function handleSaveQuotationCustomServices() {
     setQuotCustomSvcSaving(true)
     try {
-      await apiPut('/config/quotations/custom_services', token, { value: JSON.stringify(quotCustomServices) })
+      const cleanedCustom = sanitizeCustomServices(quotCustomServices)
+      const activeCodes = new Set(cleanedCustom.map((s) => String(s.code || '').trim().toLowerCase()))
+      const cleanedDeleted = sanitizeDeletedServiceCodes(quotDeletedServiceCodes)
+        .filter((code) => !activeCodes.has(code))
+
+      await apiPut('/config/quotations/custom_services', token, { value: JSON.stringify(cleanedCustom) })
+      await apiPut('/config/quotations/deleted_service_codes', token, { value: JSON.stringify(cleanedDeleted) })
+
+      setQuotCustomServices(cleanedCustom)
+      setQuotDeletedServiceCodes(cleanedDeleted)
       pushToast('success', 'Custom services saved')
       setQuotCustomSvcDirty(false)
+      setQuotDeletedSvcDirty(false)
       emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'custom_services' })
+      emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'deleted_service_codes' })
       await loadConfig()
     } catch (e) {
       pushToast('error', e.message)
@@ -2638,9 +2649,14 @@ export function SettingsPage({ token, user }) {
                       }
                       const sizePrices = Object.fromEntries(VEHICLE_SIZE_OPTIONS.map((s) => [s.key, 0]))
                       setQuotCustomServices((prev) => [...prev, { code, name, group, enabled: true, sizePrices }])
+                      setQuotDeletedServiceCodes((prev) => {
+                        const next = sanitizeDeletedServiceCodes(prev).filter((c) => c !== code)
+                        return next
+                      })
                       setQuotNewSvcName('')
                       setQuotNewSvcGroup('')
                       setQuotCustomSvcDirty(true)
+                      setQuotDeletedSvcDirty(true)
                       // Jump to that group in the pricing table
                       setQuotPriceGroup(group)
                       setTimeout(() => {
