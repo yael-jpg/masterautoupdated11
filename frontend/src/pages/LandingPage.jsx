@@ -954,6 +954,7 @@ export function LandingPage() {
         <div className="lp-cta-bg" style={{ backgroundImage: 'url(/images/howitworks.png)' }} />
         <div className="lp-cta-dim" />
         <div className="lp-wrap lp-cta-body">
+          <p className="lp-eyebrow lp-cta-kicker">Start With Confidence</p>
           <h2>Ready to protect your vehicle?</h2>
           <p>
             Master Auto delivers premium vehicle protection and appearance services—including
