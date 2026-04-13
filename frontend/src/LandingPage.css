@@ -311,32 +311,40 @@
 /* ── Fan Strip Grid ────────────────────────────────────────── */
 .lp-fan-grid {
   display: flex;
-  gap: 6px;
+  gap: 10px;
   height: 580px;
   border-radius: 6px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .lp-fan-panel {
   flex: 1;
   position: relative;
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: 10px;
   border: 1px solid rgba(255,255,255,0.13);
   cursor: pointer;
-  transition: flex 0.60s cubic-bezier(0.22,1,0.36,1);
+  clip-path: polygon(12% 0, 100% 0, 88% 100%, 0 100%);
+  transform: translateY(0);
+  transition:
+    flex 0.48s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.38s cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 0.3s ease,
+    box-shadow 0.3s ease;
   min-width: 0;
 }
 
 /* When ANY panel is hovered, compress the rest */
 .lp-fan-grid:has(.lp-fan-panel:hover) .lp-fan-panel,
 .lp-fan-grid.has-active .lp-fan-panel {
-  flex: 0.5;
+  flex: 0.82;
 }
 .lp-fan-panel:hover,
 .lp-fan-panel.is-active {
-  flex: 4.5 !important;
+  flex: 2.4 !important;
+  transform: translateY(-4px);
   border-color: rgba(255,255,255,0.28);
+  box-shadow: 0 18px 42px rgba(0,0,0,0.52);
 }
 
 /* Background photo */
@@ -345,12 +353,13 @@
   inset: -1px;
   background-size: cover;
   background-position: center;
-  transition: transform 0.52s cubic-bezier(0.22,1,0.36,1);
+  transition: transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.32s ease;
   will-change: transform;
 }
 .lp-fan-panel:hover .lp-fan-bg,
 .lp-fan-panel.is-active .lp-fan-bg {
-  transform: scale(1.04);
+  transform: scale(1.025);
+  filter: saturate(1.05) contrast(1.04);
 }
 
 /* Gradient overlay */
@@ -365,7 +374,7 @@
     rgba(0,0,0,0.30) 55%,
     rgba(0,0,0,0.94) 100%
   );
-  transition: background 0.40s ease;
+  transition: background 0.28s ease;
 }
 .lp-fan-panel:hover .lp-fan-dim,
 .lp-fan-panel.is-active .lp-fan-dim {
@@ -415,12 +424,11 @@
   line-height: 1.18;
   text-shadow: 0 2px 18px rgba(0,0,0,0.70), 0 1px 4px rgba(0,0,0,0.90);
   word-break: break-word;
-  transition: font-size 0.45s cubic-bezier(0.22,1,0.36,1);
+  transition: letter-spacing 0.28s ease, opacity 0.22s ease;
 }
 .lp-fan-panel:hover .lp-fan-title,
 .lp-fan-panel.is-active .lp-fan-title {
-  font-size: 26px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
 }
 
 /* Bottom content — hidden until hover */
@@ -432,8 +440,8 @@
   padding: 20px 20px 24px;
   z-index: 3;
   opacity: 0;
-  transform: translateY(14px);
-  transition: opacity 0.35s ease 0.10s, transform 0.35s cubic-bezier(0.22,1,0.36,1) 0.10s;
+  transform: translateY(8px);
+  transition: opacity 0.24s ease, transform 0.24s ease;
 }
 .lp-fan-panel:hover .lp-fan-foot,
 .lp-fan-panel.is-active .lp-fan-foot {
@@ -460,7 +468,7 @@
   border: none;
   cursor: pointer;
   font-family: inherit;
-  transition: background 0.20s, transform 0.18s;
+  transition: background 0.2s ease, transform 0.2s ease;
 }
 .lp-fan-book svg { width: 13px; height: 13px; }
 .lp-fan-book:hover { background: #f0f0f0; transform: translateY(-1px); }
@@ -470,7 +478,7 @@
   .lp-fan-grid { height: 480px; gap: 5px; }
   .lp-fan-title { font-size: 12px; }
   .lp-fan-panel:hover .lp-fan-title,
-  .lp-fan-panel.is-active .lp-fan-title { font-size: 20px; }
+  .lp-fan-panel.is-active .lp-fan-title { font-size: 12px; }
 }
 @media (max-width: 600px) {
   .lp-fan-grid {
@@ -484,6 +492,8 @@
     height: auto;
     min-height: 340px;
     width: 100%;
+    clip-path: none;
+    transform: none !important;
 
     display: flex;
     flex-direction: column;
