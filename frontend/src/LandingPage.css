@@ -311,51 +311,32 @@
 /* ── Fan Strip Grid ────────────────────────────────────────── */
 .lp-fan-grid {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   height: 580px;
   border-radius: 6px;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .lp-fan-panel {
   flex: 1;
   position: relative;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: 4px;
   border: 1px solid rgba(255,255,255,0.13);
   cursor: pointer;
-  clip-path: polygon(12% 0, 100% 0, 88% 100%, 0 100%);
-  transform: translateY(0);
-  transition:
-    flex 0.48s cubic-bezier(0.2, 0.8, 0.2, 1),
-    transform 0.38s cubic-bezier(0.2, 0.8, 0.2, 1),
-    border-color 0.3s ease,
-    box-shadow 0.3s ease;
+  transition: flex 0.60s cubic-bezier(0.22,1,0.36,1);
   min-width: 0;
-}
-
-.lp-fan-panel::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  pointer-events: none;
-  background:
-    linear-gradient(to right, rgba(0, 0, 0, 0.52) 0%, rgba(0, 0, 0, 0.08) 18%, rgba(0, 0, 0, 0.08) 82%, rgba(0, 0, 0, 0.58) 100%),
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.18) 0%, rgba(0, 0, 0, 0) 30%, rgba(0, 0, 0, 0.42) 100%);
 }
 
 /* When ANY panel is hovered, compress the rest */
 .lp-fan-grid:has(.lp-fan-panel:hover) .lp-fan-panel,
 .lp-fan-grid.has-active .lp-fan-panel {
-  flex: 0.82;
+  flex: 0.5;
 }
 .lp-fan-panel:hover,
 .lp-fan-panel.is-active {
-  flex: 2.4 !important;
-  transform: translateY(-4px);
+  flex: 4.5 !important;
   border-color: rgba(255,255,255,0.28);
-  box-shadow: 0 18px 42px rgba(0,0,0,0.52);
 }
 
 /* Background photo */
@@ -364,13 +345,12 @@
   inset: -1px;
   background-size: cover;
   background-position: center;
-  transition: transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.32s ease;
+  transition: transform 0.52s cubic-bezier(0.22,1,0.36,1);
   will-change: transform;
 }
 .lp-fan-panel:hover .lp-fan-bg,
 .lp-fan-panel.is-active .lp-fan-bg {
-  transform: scale(1.025);
-  filter: saturate(1.05) contrast(1.04);
+  transform: scale(1.04);
 }
 
 /* Gradient overlay */
@@ -385,7 +365,7 @@
     rgba(0,0,0,0.30) 55%,
     rgba(0,0,0,0.94) 100%
   );
-  transition: background 0.28s ease;
+  transition: background 0.40s ease;
 }
 .lp-fan-panel:hover .lp-fan-dim,
 .lp-fan-panel.is-active .lp-fan-dim {
@@ -420,9 +400,9 @@
 .lp-fan-title-wrap {
   position: absolute;
   top: 20px;
-  left: 12%;
-  right: 12px;
-  padding: 0;
+  left: 0;
+  right: 0;
+  padding: 0 16px;
   z-index: 3;
 }
 .lp-fan-title {
@@ -433,16 +413,14 @@
   letter-spacing: 0.06em;
   color: #ffffff;
   line-height: 1.18;
-  text-shadow: 0 3px 18px rgba(0,0,0,0.88), 0 2px 6px rgba(0,0,0,0.95);
-  background: linear-gradient(90deg, rgba(0,0,0,0.56) 0%, rgba(0,0,0,0.28) 60%, rgba(0,0,0,0) 100%);
-  padding: 6px 10px 7px;
-  border-radius: 8px;
+  text-shadow: 0 2px 18px rgba(0,0,0,0.70), 0 1px 4px rgba(0,0,0,0.90);
   word-break: break-word;
-  transition: letter-spacing 0.28s ease, opacity 0.22s ease;
+  transition: font-size 0.45s cubic-bezier(0.22,1,0.36,1);
 }
 .lp-fan-panel:hover .lp-fan-title,
 .lp-fan-panel.is-active .lp-fan-title {
-  letter-spacing: 0.05em;
+  font-size: 26px;
+  letter-spacing: 0.04em;
 }
 
 /* Bottom content — hidden until hover */
@@ -454,8 +432,8 @@
   padding: 20px 20px 24px;
   z-index: 3;
   opacity: 0;
-  transform: translateY(8px);
-  transition: opacity 0.24s ease, transform 0.24s ease;
+  transform: translateY(14px);
+  transition: opacity 0.35s ease 0.10s, transform 0.35s cubic-bezier(0.22,1,0.36,1) 0.10s;
 }
 .lp-fan-panel:hover .lp-fan-foot,
 .lp-fan-panel.is-active .lp-fan-foot {
@@ -482,7 +460,7 @@
   border: none;
   cursor: pointer;
   font-family: inherit;
-  transition: background 0.2s ease, transform 0.2s ease;
+  transition: background 0.20s, transform 0.18s;
 }
 .lp-fan-book svg { width: 13px; height: 13px; }
 .lp-fan-book:hover { background: #f0f0f0; transform: translateY(-1px); }
@@ -492,7 +470,7 @@
   .lp-fan-grid { height: 480px; gap: 5px; }
   .lp-fan-title { font-size: 12px; }
   .lp-fan-panel:hover .lp-fan-title,
-  .lp-fan-panel.is-active .lp-fan-title { font-size: 12px; }
+  .lp-fan-panel.is-active .lp-fan-title { font-size: 20px; }
 }
 @media (max-width: 600px) {
   .lp-fan-grid {
@@ -506,8 +484,6 @@
     height: auto;
     min-height: 340px;
     width: 100%;
-    clip-path: none;
-    transform: none !important;
 
     display: flex;
     flex-direction: column;
@@ -1068,48 +1044,110 @@
 .lp-packages-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: 20px;
 }
 
 .lp-package-card {
-  border: 1px solid rgba(255,255,255,0.10);
-  background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%);
-  padding: 38px 42px;
-  min-height: 350px;
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.11);
+  background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.015) 100%);
+  padding: 32px 34px;
+  min-height: 330px;
+  display: grid;
+  grid-template-rows: auto auto minmax(128px, auto) minmax(84px, auto) auto;
+  row-gap: 12px;
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+  transition: border-color 220ms ease, transform 220ms ease, box-shadow 220ms ease;
+}
+
+.lp-package-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 14px 0 0 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.32), rgba(255,255,255,0.05));
+}
+
+.lp-package-card:hover {
+  border-color: rgba(255,255,255,0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(0,0,0,0.34);
+}
+
+.lp-package-kicker {
+  margin-bottom: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.5);
 }
 
 .lp-package-card h3 {
   font-family: 'Cormorant Garamond', Georgia, serif;
-  font-size: clamp(30px, 3vw, 42px);
+  font-size: clamp(28px, 3vw, 48px);
   font-weight: 500;
-  letter-spacing: -0.2px;
+  letter-spacing: -0.35px;
   color: #f4f4f2;
-  margin-bottom: 18px;
+  margin-bottom: 0;
+  line-height: 1.08;
 }
 
-.lp-package-card p {
-  font-size: 18px;
-  line-height: 1.6;
-  color: rgba(255,255,255,0.72);
-  margin-bottom: 28px;
+.lp-package-copy {
+  font-size: 16px;
+  line-height: 1.58;
+  color: rgba(255,255,255,0.76);
+  margin-bottom: 0;
+  max-width: 42ch;
+}
+
+.lp-package-points {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.lp-package-points li {
+  font-size: 14px;
+  line-height: 1.45;
+  color: rgba(255,255,255,0.66);
+  padding-left: 14px;
+  position: relative;
+}
+
+.lp-package-points li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.62em;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.55);
 }
 
 .lp-package-btn {
-  margin-top: auto;
+  margin-top: 2px;
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   justify-content: center;
   min-height: 46px;
-  padding: 0 22px;
-  border-radius: 3px;
+  padding: 0 18px;
+  border-radius: 999px;
   background: #f0f0ec;
   color: #0f0f0f;
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   transition: background var(--t), transform var(--t), box-shadow var(--t);
 }
@@ -1130,12 +1168,14 @@
   }
 
   .lp-package-card {
-    min-height: 300px;
-    padding: 28px 26px;
+    min-height: 290px;
+    padding: 26px 24px;
+    grid-template-rows: auto auto auto auto auto;
+    row-gap: 10px;
   }
 
-  .lp-package-card p {
-    font-size: 17px;
+  .lp-package-copy {
+    font-size: 15px;
   }
 }
 
@@ -1143,6 +1183,7 @@
   .lp-package-card {
     min-height: auto;
     padding: 24px 20px;
+    row-gap: 9px;
   }
 
   .lp-package-card h3 {
@@ -1152,6 +1193,15 @@
   .lp-package-card p {
     font-size: 16px;
     line-height: 1.58;
+  }
+
+  .lp-package-points {
+    gap: 7px;
+    margin-bottom: 20px;
+  }
+
+  .lp-package-points li {
+    font-size: 13.5px;
   }
 
   .lp-package-btn {
