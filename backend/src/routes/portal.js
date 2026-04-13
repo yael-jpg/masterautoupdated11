@@ -142,6 +142,16 @@ function isBlockedService(serviceCode, serviceName) {
   return baseName && BLOCKED_SERVICE_BASE_NAMES.has(baseName)
 }
 
+function parseMaybeJson(value) {
+  if (value == null) return value
+  if (typeof value !== 'string') return value
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
 function normalizeServiceCode(raw) {
   return String(raw || '').trim().replace(/^CAT-/i, '').toLowerCase()
 }
@@ -2010,10 +2020,10 @@ router.get(
     )
 
     // 2. Fetch overrides & custom services from configuration
-    const overrides = await ConfigurationService.get('quotations', 'service_name_overrides')
-    let priceOverrides = await ConfigurationService.get('quotations', 'service_prices')
-    const customSvcs = await ConfigurationService.get('quotations', 'custom_services')
-    const deletedServiceCodes = await ConfigurationService.get('quotations', 'deleted_service_codes')
+    const overrides = parseMaybeJson(await ConfigurationService.get('quotations', 'service_name_overrides'))
+    let priceOverrides = parseMaybeJson(await ConfigurationService.get('quotations', 'service_prices'))
+    const customSvcs = parseMaybeJson(await ConfigurationService.get('quotations', 'custom_services'))
+    const deletedServiceCodes = parseMaybeJson(await ConfigurationService.get('quotations', 'deleted_service_codes'))
 
     const deletedCodeSet = new Set(
       Array.isArray(deletedServiceCodes)
