@@ -119,7 +119,6 @@ function ServiceGroup({ baseName, variants, description, materialsNotes, onBook 
     return merged
   })()
 
-  const sizeLabels = sizeCardVariants.map((v) => v.size).filter(Boolean)
   const maxPrice = Math.max(...sizeCardVariants.map((v) => Number(v.base_price)))
   const priceStr = `₱${maxPrice.toLocaleString()}`
 
@@ -148,15 +147,6 @@ function ServiceGroup({ baseName, variants, description, materialsNotes, onBook 
           {description && (
             <div className="portal-svc-group-desc">
               {description}
-            </div>
-          )}
-          {sizeLabels.length > 0 && (
-            <div className="portal-svc-group-size-row" aria-label="Available sizes">
-              {sizeLabels.map((size) => (
-                <span key={size} className="portal-svc-group-size-chip">
-                  {size}
-                </span>
-              ))}
             </div>
           )}
         </div>
