@@ -27,6 +27,12 @@ function sanitizeCustomServices(value) {
   })
 }
 
+function sanitizeDeletedServiceCodes(value) {
+  const list = Array.isArray(value) ? value : []
+  const merged = [...REMOVED_SERVICE_CODES, ...list.map((v) => String(v || '').trim().toLowerCase())]
+  return Array.from(new Set(merged.filter(Boolean)))
+}
+
 // ── Payment methods tag editor ───────────────────────────────────────────────
 const PRESET_PAYMENT_METHODS = ['Cash', 'GCash', 'Credit Card', 'Debit Card', 'Bank Transfer', 'PayMaya', 'Check']
 const BASIC_PMS_CORE_INCLUSIONS = [
@@ -1054,6 +1060,8 @@ export function SettingsPage({ token, user }) {
   const [quotCustomServices, setQuotCustomServices] = useState([])
   const [quotCustomSvcDirty, setQuotCustomSvcDirty] = useState(false)
   const [quotCustomSvcSaving, setQuotCustomSvcSaving] = useState(false)
+  const [quotDeletedServiceCodes, setQuotDeletedServiceCodes] = useState(() => Array.from(REMOVED_SERVICE_CODES))
+  const [quotDeletedSvcDirty, setQuotDeletedSvcDirty] = useState(false)
   const [quotNewSvcName, setQuotNewSvcName]   = useState('')
   const [quotNewSvcGroup, setQuotNewSvcGroup] = useState('')
   const [quotPriceGroup, setQuotPriceGroup]   = useState(null)
@@ -1478,6 +1486,15 @@ export function SettingsPage({ token, user }) {
         if (parsed && typeof parsed === 'object') setQuotServiceNames(sanitizeServiceCodeMap(parsed))
       } catch {}
     }
+    const deletedEntry = entries.find((e) => e.key === 'deleted_service_codes')
+    if (deletedEntry?.value) {
+      try {
+        const parsed = typeof deletedEntry.value === 'string' ? JSON.parse(deletedEntry.value) : deletedEntry.value
+        setQuotDeletedServiceCodes(sanitizeDeletedServiceCodes(parsed))
+      } catch {}
+    } else {
+      setQuotDeletedServiceCodes(Array.from(REMOVED_SERVICE_CODES))
+    }
   }, [config.quotations])
 
   async function handleSaveQuotationPrices() {
@@ -1486,6 +1503,7 @@ export function SettingsPage({ token, user }) {
       const cleanedPrices = sanitizeServiceCodeMap(quotPrices)
       const cleanedNames = sanitizeServiceCodeMap(quotServiceNames)
       const cleanedCustom = sanitizeCustomServices(quotCustomServices)
+      const cleanedDeleted = sanitizeDeletedServiceCodes(quotDeletedServiceCodes)
 
       await apiPut('/config/quotations/service_prices', token, { value: JSON.stringify(cleanedPrices) })
       if (quotServiceNamesDirty) {
@@ -1496,16 +1514,56 @@ export function SettingsPage({ token, user }) {
         await apiPut('/config/quotations/custom_services', token, { value: JSON.stringify(cleanedCustom) })
         setQuotCustomSvcDirty(false)
       }
+      if (quotDeletedSvcDirty) {
+        await apiPut('/config/quotations/deleted_service_codes', token, { value: JSON.stringify(cleanedDeleted) })
+        setQuotDeletedSvcDirty(false)
+      }
       pushToast('success', 'Service pricing saved')
       setQuotPricesDirty(false)
       emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'service_prices' })
       if (quotServiceNamesDirty) emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'service_name_overrides' })
       if (quotCustomSvcDirty) emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'custom_services' })
+      if (quotDeletedSvcDirty) emitConfigUpdated({ source: 'settings', category: 'quotations', key: 'deleted_service_codes' })
       await loadConfig()
     } catch (e) {
       pushToast('error', e.message)
     } finally {
       setQuotPricesSaving(false)
+    }
+  }
+
+  const handleDeleteQuotationService = async (serviceCode, serviceName) => {
+    if (!isSuperAdmin) return
+    const code = String(serviceCode || '').trim().toLowerCase()
+    if (!code) return
+
+    const ok = window.confirm(`Delete service "${serviceName}"?\n\nThis will hide the row from Settings/Portal and remove related pricing/name overrides.`)
+    if (!ok) return
+
+    setQuotDeletedServiceCodes((prev) => sanitizeDeletedServiceCodes([...prev, code]))
+    setQuotDeletedSvcDirty(true)
+
+    setQuotPrices((prev) => {
+      const next = { ...prev }
+      delete next[code]
+      return next
+    })
+    setQuotServiceNames((prev) => {
+      const next = { ...prev }
+      delete next[code]
+      return next
+    })
+    setQuotCustomServices((prev) => prev.filter((s) => String(s.code || '').trim().toLowerCase() !== code))
+
+    setQuotPricesDirty(true)
+    setQuotServiceNamesDirty(true)
+    setQuotCustomSvcDirty(true)
+
+    // Best-effort physical delete from services table for matching code.
+    try {
+      await apiDelete(`/services/by-code/${encodeURIComponent(code)}`, token)
+    } catch {
+      // Ignore hard-delete failures (e.g., not present in DB) since config-level deletion still applies.
     }
   }
 
@@ -2416,6 +2474,10 @@ export function SettingsPage({ token, user }) {
 
         {category === 'services' && (() => {
           const quotReadOnly = !isSuperAdmin
+          const deletedCodeSet = new Set(sanitizeDeletedServiceCodes(quotDeletedServiceCodes))
+          const isDeletedCode = (code) => deletedCodeSet.has(String(code || '').trim().toLowerCase())
+          const visibleCatalog = SERVICE_CATALOG.filter((s) => !isDeletedCode(s.code))
+          const visibleCustomServices = quotCustomServices.filter((s) => s.enabled !== false && !isDeletedCode(s.code))
           const autoShort = (label) => {
             const words = (label || '').trim().split(/\s+/)
             if (words.length === 1) return words[0].slice(0, 3).toUpperCase()
@@ -2430,7 +2492,7 @@ export function SettingsPage({ token, user }) {
             return BUILT_IN[sz.key] || autoShort(sz.label)
           }
           const enabledSizes = quotSizes.filter((s) => s.enabled)
-          const groups = getCatalogGroups()
+          const groups = getCatalogGroups().filter((g) => visibleCatalog.some((s) => s.group === g))
           return (
             <div>
               {/* SuperAdmin access notice */}
@@ -2460,7 +2522,7 @@ export function SettingsPage({ token, user }) {
                 </div>
 
                 {/* List of custom services */}
-                {quotCustomServices.length === 0 && (
+                  {quotCustomServices.length === 0 && (
                   <div style={{ fontSize: 12, color: '#475569', fontStyle: 'italic', marginBottom: 8 }}>No custom services yet. Add one below.</div>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -2592,7 +2654,7 @@ export function SettingsPage({ token, user }) {
                 {(() => {
                   const allGroups = [
                     ...groups,
-                    ...([...new Set(quotCustomServices.filter((s) => s.enabled !== false).map((s) => s.group))]
+                    ...([...new Set(visibleCustomServices.map((s) => s.group))]
                       .filter((g) => !groups.includes(g)))
                   ]
                   return (
@@ -2629,7 +2691,7 @@ export function SettingsPage({ token, user }) {
                 })()}
 
                 {groups.filter((g) => quotPriceGroup === null || quotPriceGroup === g).map((group) => {
-                  const services = SERVICE_CATALOG.filter((s) => s.group === group)
+                  const services = visibleCatalog.filter((s) => s.group === group)
                   return (
                     <div key={group} style={{ marginTop: 20 }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: '#a0a8b8', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>{group}</div>
@@ -2649,28 +2711,49 @@ export function SettingsPage({ token, user }) {
                             {services.map((service) => (
                               <tr key={service.code} style={{ '&:hover': { background: 'rgba(255,255,255,0.02)' } }}>
                                 <td style={{ padding: '5px 12px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                                  <input
-                                    className="settings-input"
-                                    value={quotServiceNames[service.code] ?? service.name}
-                                    readOnly={!isSuperAdmin}
-                                    disabled={!isSuperAdmin}
-                                    onChange={(e) => {
-                                      setQuotServiceNames((prev) => ({ ...prev, [service.code]: e.target.value }))
-                                      setQuotServiceNamesDirty(true)
-                                      setQuotPricesDirty(true)
-                                    }}
-                                    style={{
-                                      width: '100%',
-                                      minWidth: '140px',
-                                      background: 'rgba(255,255,255,0.04)',
-                                      border: quotServiceNames[service.code] ? '1px solid rgba(255,255,255,0.35)' : '1px solid rgba(255,255,255,0.12)',
-                                      borderRadius: 4,
-                                      color: quotServiceNames[service.code] ? '#7dd3fc' : '#d0d8e8',
-                                      fontSize: 13,
-                                      padding: '4px 8px',
-                                      transition: 'all 0.2s ease',
-                                    }}
-                                  />
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <input
+                                      className="settings-input"
+                                      value={quotServiceNames[service.code] ?? service.name}
+                                      readOnly={!isSuperAdmin}
+                                      disabled={!isSuperAdmin}
+                                      onChange={(e) => {
+                                        setQuotServiceNames((prev) => ({ ...prev, [service.code]: e.target.value }))
+                                        setQuotServiceNamesDirty(true)
+                                        setQuotPricesDirty(true)
+                                      }}
+                                      style={{
+                                        width: '100%',
+                                        minWidth: '140px',
+                                        background: 'rgba(255,255,255,0.04)',
+                                        border: quotServiceNames[service.code] ? '1px solid rgba(255,255,255,0.35)' : '1px solid rgba(255,255,255,0.12)',
+                                        borderRadius: 4,
+                                        color: quotServiceNames[service.code] ? '#7dd3fc' : '#d0d8e8',
+                                        fontSize: 13,
+                                        padding: '4px 8px',
+                                        transition: 'all 0.2s ease',
+                                      }}
+                                    />
+                                    {isSuperAdmin && (
+                                      <button
+                                        type="button"
+                                        title="Delete service row"
+                                        onClick={() => handleDeleteQuotationService(service.code, quotServiceNames[service.code] ?? service.name)}
+                                        style={{
+                                          flexShrink: 0,
+                                          width: 26,
+                                          height: 26,
+                                          borderRadius: 6,
+                                          border: '1px solid rgba(239,68,68,0.45)',
+                                          background: 'rgba(239,68,68,0.10)',
+                                          color: '#ef4444',
+                                          fontSize: 14,
+                                          fontWeight: 700,
+                                          cursor: 'pointer',
+                                        }}
+                                      >×</button>
+                                    )}
+                                  </div>
                                 </td>
                                 {enabledSizes.map((sz) => {
                                   const hasSize = service.sizePrices[sz.key] !== undefined
@@ -2728,10 +2811,10 @@ export function SettingsPage({ token, user }) {
                 })}
 
                 {/* Custom service rows in pricing table */}
-                {quotCustomServices.filter((s) => s.enabled !== false).length > 0 && (() => {
-                  const customGroups = [...new Set(quotCustomServices.filter((s) => s.enabled !== false).map((s) => s.group))]
+                {visibleCustomServices.length > 0 && (() => {
+                  const customGroups = [...new Set(visibleCustomServices.map((s) => s.group))]
                   return customGroups.filter((g) => quotPriceGroup === null || quotPriceGroup === g).map((grp) => {
-                    const services = quotCustomServices.filter((s) => s.enabled !== false && s.group === grp)
+                    const services = visibleCustomServices.filter((s) => s.group === grp)
                     return (
                       <div key={`custom-${grp}`} style={{ marginTop: 20 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -2754,30 +2837,51 @@ export function SettingsPage({ token, user }) {
                               {services.map((service) => (
                                 <tr key={service.code}>
                                   <td style={{ padding: '5px 12px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                                    <input
-                                      className="settings-input"
-                                      value={service.name}
-                                      readOnly={!isSuperAdmin}
-                                      disabled={!isSuperAdmin}
-                                      onChange={(e) => {
-                                        setQuotCustomServices((prev) => 
-                                          prev.map((s) => s.code === service.code ? { ...s, name: e.target.value } : s)
-                                        )
-                                        setQuotCustomSvcDirty(true)
-                                        setQuotPricesDirty(true)
-                                      }}
-                                      style={{
-                                        width: '100%',
-                                        minWidth: '140px',
-                                        background: 'rgba(255,255,255,0.04)',
-                                        border: '1px solid rgba(255,255,255,0.12)',
-                                        borderRadius: 4,
-                                        color: '#d0d8e8',
-                                        fontSize: 13,
-                                        padding: '4px 8px',
-                                        transition: 'all 0.2s ease',
-                                      }}
-                                    />
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                      <input
+                                        className="settings-input"
+                                        value={service.name}
+                                        readOnly={!isSuperAdmin}
+                                        disabled={!isSuperAdmin}
+                                        onChange={(e) => {
+                                          setQuotCustomServices((prev) => 
+                                            prev.map((s) => s.code === service.code ? { ...s, name: e.target.value } : s)
+                                          )
+                                          setQuotCustomSvcDirty(true)
+                                          setQuotPricesDirty(true)
+                                        }}
+                                        style={{
+                                          width: '100%',
+                                          minWidth: '140px',
+                                          background: 'rgba(255,255,255,0.04)',
+                                          border: '1px solid rgba(255,255,255,0.12)',
+                                          borderRadius: 4,
+                                          color: '#d0d8e8',
+                                          fontSize: 13,
+                                          padding: '4px 8px',
+                                          transition: 'all 0.2s ease',
+                                        }}
+                                      />
+                                      {isSuperAdmin && (
+                                        <button
+                                          type="button"
+                                          title="Delete service row"
+                                          onClick={() => handleDeleteQuotationService(service.code, service.name)}
+                                          style={{
+                                            flexShrink: 0,
+                                            width: 26,
+                                            height: 26,
+                                            borderRadius: 6,
+                                            border: '1px solid rgba(239,68,68,0.45)',
+                                            background: 'rgba(239,68,68,0.10)',
+                                            color: '#ef4444',
+                                            fontSize: 14,
+                                            fontWeight: 700,
+                                            cursor: 'pointer',
+                                          }}
+                                        >×</button>
+                                      )}
+                                    </div>
                                   </td>
                                   {enabledSizes.map((sz) => {
                                     const override = quotPrices[service.code]?.[sz.key]

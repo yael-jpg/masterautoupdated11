@@ -2013,6 +2013,13 @@ router.get(
     const overrides = await ConfigurationService.get('quotations', 'service_name_overrides')
     let priceOverrides = await ConfigurationService.get('quotations', 'service_prices')
     const customSvcs = await ConfigurationService.get('quotations', 'custom_services')
+    const deletedServiceCodes = await ConfigurationService.get('quotations', 'deleted_service_codes')
+
+    const deletedCodeSet = new Set(
+      Array.isArray(deletedServiceCodes)
+        ? deletedServiceCodes.map((c) => normalizeServiceCode(c)).filter(Boolean)
+        : [],
+    )
 
     if (typeof priceOverrides === 'string') {
       try {
@@ -2043,6 +2050,7 @@ router.get(
 
     baseRows.forEach((s) => {
       const catCode = String(s.code || '').replace(/^CAT-/i, '').toLowerCase()
+      if (deletedCodeSet.has(catCode)) return
       if (isBlockedService(catCode, s.name)) return
 
       const overName = ovMap[catCode] || ovMap[s.code]
@@ -2086,6 +2094,7 @@ router.get(
     if (Array.isArray(customSvcs)) {
       customSvcs.forEach((cs) => {
         const customCode = normalizeServiceCode(cs?.code)
+        if (deletedCodeSet.has(customCode)) return
         if (!customCode || isBlockedService(customCode, cs?.name)) return
 
         if (cs.enabled !== false) {
@@ -2101,7 +2110,7 @@ router.get(
     services = services.map((s) => {
       const overPrice = resolveServiceOverridePrice(priceMap, s.code, s.name)
       return overPrice !== null ? { ...s, base_price: overPrice } : s
-    }).filter((s) => !isBlockedService(s.code, s.name))
+    }).filter((s) => !deletedCodeSet.has(normalizeServiceCode(s.code)) && !isBlockedService(s.code, s.name))
 
     // 5. Sort by category (ASC), then name (ASC)
     services.sort((a, b) => {

@@ -96,5 +96,29 @@ router.patch(
   }),
 )
 
+router.delete(
+  '/by-code/:code',
+  requireRole('SuperAdmin'),
+  asyncHandler(async (req, res) => {
+    const raw = String(req.params.code || '').trim().toLowerCase()
+    const normalized = raw.replace(/^cat-/, '')
+    if (!normalized) {
+      return res.status(400).json({ message: 'Service code is required' })
+    }
+
+    const { rows } = await db.query(
+      `DELETE FROM services
+       WHERE LOWER(REPLACE(code, 'CAT-', '')) = $1
+       RETURNING id, code, name`,
+      [normalized],
+    )
+
+    return res.json({
+      deleted: rows.length,
+      rows,
+    })
+  }),
+)
+
 module.exports = router
 
