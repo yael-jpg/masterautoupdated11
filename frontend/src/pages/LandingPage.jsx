@@ -983,29 +983,29 @@ export function LandingPage() {
             </p>
           </div>
           <div className="lp-footer-cols">
-            <div className="lp-fcol lp-fcol-services">
+            <div className="lp-fcol">
               <h4>Services</h4>
               <button onClick={() => scrollTo(servicesRef)}>Window Tinting</button>
               <button onClick={() => scrollTo(servicesRef)}>Paint Protection Film</button>
               <button onClick={() => scrollTo(servicesRef)}>Ceramic Coating</button>
             </div>
-            <div className="lp-fcol lp-fcol-contact">
+            <div className="lp-fcol">
               <h4>Contact</h4>
               <a href="tel:09158026193">0915 802 6193</a>
               <a href="mailto:masterauto.ph@gmail.com">masterauto.ph@gmail.com</a>
             </div>
-            <div className="lp-fcol lp-fcol-location">
+            <div className="lp-fcol">
               <h4>Location</h4>
               <a
                 href="https://www.google.com/maps/search/?api=1&query=91%2012th%20Avenue%20Cubao%2C%20Quezon%20City%2C%20Philippines"
                 target="_blank"
                 rel="noreferrer"
               >
-                91 12th Avenue, Cubao, Quezon City, Philippines
+                91 12th Avenue Cubao, Quezon City, Philippines
               </a>
-              <span>Metro Manila, Philippines</span>
+              <span>Quezon City, Philippines - Cubao, Philippines</span>
             </div>
-            <div className="lp-fcol lp-fcol-social">
+            <div className="lp-fcol">
               <h4>Social</h4>
               <a
                 href="https://www.facebook.com/share/18XsssMxut/?mibextid=wwXIfr"
@@ -1022,7 +1022,7 @@ export function LandingPage() {
                 Instagram
               </a>
             </div>
-            <div className="lp-fcol lp-fcol-access">
+            <div className="lp-fcol">
               <h4>Access</h4>
               <button onClick={() => { window.location.href = '/portal/login' }}>Create Account</button>
             </div>
