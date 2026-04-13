@@ -120,12 +120,8 @@ function ServiceGroup({ baseName, variants, description, materialsNotes, onBook 
   })()
 
   const sizeLabels = sizeCardVariants.map((v) => v.size).filter(Boolean)
-  const minPrice = Math.min(...sizeCardVariants.map((v) => Number(v.base_price)))
   const maxPrice = Math.max(...sizeCardVariants.map((v) => Number(v.base_price)))
-  const priceStr =
-    minPrice === maxPrice
-      ? `₱${minPrice.toLocaleString()}`
-      : `₱${minPrice.toLocaleString()} – ₱${maxPrice.toLocaleString()}`
+  const priceStr = `₱${maxPrice.toLocaleString()}`
 
   return (
     <div
