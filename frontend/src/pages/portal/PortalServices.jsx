@@ -8,6 +8,8 @@ const SIZE_ORDER = [
   'X Small', 'Small', 'Medium', 'Large', 'X Large', 'XX Large',
 ]
 
+const DEFAULT_SERVICE_SIZES = ['X Small', 'Small', 'Medium', 'Large', 'X Large', 'XX Large']
+
 
 const CATEGORY_ICONS = {
   'Car Wash Services': (
@@ -85,7 +87,7 @@ function ServiceGroup({ baseName, variants, description, materialsNotes, onBook 
   const hasSizes = sorted.some((v) => v.size)
   const sizeLabels = hasSizes
     ? Array.from(new Set(sorted.map((v) => v.size).filter(Boolean)))
-    : []
+    : DEFAULT_SERVICE_SIZES
   const minPrice = Math.min(...sorted.map((v) => Number(v.base_price)))
   const maxPrice = Math.max(...sorted.map((v) => Number(v.base_price)))
   const priceStr =
