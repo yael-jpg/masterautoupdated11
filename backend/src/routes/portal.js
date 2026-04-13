@@ -125,6 +125,8 @@ const CATEGORY_ALIASES = {
   'other services': 'Other Services',
 }
 
+const BLOCKED_SERVICE_CODES = new Set(['ppf-full'])
+
 function normalizeServiceCode(raw) {
   return String(raw || '').trim().replace(/^CAT-/i, '').toLowerCase()
 }
@@ -2026,6 +2028,8 @@ router.get(
 
     baseRows.forEach((s) => {
       const catCode = String(s.code || '').replace(/^CAT-/i, '').toLowerCase()
+      if (BLOCKED_SERVICE_CODES.has(catCode)) return
+
       const overName = ovMap[catCode] || ovMap[s.code]
       const resolvedName = overName || s.name
       const normalizedCategory = normalizeCategoryName(s.category)
@@ -2065,6 +2069,9 @@ router.get(
     // 4. Merge custom services (if active)
     if (Array.isArray(customSvcs)) {
       customSvcs.forEach((cs) => {
+        const customCode = normalizeServiceCode(cs?.code)
+        if (!customCode || BLOCKED_SERVICE_CODES.has(customCode)) return
+
         if (cs.enabled !== false) {
           const rows = expandCustomServiceRows(cs).map((row) => ({
             ...row,

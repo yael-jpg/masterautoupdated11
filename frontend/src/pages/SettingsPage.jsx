@@ -6,6 +6,27 @@ import CampaignsModal from './CampaignsModal'
 import PromoEmailModal from './PromoEmailModal'
 import { emitConfigUpdated, emitPackagesUpdated, emitVehicleMakesUpdated } from '../utils/events'
 
+const REMOVED_SERVICE_CODES = new Set(['ppf-full'])
+
+function sanitizeServiceCodeMap(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out = {}
+  Object.entries(value).forEach(([k, v]) => {
+    const code = String(k || '').trim().toLowerCase()
+    if (!code || REMOVED_SERVICE_CODES.has(code)) return
+    out[code] = v
+  })
+  return out
+}
+
+function sanitizeCustomServices(value) {
+  if (!Array.isArray(value)) return []
+  return value.filter((svc) => {
+    const code = String(svc?.code || '').trim().toLowerCase()
+    return code && !REMOVED_SERVICE_CODES.has(code)
+  })
+}
+
 // ── Payment methods tag editor ───────────────────────────────────────────────
 const PRESET_PAYMENT_METHODS = ['Cash', 'GCash', 'Credit Card', 'Debit Card', 'Bank Transfer', 'PayMaya', 'Check']
 const BASIC_PMS_CORE_INCLUSIONS = [
@@ -1433,7 +1454,7 @@ export function SettingsPage({ token, user }) {
     if (priceEntry?.value) {
       try {
         const parsed = typeof priceEntry.value === 'string' ? JSON.parse(priceEntry.value) : priceEntry.value
-        if (parsed && typeof parsed === 'object') setQuotPrices(parsed)
+        if (parsed && typeof parsed === 'object') setQuotPrices(sanitizeServiceCodeMap(parsed))
       } catch {}
     }
     const sizesEntry = entries.find((e) => e.key === 'vehicle_sizes')
@@ -1447,14 +1468,14 @@ export function SettingsPage({ token, user }) {
     if (customSvcEntry?.value) {
       try {
         const parsed = typeof customSvcEntry.value === 'string' ? JSON.parse(customSvcEntry.value) : customSvcEntry.value
-        if (Array.isArray(parsed)) setQuotCustomServices(parsed)
+        if (Array.isArray(parsed)) setQuotCustomServices(sanitizeCustomServices(parsed))
       } catch {}
     }
     const nameEntry = entries.find((e) => e.key === 'service_name_overrides')
     if (nameEntry?.value) {
       try {
         const parsed = typeof nameEntry.value === 'string' ? JSON.parse(nameEntry.value) : nameEntry.value
-        if (parsed && typeof parsed === 'object') setQuotServiceNames(parsed)
+        if (parsed && typeof parsed === 'object') setQuotServiceNames(sanitizeServiceCodeMap(parsed))
       } catch {}
     }
   }, [config.quotations])
@@ -1462,13 +1483,17 @@ export function SettingsPage({ token, user }) {
   async function handleSaveQuotationPrices() {
     setQuotPricesSaving(true)
     try {
-      await apiPut('/config/quotations/service_prices', token, { value: JSON.stringify(quotPrices) })
+      const cleanedPrices = sanitizeServiceCodeMap(quotPrices)
+      const cleanedNames = sanitizeServiceCodeMap(quotServiceNames)
+      const cleanedCustom = sanitizeCustomServices(quotCustomServices)
+
+      await apiPut('/config/quotations/service_prices', token, { value: JSON.stringify(cleanedPrices) })
       if (quotServiceNamesDirty) {
-        await apiPut('/config/quotations/service_name_overrides', token, { value: JSON.stringify(quotServiceNames) })
+        await apiPut('/config/quotations/service_name_overrides', token, { value: JSON.stringify(cleanedNames) })
         setQuotServiceNamesDirty(false)
       }
       if (quotCustomSvcDirty) {
-        await apiPut('/config/quotations/custom_services', token, { value: JSON.stringify(quotCustomServices) })
+        await apiPut('/config/quotations/custom_services', token, { value: JSON.stringify(cleanedCustom) })
         setQuotCustomSvcDirty(false)
       }
       pushToast('success', 'Service pricing saved')
