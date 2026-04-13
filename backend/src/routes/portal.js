@@ -107,6 +107,46 @@ function expandCustomServiceRows(customService) {
   ]
 }
 
+const SIZE_KEY_BY_LABEL = Object.entries(VEHICLE_SIZE_LABELS).reduce((acc, [key, label]) => {
+  acc[String(label || '').trim().toLowerCase()] = key
+  return acc
+}, {})
+
+function normalizeServiceCode(raw) {
+  return String(raw || '').trim().replace(/^CAT-/i, '').toLowerCase()
+}
+
+function extractSizeKeyFromServiceName(name) {
+  const text = String(name || '').trim()
+  const idx = text.lastIndexOf(' - ')
+  if (idx < 0) return null
+  const suffix = text.slice(idx + 3).trim().toLowerCase()
+  return SIZE_KEY_BY_LABEL[suffix] || null
+}
+
+function resolveServiceOverridePrice(priceOverridesMap, serviceCode, serviceName) {
+  const code = normalizeServiceCode(serviceCode)
+  if (!code) return null
+
+  const entry = priceOverridesMap?.[code]
+  if (entry === undefined || entry === null) return null
+
+  if (typeof entry === 'number' || typeof entry === 'string') {
+    const value = Number(entry)
+    return Number.isFinite(value) ? value : null
+  }
+
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null
+
+  const sizeKey = extractSizeKeyFromServiceName(serviceName)
+  if (sizeKey && entry[sizeKey] !== undefined && entry[sizeKey] !== null && entry[sizeKey] !== '') {
+    const value = Number(entry[sizeKey])
+    return Number.isFinite(value) ? value : null
+  }
+
+  return null
+}
+
 const router = express.Router()
 
 let portalHashedColsChecked = false
@@ -1921,7 +1961,23 @@ router.get(
 
     // 2. Fetch overrides & custom services from configuration
     const overrides = await ConfigurationService.get('quotations', 'service_name_overrides')
+    let priceOverrides = await ConfigurationService.get('quotations', 'service_prices')
     const customSvcs = await ConfigurationService.get('quotations', 'custom_services')
+
+    if (typeof priceOverrides === 'string') {
+      try {
+        priceOverrides = JSON.parse(priceOverrides)
+      } catch {
+        priceOverrides = null
+      }
+    }
+
+    const priceMap = {}
+    if (priceOverrides && typeof priceOverrides === 'object' && !Array.isArray(priceOverrides)) {
+      Object.entries(priceOverrides).forEach(([k, v]) => {
+        priceMap[normalizeServiceCode(k)] = v
+      })
+    }
 
     // 3. Map base services with overrides (match on normalized code)
     const ovMap = {}
@@ -1936,7 +1992,12 @@ router.get(
     let services = baseRows.map((s) => {
       const catCode = String(s.code || '').replace(/^CAT-/i, '').toLowerCase()
       const overName = ovMap[catCode] || ovMap[s.code]
-      return overName ? { ...s, name: overName } : s
+      const overPrice = resolveServiceOverridePrice(priceMap, s.code, overName || s.name)
+      return {
+        ...s,
+        ...(overName ? { name: overName } : {}),
+        ...(overPrice !== null ? { base_price: overPrice } : {}),
+      }
     })
 
     // 4. Merge custom services (if active)
@@ -1947,6 +2008,11 @@ router.get(
         }
       })
     }
+
+    services = services.map((s) => {
+      const overPrice = resolveServiceOverridePrice(priceMap, s.code, s.name)
+      return overPrice !== null ? { ...s, base_price: overPrice } : s
+    })
 
     // 5. Sort by category (ASC), then name (ASC)
     services.sort((a, b) => {
