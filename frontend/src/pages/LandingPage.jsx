@@ -857,11 +857,17 @@ export function LandingPage() {
 
           <div className="lp-packages-grid">
             <article className="lp-package-card">
+              <p className="lp-package-kicker">Subscription Program</p>
               <h3>MasterAuto Subscription</h3>
-              <p>
+              <p className="lp-package-copy">
                 Maintain your vehicle&apos;s flawless finish year-round by availing of our premium subscription packages.
                 Membership guarantees priority booking, structured maintenance intervals, and exclusive rates.
               </p>
+              <ul className="lp-package-points">
+                <li>Priority scheduling slots</li>
+                <li>Exclusive member rates</li>
+                <li>Planned maintenance cadence</li>
+              </ul>
               <button
                 type="button"
                 className="lp-package-btn"
@@ -875,15 +881,22 @@ export function LandingPage() {
                 }}
               >
                 Avail Subscription
+                <span aria-hidden="true">→</span>
               </button>
             </article>
 
             <article className="lp-package-card">
+              <p className="lp-package-kicker">Digital Service Tracking</p>
               <h3>Preventive Maintenance System (PMS)</h3>
-              <p>
+              <p className="lp-package-copy">
                 Take control over your automotive investments through our digital Preventive Maintenance System (PMS).
                 Avail our PMS packages to review service history, track active plans, and request detailing services.
               </p>
+              <ul className="lp-package-points">
+                <li>Track active plans and intervals</li>
+                <li>Review full service history</li>
+                <li>Request detailing in one flow</li>
+              </ul>
               <button
                 type="button"
                 className="lp-package-btn"
@@ -897,6 +910,7 @@ export function LandingPage() {
                 }}
               >
                 Avail PMS
+                <span aria-hidden="true">→</span>
               </button>
             </article>
           </div>
@@ -913,18 +927,22 @@ export function LandingPage() {
 
           <div className="lp-why-grid">
             <div className="lp-why-item">
+              <span className="lp-why-index">01</span>
               <h3>Process-driven workmanship</h3>
               <p>Each service follows clear preparation and installation steps to deliver consistent results—no rushed shortcuts.</p>
             </div>
             <div className="lp-why-item">
+              <span className="lp-why-index">02</span>
               <h3>Premium materials</h3>
               <p>We use proven films, coatings, and tint systems and match the right package to your vehicle’s needs and use case.</p>
             </div>
             <div className="lp-why-item">
+              <span className="lp-why-index">03</span>
               <h3>Clean, careful installation</h3>
               <p>Detail-focused work, protected surfaces, and precise finishing—because small edges and alignment matter.</p>
             </div>
             <div className="lp-why-item">
+              <span className="lp-why-index">04</span>
               <h3>Clear updates & aftercare</h3>
               <p>Transparent recommendations and practical maintenance guidance so your protection lasts and looks its best.</p>
             </div>
