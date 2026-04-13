@@ -232,7 +232,7 @@ router.post(
 )
 
 // ── DELETE /admin/users/:id ─────────────────────────────────────────────────
-// SuperAdmin only — hard-deletes a system user account.
+// SuperAdmin only — safely deactivates a system user account.
 // Guards: cannot delete yourself, cannot delete the last SuperAdmin.
 
 router.delete(
@@ -271,30 +271,24 @@ router.delete(
       }
     }
 
-    let deleteMode = 'hard'
-    try {
-      await db.query('DELETE FROM users WHERE id = $1', [targetId])
-    } catch (err) {
-      // FK-linked users cannot be hard-deleted; deactivate/anonymize instead.
-      if (err?.code !== '23503') throw err
-
-      deleteMode = 'soft'
-      const archivedEmail = `deleted+${targetId}+${Date.now()}@deleted.local`
-      await db.query(
-        `UPDATE users
-         SET is_active = FALSE,
-             email = $1
-         WHERE id = $2`,
-        [archivedEmail, targetId],
-      )
-    }
+    const archivedEmail = `deleted+${targetId}+${Date.now()}@deleted.local`
+    await db.query(
+      `UPDATE users
+       SET is_active = FALSE,
+           email = CASE
+             WHEN email LIKE 'deleted+%@deleted.local' THEN email
+             ELSE $1
+           END
+       WHERE id = $2`,
+      [archivedEmail, targetId],
+    )
 
     await writeAuditLog({
       userId: requesterId,
       action: 'DELETE_USER',
       entity: 'users',
       entityId: targetId,
-      meta: { deletedEmail: target.email, deletedRole: target.role, mode: deleteMode },
+      meta: { deletedEmail: target.email, deletedRole: target.role, mode: 'soft' },
     })
 
     res.status(204).send()
