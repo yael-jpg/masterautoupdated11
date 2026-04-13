@@ -112,8 +112,26 @@ const SIZE_KEY_BY_LABEL = Object.entries(VEHICLE_SIZE_LABELS).reduce((acc, [key,
   return acc
 }, {})
 
+const SIZE_LABEL_BY_KEY = VEHICLE_SIZE_LABELS
+
+const CATEGORY_ALIASES = {
+  ppf: 'PPF Services',
+  'ppf services': 'PPF Services',
+  detailing: 'Detailing Services',
+  'detailing services': 'Detailing Services',
+  'ceramic coating': 'Coating Services',
+  'coating services': 'Coating Services',
+  'car wash services': 'Car Wash Services',
+  'other services': 'Other Services',
+}
+
 function normalizeServiceCode(raw) {
   return String(raw || '').trim().replace(/^CAT-/i, '').toLowerCase()
+}
+
+function normalizeCategoryName(raw) {
+  const key = String(raw || '').trim().toLowerCase()
+  return CATEGORY_ALIASES[key] || String(raw || '').trim() || 'Other Services'
 }
 
 function extractSizeKeyFromServiceName(name) {
@@ -145,6 +163,21 @@ function resolveServiceOverridePrice(priceOverridesMap, serviceCode, serviceName
   }
 
   return null
+}
+
+function normalizedPriceVariants(overrideEntry) {
+  if (!overrideEntry || typeof overrideEntry !== 'object' || Array.isArray(overrideEntry)) return []
+
+  const variants = []
+  Object.entries(overrideEntry).forEach(([rawKey, rawValue]) => {
+    const key = normalizeSizeKey(rawKey)
+    const label = SIZE_LABEL_BY_KEY[key]
+    const amount = Number(rawValue)
+    if (!key || !label || !Number.isFinite(amount)) return
+    variants.push({ key, label, amount })
+  })
+
+  return variants
 }
 
 const router = express.Router()
@@ -1989,22 +2022,55 @@ router.get(
       })
     }
     
-    let services = baseRows.map((s) => {
+    const expandedServices = []
+
+    baseRows.forEach((s) => {
       const catCode = String(s.code || '').replace(/^CAT-/i, '').toLowerCase()
       const overName = ovMap[catCode] || ovMap[s.code]
-      const overPrice = resolveServiceOverridePrice(priceMap, s.code, overName || s.name)
-      return {
+      const resolvedName = overName || s.name
+      const normalizedCategory = normalizeCategoryName(s.category)
+      const code = normalizeServiceCode(s.code)
+      const entry = priceMap?.[code]
+
+      const baseRow = {
         ...s,
+        category: normalizedCategory,
         ...(overName ? { name: overName } : {}),
-        ...(overPrice !== null ? { base_price: overPrice } : {}),
       }
+
+      const hasExplicitSizeInName = Boolean(extractSizeKeyFromServiceName(resolvedName))
+      const variants = normalizedPriceVariants(entry)
+
+      if (!hasExplicitSizeInName && variants.length > 0) {
+        variants.forEach((v) => {
+          expandedServices.push({
+            ...baseRow,
+            id: `${s.id}-${v.key}`,
+            name: `${resolvedName} - ${v.label}`,
+            base_price: v.amount,
+          })
+        })
+        return
+      }
+
+      const overPrice = resolveServiceOverridePrice(priceMap, s.code, resolvedName)
+      expandedServices.push({
+        ...baseRow,
+        ...(overPrice !== null ? { base_price: overPrice } : {}),
+      })
     })
+
+    let services = expandedServices
 
     // 4. Merge custom services (if active)
     if (Array.isArray(customSvcs)) {
       customSvcs.forEach((cs) => {
         if (cs.enabled !== false) {
-          services.push(...expandCustomServiceRows(cs))
+          const rows = expandCustomServiceRows(cs).map((row) => ({
+            ...row,
+            category: normalizeCategoryName(row.category),
+          }))
+          services.push(...rows)
         }
       })
     }
