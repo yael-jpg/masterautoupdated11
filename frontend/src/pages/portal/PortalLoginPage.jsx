@@ -22,12 +22,12 @@ export function PortalLoginPage({ onLogin }) {
     .map((x) => x.trim())
     .filter(Boolean)
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : ''
-  const isLocalOrigin = /^(https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/i.test(currentOrigin)
-  const isOriginAllowed = googleAllowedOrigins.length > 0
-    ? googleAllowedOrigins.includes(currentOrigin)
-    : !isLocalOrigin
+  const isOriginAllowed = googleAllowedOrigins.includes(currentOrigin)
   const canUseGoogleLogin = Boolean(googleClientId) && isOriginAllowed
   const googleOriginHelp = currentOrigin ? `Current origin: ${currentOrigin}` : ''
+  const googleAllowedHelp = googleAllowedOrigins.length
+    ? `Allowed origins: ${googleAllowedOrigins.join(', ')}`
+    : 'Google sign-in is disabled until VITE_GOOGLE_ALLOWED_ORIGINS is configured.'
 
   // Slide view: 'portal' | 'register' | 'verify'
   const [view, setView] = useState(() => {
@@ -286,6 +286,9 @@ export function PortalLoginPage({ onLogin }) {
                               {googleOriginHelp}
                             </p>
                           ) : null}
+                          <p className="auth-help auth-help-subtext">
+                            {googleAllowedHelp}
+                          </p>
                         </div>
                       )}
                     </div>
@@ -412,6 +415,9 @@ export function PortalLoginPage({ onLogin }) {
                               {googleOriginHelp}
                             </p>
                           ) : null}
+                          <p className="auth-help auth-help-subtext">
+                            {googleAllowedHelp}
+                          </p>
                         </div>
                       )}
                     </div>

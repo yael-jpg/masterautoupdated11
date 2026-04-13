@@ -23,3 +23,16 @@ export function createRealtimeClient(token) {
     reconnectionDelayMax: 4000,
   })
 }
+
+export function createLandingVisitorRealtimeClient(visitorToken) {
+  if (!visitorToken) return null
+
+  return io(SOCKET_URL, {
+    transports: ['websocket', 'polling'],
+    auth: { visitorToken, guestChat: true },
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 800,
+    reconnectionDelayMax: 4000,
+  })
+}

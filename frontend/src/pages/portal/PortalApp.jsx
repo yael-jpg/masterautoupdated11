@@ -170,6 +170,52 @@ const PAGE_TITLES = {
   profile: 'My Account',
 }
 
+const PORTAL_SEGMENT_BY_PAGE = {
+  dashboard: 'dashboard',
+  appointments: 'appointments',
+  vehicles: 'vehicles',
+  services: 'services',
+  book: 'request-schedule',
+  jobs: 'job-status',
+  receipts: 'receipts',
+  history: 'service-history',
+  warranty: 'warranty',
+  subscriptions: 'subscriptions',
+  pms: 'pms',
+  profile: 'profile',
+}
+
+const PORTAL_PAGE_BY_SEGMENT = {
+  dashboard: 'dashboard',
+  appointments: 'appointments',
+  vehicles: 'vehicles',
+  services: 'services',
+  book: 'book',
+  'request-schedule': 'book',
+  'job-status': 'jobs',
+  jobs: 'jobs',
+  receipts: 'receipts',
+  history: 'history',
+  'service-history': 'history',
+  warranty: 'warranty',
+  subscriptions: 'subscriptions',
+  pms: 'pms',
+  profile: 'profile',
+}
+
+function portalPathForPage(page) {
+  const segment = PORTAL_SEGMENT_BY_PAGE[page] || 'dashboard'
+  return `/portal/${segment}`
+}
+
+function portalPageFromPath(pathname) {
+  const raw = String(pathname || '').trim().toLowerCase()
+  if (!raw.startsWith('/portal')) return null
+  const segment = raw.replace(/^\/portal\/?/, '').split('/')[0]
+  if (!segment) return 'dashboard'
+  return PORTAL_PAGE_BY_SEGMENT[segment] || null
+}
+
 export function PortalApp() {
   const [token, setToken] = useState(() => getPortalToken())
   const [customer, setCustomer] = useState(() => getPortalCustomer())
@@ -179,6 +225,7 @@ export function PortalApp() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [notifications, setNotifications] = useState([])
+  const syncingFromRouteRef = useRef(false)
 
   const portalNotifWatchRef = useRef({
     initialized: false,
@@ -213,7 +260,7 @@ export function PortalApp() {
     setCustomer(c)
     setSessionExpiredNotice(null)
     setActivePage('dashboard')
-    window.history.replaceState({}, '', '/portal')
+    window.history.replaceState({}, '', '/portal/dashboard')
   }
 
   const handleLogout = () => {
@@ -287,8 +334,42 @@ export function PortalApp() {
       return
     }
 
-    if (pathname === '/portal/login') window.history.replaceState({}, '', '/portal')
+    if (pathname === '/portal/login' || pathname === '/portal') {
+      window.history.replaceState({}, '', '/portal/dashboard')
+    }
   }, [token, customer])
+
+  useEffect(() => {
+    if (!token || !customer) return
+
+    const applyRoute = () => {
+      const routePage = portalPageFromPath(window.location.pathname)
+      if (!routePage) return
+      setActivePage((prev) => {
+        if (prev === routePage) return prev
+        syncingFromRouteRef.current = true
+        return routePage
+      })
+    }
+
+    applyRoute()
+    window.addEventListener('popstate', applyRoute)
+    return () => window.removeEventListener('popstate', applyRoute)
+  }, [token, customer])
+
+  useEffect(() => {
+    if (!token || !customer) return
+
+    if (syncingFromRouteRef.current) {
+      syncingFromRouteRef.current = false
+      return
+    }
+
+    const targetPath = portalPathForPage(activePage)
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath)
+    }
+  }, [token, customer, activePage])
 
   // ── Portal notifications (auto, no refresh needed) ───────────────────
   useEffect(() => {

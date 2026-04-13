@@ -1,0 +1,265 @@
+.lcp-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.lcp-toolbar-meta {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+  white-space: nowrap;
+}
+
+.lcp-search-wrap {
+  flex: 1;
+  min-width: 210px;
+}
+
+.lcp-search {
+  width: 100%;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  color: #f5f5f5;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.lcp-search::placeholder {
+  color: rgba(255, 255, 255, 0.54);
+}
+
+.lcp-search:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.lcp-layout {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 14px;
+  min-height: 560px;
+}
+
+.lcp-threads {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 10px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lcp-thread-item {
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
+}
+
+.lcp-thread-item:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.lcp-thread-item.active {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.lcp-thread-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.lcp-thread-top span {
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.lcp-thread-item p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.78);
+  min-height: 34px;
+}
+
+.lcp-thread-item small {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.lcp-status {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
+.lcp-status.is-open {
+  color: #69d391;
+}
+
+.lcp-status.is-closed {
+  color: #f6ad55;
+}
+
+.lcp-chat-pane {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  min-height: 560px;
+}
+
+.lcp-chat-head {
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.lcp-chat-head h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.lcp-chat-head p {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.lcp-token {
+  max-width: 380px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lcp-messages {
+  flex: 1;
+  padding: 12px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.01) 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.lcp-msg {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px;
+  max-width: 88%;
+}
+
+.lcp-msg header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.lcp-msg header span {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.lcp-msg header time {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.lcp-msg p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.46;
+}
+
+.lcp-msg.from-visitor {
+  align-self: flex-start;
+  background: rgba(41, 151, 255, 0.16);
+  border-color: rgba(41, 151, 255, 0.34);
+}
+
+.lcp-msg.from-system {
+  align-self: center;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.lcp-msg.from-admin {
+  align-self: flex-end;
+  background: rgba(77, 192, 130, 0.16);
+  border-color: rgba(77, 192, 130, 0.34);
+}
+
+.lcp-reply-box {
+  padding: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lcp-reply-box textarea {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  color: #f5f5f5;
+  font-family: inherit;
+  padding: 10px;
+  resize: vertical;
+}
+
+.lcp-reply-box button {
+  align-self: flex-end;
+}
+
+.lcp-empty,
+.lcp-empty-pane {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+}
+
+.lcp-empty-pane {
+  margin: auto;
+}
+
+@media (max-width: 1100px) {
+  .lcp-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .lcp-search-wrap {
+    min-width: 100%;
+    order: 3;
+  }
+
+  .lcp-layout {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .lcp-threads {
+    max-height: 280px;
+  }
+}

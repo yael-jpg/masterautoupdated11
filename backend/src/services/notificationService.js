@@ -14,8 +14,11 @@ class NotificationService {
       hasNotifType: columns.has('notif_type'),
       hasData: columns.has('data'),
       hasPayload: columns.has('payload'),
+      hasMetadata: columns.has('metadata'),
       hasRole: columns.has('role'),
       hasRecipientRole: columns.has('recipient_role'),
+      hasChannel: columns.has('channel'),
+      hasRecipientAddress: columns.has('recipient_address'),
     }
   }
 
@@ -77,8 +80,26 @@ class NotificationService {
     const placeholders = ['$1', '$2', '$3', '$4']
     const values = [userId, role, title, message]
 
+    if (map.hasChannel) {
+      insertColumns.push('channel')
+      placeholders.push(`$${values.length + 1}`)
+      values.push('in_app')
+    }
+
+    if (map.hasRecipientAddress) {
+      insertColumns.push('recipient_address')
+      placeholders.push(`$${values.length + 1}`)
+      values.push(userId ? `${role}:${userId}` : String(role || 'admin'))
+    }
+
     if (map.hasPayload) {
       insertColumns.push('payload')
+      placeholders.push(`$${values.length + 1}::jsonb`)
+      values.push(payload ? JSON.stringify(payload) : null)
+    }
+
+    if (map.hasMetadata) {
+      insertColumns.push('metadata')
       placeholders.push(`$${values.length + 1}::jsonb`)
       values.push(payload ? JSON.stringify(payload) : null)
     }

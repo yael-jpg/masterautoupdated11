@@ -23,6 +23,7 @@ const subscriptionRoutes = require('./subscriptions')
 const pmsRoutes = require('./pms')
 const settingsRoutes = require('./settings')
 const notificationsRoutes = require('./notifications')
+const landingChatRoutes = require('./landingChat')
 const { requireAuth, enforceAdminAccessPolicy } = require('../middleware/auth')
 
 const router = express.Router()
@@ -53,6 +54,7 @@ router.use('/promo-codes', promoCodeRoutes)
 router.use('/online-quotation-requests', onlineQuotationRequestRoutes)
 router.use('/subscriptions', subscriptionRoutes)
 router.use('/pms', pmsRoutes)
+router.use('/landing-chat', landingChatRoutes)
 
 module.exports = router
 

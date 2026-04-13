@@ -220,7 +220,7 @@ export function DashboardHome({ token, onNavigate }) {
         <article className="chart-card">
           <h3>Weekly Revenue Trend</h3>
           <div className="chart-container">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" debounce={120}>
               <BarChart data={chartData.trend} margin={isMobile ? { top: 8, right: 8, left: 12, bottom: 0 } : { top: 8, right: 14, left: 8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
                 <XAxis
@@ -262,7 +262,7 @@ export function DashboardHome({ token, onNavigate }) {
           <h3>Service Distribution</h3>
           <div className="chart-container dashboard-pie-panel">
             <div className="dashboard-pie-canvas">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" debounce={120}>
                 <PieChart>
                   <Pie
                     data={chartData.distribution}

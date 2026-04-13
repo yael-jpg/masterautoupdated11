@@ -6,14 +6,17 @@
  */
 
 const express = require('express')
+const crypto = require('crypto')
 const db = require('../config/db')
 const { asyncHandler } = require('../utils/asyncHandler')
 const ConfigurationService = require('../services/configurationService')
+const NotificationService = require('../services/notificationService')
 const mailer = require('../services/mailer')
 const {
   buildQuotationRequestReceivedEmail,
   buildQuotationRequestStaffEmail,
 } = require('../services/emailTemplates')
+const { emitToRole, emitToLandingVisitor } = require('../realtime/hub')
 
 const router = express.Router()
 
@@ -64,6 +67,273 @@ function makeTempPlate() {
 
 function normalizePackageCode(prefix, id) {
   return `${prefix}-${String(id || '').trim()}`
+}
+
+const VEHICLE_SIZE_LABELS = {
+  'small-bike': 'Small Bike',
+  'big-bike': 'Big Bike',
+  'x-small': 'X Small',
+  small: 'Small',
+  medium: 'Medium',
+  large: 'Large',
+  'x-large': 'X Large',
+  'xx-large': 'XX Large',
+}
+
+function normalizeSizeKey(raw) {
+  const key = String(raw || '').trim().toLowerCase().replace(/\s+/g, '-')
+  if (VEHICLE_SIZE_LABELS[key]) return key
+  if (key === 'xs') return 'x-small'
+  if (key === 's') return 'small'
+  if (key === 'm') return 'medium'
+  if (key === 'l') return 'large'
+  if (key === 'xl') return 'x-large'
+  if (key === 'xxl') return 'xx-large'
+  return ''
+}
+
+function expandCustomServiceRows(customService) {
+  const code = String(customService?.code || '').trim().toLowerCase()
+  const name = String(customService?.name || '').trim()
+  const category = String(customService?.group || '').trim() || 'Other Services'
+  const description = String(customService?.description || '').trim()
+  const sizePrices = customService?.sizePrices && typeof customService.sizePrices === 'object'
+    ? customService.sizePrices
+    : {}
+
+  if (!code || !name) return []
+
+  const rows = []
+  for (const [rawKey, rawPrice] of Object.entries(sizePrices)) {
+    const sizeKey = normalizeSizeKey(rawKey)
+    const label = VEHICLE_SIZE_LABELS[sizeKey]
+    const price = Number(rawPrice || 0)
+    if (!sizeKey || !label || !(price > 0)) continue
+    rows.push({
+      id: `custom-${code}-${sizeKey}`,
+      code,
+      name: `${name} - ${label}`,
+      category,
+      base_price: price,
+      description,
+      materials_notes: null,
+    })
+  }
+
+  if (rows.length) return rows
+
+  return [
+    {
+      id: `custom-${code}`,
+      code,
+      name,
+      category,
+      base_price: Number(customService?.base_price || 0),
+      description,
+      materials_notes: null,
+    },
+  ]
+}
+
+function generateVisitorToken() {
+  return crypto.randomBytes(24).toString('base64url')
+}
+
+function normalizeVisitorToken(raw) {
+  const token = String(raw || '').trim()
+  if (!token) return ''
+  if (!/^[A-Za-z0-9_-]{12,128}$/.test(token)) return ''
+  return token
+}
+
+function mapLandingChatMessage(row) {
+  return {
+    id: row.id,
+    threadId: row.thread_id,
+    senderType: row.sender_type,
+    senderLabel: row.sender_label,
+    message: row.message,
+    isAuto: row.is_auto,
+    createdAt: row.created_at,
+  }
+}
+
+function parseBooleanish(value, fallback = false) {
+  if (typeof value === 'boolean') return value
+  const text = String(value ?? '').trim().toLowerCase()
+  if (text === 'true') return true
+  if (text === 'false') return false
+  return fallback
+}
+
+function safeJsonObject(value, fallback = {}) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value
+  try {
+    const parsed = JSON.parse(String(value || '{}'))
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
+  } catch {
+    // ignore parse errors
+  }
+  return fallback
+}
+
+function safeJsonArray(value, fallback = []) {
+  if (Array.isArray(value)) return value
+  try {
+    const parsed = JSON.parse(String(value || '[]'))
+    if (Array.isArray(parsed)) return parsed
+  } catch {
+    // ignore parse errors
+  }
+  return fallback
+}
+
+function fillTemplate(template, context = {}) {
+  let text = String(template || '')
+  Object.entries(context).forEach(([k, v]) => {
+    text = text.replace(new RegExp(`{{\\s*${k}\\s*}}`, 'gi'), String(v ?? ''))
+  })
+  return text
+}
+
+function detectIntent(message, rules) {
+  const input = String(message || '').toLowerCase()
+  let bestIntent = null
+  let bestScore = 0
+
+  for (const rule of rules) {
+    const intent = String(rule?.intent || '').trim()
+    const keywords = Array.isArray(rule?.keywords) ? rule.keywords : []
+    if (!intent || keywords.length === 0) continue
+
+    let score = 0
+    for (const kw of keywords) {
+      const needle = String(kw || '').trim().toLowerCase()
+      if (!needle) continue
+      if (input.includes(needle)) score += 1
+    }
+
+    if (score > bestScore) {
+      bestScore = score
+      bestIntent = intent
+    }
+  }
+
+  return bestIntent
+}
+
+async function buildLandingAutoReply({ visitorName, message }) {
+  const name = String(visitorName || '').trim() || 'Guest'
+
+  const [
+    autoReplyEnabled,
+    autoReplyTemplate,
+    mlIntentEnabled,
+    mlIntentRulesRaw,
+    mlIntentRepliesRaw,
+  ] = await Promise.all([
+    ConfigurationService.get('landing_chat', 'auto_reply_enabled').catch(() => null),
+    ConfigurationService.get('landing_chat', 'auto_reply_template').catch(() => null),
+    ConfigurationService.get('landing_chat', 'ml_intent_enabled').catch(() => null),
+    ConfigurationService.get('landing_chat', 'ml_intent_rules').catch(() => null),
+    ConfigurationService.get('landing_chat', 'ml_intent_replies').catch(() => null),
+  ])
+
+  if (!parseBooleanish(autoReplyEnabled, true)) {
+    return null
+  }
+
+  const fallbackTemplate =
+    String(autoReplyTemplate || '').trim() ||
+    'Thank you, {{name}}. Your message has been received and queued. A SuperAdmin will assist you as soon as possible.'
+
+  const defaultRules = [
+    { intent: 'pricing', keywords: ['price', 'cost', 'how much', 'rate', 'discount'] },
+    { intent: 'booking', keywords: ['book', 'schedule', 'appointment', 'slot', 'available'] },
+    { intent: 'location', keywords: ['where', 'location', 'address', 'branch', 'map'] },
+    { intent: 'services', keywords: ['service', 'ppf', 'ceramic', 'tint', 'detailing', 'package'] },
+    { intent: 'status', keywords: ['status', 'update', 'progress', 'follow up', 'follow-up'] },
+  ]
+
+  const defaultReplies = {
+    pricing: 'Thanks {{name}}. For pricing, our team will provide a quotation based on your vehicle and preferred service.',
+    booking: 'Thanks {{name}}. For booking requests, please share your preferred date/time and vehicle details.',
+    location: 'Thanks {{name}}. Our team will send the exact branch/location details shortly.',
+    services: 'Thanks {{name}}. We offer PPF, ceramic coating, tint, detailing, and seat cover packages.',
+    status: 'Thanks {{name}}. We have logged your request and SuperAdmin will send an update soon.',
+    fallback: fallbackTemplate,
+  }
+
+  if (!parseBooleanish(mlIntentEnabled, true)) {
+    return fillTemplate(fallbackTemplate, { name })
+  }
+
+  const rules = safeJsonArray(mlIntentRulesRaw, defaultRules)
+  const replies = { ...defaultReplies, ...safeJsonObject(mlIntentRepliesRaw, {}) }
+
+  const intent = detectIntent(message, rules)
+  const selected = intent && replies[intent] ? replies[intent] : replies.fallback
+
+  return fillTemplate(selected, { name, intent: intent || 'fallback' })
+}
+
+async function getLandingWelcomeMessage() {
+  const fallback =
+    'Hello! Thank you for contacting Master Auto. Please share your concern and our assistant will acknowledge it first, then a SuperAdmin will respond shortly.'
+
+  const configured = await ConfigurationService.get('landing_chat', 'welcome_message').catch(() => null)
+  const text = String(configured || '').trim()
+  return text || fallback
+}
+
+async function upsertLandingChatThread({ visitorToken, visitorName }) {
+  const safeName = String(visitorName || '').trim().slice(0, 120) || null
+  const normalizedToken = normalizeVisitorToken(visitorToken)
+
+  if (normalizedToken) {
+    const existingResult = await db.query(
+      `SELECT id, visitor_token, visitor_name, status, created_at, updated_at, last_message_at
+       FROM landing_chat_threads
+       WHERE visitor_token = $1
+       LIMIT 1`,
+      [normalizedToken],
+    )
+
+    if (existingResult.rows.length) {
+      const existing = existingResult.rows[0]
+
+      if (String(existing.status || '').toLowerCase() === 'open') {
+        const updated = await db.query(
+          `UPDATE landing_chat_threads
+           SET visitor_name = COALESCE(NULLIF($2, ''), visitor_name),
+               updated_at = NOW()
+           WHERE id = $1
+           RETURNING id, visitor_token, visitor_name, status, created_at, updated_at, last_message_at`,
+          [existing.id, safeName],
+        )
+        return updated.rows[0]
+      }
+
+      const freshToken = generateVisitorToken()
+      const fresh = await db.query(
+        `INSERT INTO landing_chat_threads (visitor_token, visitor_name, status, last_message_at, created_at, updated_at)
+         VALUES ($1, $2, 'open', NOW(), NOW(), NOW())
+         RETURNING id, visitor_token, visitor_name, status, created_at, updated_at, last_message_at`,
+        [freshToken, safeName || existing.visitor_name || null],
+      )
+      return fresh.rows[0]
+    }
+  }
+
+  const token = normalizedToken || generateVisitorToken()
+  const { rows } = await db.query(
+    `INSERT INTO landing_chat_threads (visitor_token, visitor_name, status, last_message_at, created_at, updated_at)
+     VALUES ($1, $2, 'open', NOW(), NOW(), NOW())
+     RETURNING id, visitor_token, visitor_name, status, created_at, updated_at, last_message_at`,
+    [token, safeName],
+  )
+
+  return rows[0]
 }
 
 async function nextQuotationNo(client, branchCode = 'BR') {
@@ -147,15 +417,7 @@ router.get(
     if (Array.isArray(customSvcs)) {
       customSvcs.forEach((cs) => {
         if (cs.enabled !== false) {
-          services.push({
-            id: `custom-${cs.code}`,
-            code: cs.code,
-            name: cs.name,
-            category: cs.group,
-            base_price: cs.base_price || 0, 
-            description: cs.description || '',
-            materials_notes: null,
-          })
+          services.push(...expandCustomServiceRows(cs))
         }
       })
     }
@@ -603,6 +865,198 @@ router.get(
     } catch (err) {
       console.error('Public years unavailable:', err.message)
       return res.json([])
+    }
+  }),
+)
+
+router.post(
+  '/chat/thread',
+  asyncHandler(async (req, res) => {
+    const visitorName = String(req.body?.visitorName || '').trim()
+    const visitorToken = String(req.body?.visitorToken || '').trim()
+
+    const thread = await upsertLandingChatThread({ visitorToken, visitorName })
+
+    const { rows } = await db.query(
+      `SELECT id, thread_id, sender_type, sender_label, message, is_auto, created_at
+       FROM landing_chat_messages
+       WHERE thread_id = $1
+       ORDER BY created_at ASC, id ASC
+       LIMIT 200`,
+      [thread.id],
+    )
+
+    const welcomeMessage = await getLandingWelcomeMessage()
+
+    return res.json({
+      thread: {
+        id: thread.id,
+        visitorToken: thread.visitor_token,
+        visitorName: thread.visitor_name || 'Guest',
+        status: thread.status,
+        createdAt: thread.created_at,
+        updatedAt: thread.updated_at,
+        lastMessageAt: thread.last_message_at,
+      },
+      welcomeMessage,
+      messages: rows.map(mapLandingChatMessage),
+    })
+  }),
+)
+
+router.get(
+  '/chat/thread/:visitorToken/messages',
+  asyncHandler(async (req, res) => {
+    const visitorToken = normalizeVisitorToken(req.params.visitorToken)
+    if (!visitorToken) {
+      return res.status(400).json({ message: 'Invalid visitor token' })
+    }
+
+    const threadResult = await db.query(
+      `SELECT id, visitor_name, visitor_token, status, created_at, updated_at, last_message_at
+       FROM landing_chat_threads
+       WHERE visitor_token = $1`,
+      [visitorToken],
+    )
+
+    if (!threadResult.rows.length) {
+      return res.status(404).json({ message: 'Chat thread not found' })
+    }
+
+    const thread = threadResult.rows[0]
+    const { rows } = await db.query(
+      `SELECT id, thread_id, sender_type, sender_label, message, is_auto, created_at
+       FROM landing_chat_messages
+       WHERE thread_id = $1
+       ORDER BY created_at ASC, id ASC
+       LIMIT 300`,
+      [thread.id],
+    )
+
+    const welcomeMessage = await getLandingWelcomeMessage()
+
+    return res.json({
+      thread: {
+        id: thread.id,
+        visitorToken: thread.visitor_token,
+        visitorName: thread.visitor_name || 'Guest',
+        status: thread.status,
+        createdAt: thread.created_at,
+        updatedAt: thread.updated_at,
+        lastMessageAt: thread.last_message_at,
+      },
+      welcomeMessage,
+      messages: rows.map(mapLandingChatMessage),
+    })
+  }),
+)
+
+router.post(
+  '/chat/thread/:visitorToken/messages',
+  asyncHandler(async (req, res) => {
+    const visitorToken = normalizeVisitorToken(req.params.visitorToken)
+    if (!visitorToken) {
+      return res.status(400).json({ message: 'Invalid visitor token' })
+    }
+
+    const message = String(req.body?.message || '').trim()
+    if (!message) {
+      return res.status(400).json({ message: 'Message is required' })
+    }
+
+    const visitorName = String(req.body?.visitorName || '').trim()
+    const thread = await upsertLandingChatThread({ visitorToken, visitorName })
+
+    const senderLabel = String(visitorName || thread.visitor_name || 'Guest').trim().slice(0, 120) || 'Guest'
+    const autoText = await buildLandingAutoReply({ visitorName: senderLabel, message })
+
+    const client = await db.pool.connect()
+    try {
+      await client.query('BEGIN')
+
+      const visitorInsert = await client.query(
+        `INSERT INTO landing_chat_messages (thread_id, sender_type, sender_label, message, is_auto)
+         VALUES ($1, 'visitor', $2, $3, FALSE)
+         RETURNING id, thread_id, sender_type, sender_label, message, is_auto, created_at`,
+        [thread.id, senderLabel, message],
+      )
+
+      let autoMessageRow = null
+      if (autoText) {
+        const autoInsert = await client.query(
+          `INSERT INTO landing_chat_messages (thread_id, sender_type, sender_label, message, is_auto)
+           VALUES ($1, 'system', 'Auto Assistant', $2, TRUE)
+           RETURNING id, thread_id, sender_type, sender_label, message, is_auto, created_at`,
+          [thread.id, autoText],
+        )
+        autoMessageRow = autoInsert.rows[0]
+      }
+
+      await client.query(
+        `UPDATE landing_chat_threads
+         SET visitor_name = COALESCE($2, visitor_name),
+             status = 'open',
+             last_message_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $1`,
+        [thread.id, senderLabel],
+      )
+
+      await client.query('COMMIT')
+
+      const newMessages = [
+        mapLandingChatMessage(visitorInsert.rows[0]),
+        ...(autoMessageRow ? [mapLandingChatMessage(autoMessageRow)] : []),
+      ]
+
+      // Push a real-time notification to admin/superadmin notification center.
+      try {
+        await NotificationService.create({
+          role: 'admin',
+          title: 'New Landing Chat Message',
+          message: `${senderLabel}: ${message.length > 120 ? `${message.slice(0, 120)}...` : message}`,
+          payload: {
+            type: 'landing-chat',
+            thread_id: thread.id,
+            visitor_token: thread.visitor_token,
+            visitor_name: senderLabel,
+            source: 'visitor',
+            preview: message,
+          },
+        })
+      } catch (notifyErr) {
+        console.error('Landing chat notification create failed:', notifyErr?.message || notifyErr)
+      }
+
+      emitToRole('admin', 'landing-chat:thread-updated', {
+        threadId: thread.id,
+        visitorToken: thread.visitor_token,
+        visitorName: senderLabel,
+        source: 'visitor',
+        at: new Date().toISOString(),
+      })
+
+      emitToLandingVisitor(thread.visitor_token, 'landing-chat:new-message', {
+        threadId: thread.id,
+        visitorToken: thread.visitor_token,
+        messages: newMessages,
+      })
+
+      return res.status(201).json({
+        message: 'Message sent',
+        thread: {
+          id: thread.id,
+          visitorToken: thread.visitor_token,
+          visitorName: senderLabel,
+          status: 'open',
+        },
+        newMessages,
+      })
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
     }
   }),
 )

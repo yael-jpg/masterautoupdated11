@@ -109,11 +109,11 @@ const SERVICE_PROCESS = {
 }
 
 export function ServicesPage({ token }) {
-  const groups = getCatalogGroups()
   const [activeTab, setActiveTab] = useState('price')
-  const [activeGroup, setActiveGroup] = useState(groups[0])
+  const [activeGroup, setActiveGroup] = useState(getCatalogGroups()[0])
   const [priceOverrides, setPriceOverrides] = useState({})
   const [serviceNameOverrides, setServiceNameOverrides] = useState({})
+  const [customServices, setCustomServices] = useState([])
 
   const [dbServices, setDbServices] = useState([])
   const [dbLoading, setDbLoading] = useState(false)
@@ -129,6 +129,42 @@ export function ServicesPage({ token }) {
       return String(a.name || '').localeCompare(String(b.name || ''))
     })
   }, [dbServices])
+
+  const displayCatalog = useMemo(() => {
+    const customRows = Array.isArray(customServices)
+      ? customServices
+          .filter((s) => s?.enabled !== false)
+          .map((s) => ({
+            code: String(s.code || '').trim().toLowerCase(),
+            name: String(s.name || '').trim(),
+            group: String(s.group || '').trim() || 'Other Services',
+            sizePrices: s?.sizePrices && typeof s.sizePrices === 'object' ? s.sizePrices : {},
+          }))
+          .filter((s) => s.code && s.name)
+      : []
+
+    const staticCodes = new Set(SERVICE_CATALOG.map((s) => s.code))
+    const dedupedCustom = customRows.filter((s) => !staticCodes.has(s.code))
+    return [...SERVICE_CATALOG, ...dedupedCustom]
+  }, [customServices])
+
+  const groups = useMemo(
+    () => Array.from(new Set(displayCatalog.map((service) => service.group))),
+    [displayCatalog],
+  )
+
+  useEffect(() => {
+    if (!groups.length) return
+    if (!groups.includes(activeGroup)) setActiveGroup(groups[0])
+  }, [groups, activeGroup])
+
+  const getServicePrice = useCallback((service, sizeKey) => {
+    const overrideValue = priceOverrides?.[service.code]?.[sizeKey]
+    if (overrideValue !== undefined && overrideValue !== null && overrideValue !== '') {
+      return Number(overrideValue)
+    }
+    return Number(service?.sizePrices?.[sizeKey] || 0)
+  }, [priceOverrides])
 
   const loadQuotationOverrides = useCallback(async () => {
     try {
@@ -152,6 +188,16 @@ export function ServicesPage({ token }) {
         try {
           const parsed = typeof nameEntry.value === 'string' ? JSON.parse(nameEntry.value) : nameEntry.value
           if (parsed && typeof parsed === 'object') setServiceNameOverrides(parsed)
+        } catch {}
+      }
+
+      const customEntry = Array.isArray(entries)
+        ? entries.find((e) => e.key === 'custom_services')
+        : null
+      if (customEntry?.value) {
+        try {
+          const parsed = typeof customEntry.value === 'string' ? JSON.parse(customEntry.value) : customEntry.value
+          if (Array.isArray(parsed)) setCustomServices(parsed)
         } catch {}
       }
     } catch {
@@ -253,7 +299,7 @@ export function ServicesPage({ token }) {
           <div className="svc-price-wrapper">
             {groups.map((group) => {
               const meta = GROUP_META[group] || { icon: '📋', description: '' }
-              const rows = SERVICE_CATALOG.filter((s) => s.group === group)
+              const rows = displayCatalog.filter((s) => s.group === group)
               return (
                 <div key={group} className="svc-group-block">
                   {/* Group header */}
@@ -285,7 +331,7 @@ export function ServicesPage({ token }) {
                               if (!hasSize) {
                                 return <td key={size.key} className="svc-td-dash">—</td>
                               }
-                              const amount = getEffectivePrice(service.code, size.key, priceOverrides)
+                              const amount = getServicePrice(service, size.key)
                               const isOverridden =
                                 priceOverrides?.[service.code]?.[size.key] !== undefined &&
                                 Number(priceOverrides[service.code][size.key]) !== service.sizePrices[size.key]

@@ -1,5 +1,6 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import '../LandingPage.css'
+import { createLandingVisitorRealtimeClient } from '../utils/realtime'
 
 const DEFAULT_API_BASE_URL = import.meta.env.DEV ? 'http://localhost:5000/api' : '/api'
 const RAW_API_BASE = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL
@@ -8,12 +9,27 @@ const API_BASE = (() => {
   return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`
 })()
 const PORTAL_BASE = `${API_BASE}/portal`
+const PUBLIC_BASE = `${API_BASE}/public`
+const LANDING_CHAT_TOKEN_KEY = 'ma_landing_chat_token'
 
 async function portalFetch(path, body) {
   const res = await fetch(`${PORTAL_BASE}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.message || `Error ${res.status}`)
+  return json
+}
+
+async function publicChatFetch(path, { method = 'GET', body } = {}) {
+  const res = await fetch(`${PUBLIC_BASE}${path}`, {
+    method,
+    headers: {
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
   })
   const json = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(json.message || `Error ${res.status}`)
@@ -117,6 +133,10 @@ const FEATURED = [
     ],
   },
 ]
+
+function formatChatTime(value) {
+  return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
 
 function VideoGalleryModal({ src, onClose }) {
   const videoRef = useRef(null)
@@ -375,6 +395,315 @@ function FanPanel({ svc, index, isActive, hasActive, onActivate }) {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
         </button>
       </div>
+    </div>
+  )
+}
+
+function LandingChatWidget() {
+  const defaultWelcomeMessage =
+    'Hello! Thank you for contacting Master Auto. Please share your concern and our assistant will acknowledge it first, then a SuperAdmin will respond shortly.'
+  const [open, setOpen] = useState(false)
+  const [displayName, setDisplayName] = useState('')
+  const [draft, setDraft] = useState('')
+  const [messages, setMessages] = useState([])
+  const [threadNotice, setThreadNotice] = useState('')
+  const [welcomeMessage, setWelcomeMessage] = useState(defaultWelcomeMessage)
+  const [visitorToken, setVisitorToken] = useState(() => {
+    try {
+      return localStorage.getItem(LANDING_CHAT_TOKEN_KEY) || ''
+    } catch {
+      return ''
+    }
+  })
+  const [isLoading, setIsLoading] = useState(false)
+  const [isSending, setIsSending] = useState(false)
+  const [chatError, setChatError] = useState('')
+
+  const hydrateThread = async ({ token, name, forceFresh = false } = {}) => {
+    setIsLoading(true)
+    setChatError('')
+    try {
+      const priorToken = String(token || visitorToken || '')
+      const data = await publicChatFetch('/chat/thread', {
+        method: 'POST',
+        body: {
+          visitorToken: forceFresh ? undefined : token || visitorToken || undefined,
+          visitorName: String(name || displayName || '').trim() || undefined,
+        },
+      })
+
+      const nextToken = String(data?.thread?.visitorToken || '')
+      const nextStatus = String(data?.thread?.status || '').toLowerCase()
+      const nextWelcome = String(data?.welcomeMessage || '').trim() || defaultWelcomeMessage
+
+      setWelcomeMessage(nextWelcome)
+
+      if (nextStatus === 'closed' && !forceFresh) {
+        setMessages([])
+        setVisitorToken('')
+        try {
+          localStorage.removeItem(LANDING_CHAT_TOKEN_KEY)
+        } catch {
+          // ignore storage failures
+        }
+        setThreadNotice('Previous conversation was closed. A new chat has started.')
+        await hydrateThread({ name, forceFresh: true })
+        return
+      }
+
+      if (nextToken) {
+        setVisitorToken(nextToken)
+        try {
+          localStorage.setItem(LANDING_CHAT_TOKEN_KEY, nextToken)
+        } catch {
+          // ignore storage failures
+        }
+      }
+
+      if (!forceFresh && priorToken && nextToken && priorToken !== nextToken) {
+        setThreadNotice('Previous conversation was closed. A new chat has started.')
+      } else {
+        setThreadNotice('')
+      }
+
+      const list = Array.isArray(data?.messages) ? data.messages : []
+      setMessages(list)
+    } catch (err) {
+      setChatError(err.message || 'Failed to load chat')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!open) return
+    hydrateThread()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  useEffect(() => {
+    if (!open || !visitorToken) return
+
+    const timer = setInterval(async () => {
+      try {
+        const data = await publicChatFetch(`/chat/thread/${visitorToken}/messages`)
+        const status = String(data?.thread?.status || '').toLowerCase()
+        const nextWelcome = String(data?.welcomeMessage || '').trim() || defaultWelcomeMessage
+        setWelcomeMessage(nextWelcome)
+        if (status === 'closed') {
+          setMessages([])
+          setVisitorToken('')
+          try {
+            localStorage.removeItem(LANDING_CHAT_TOKEN_KEY)
+          } catch {
+            // ignore storage failures
+          }
+          setThreadNotice('Previous conversation was closed. A new chat has started.')
+          await hydrateThread({ forceFresh: true })
+          return
+        }
+        const list = Array.isArray(data?.messages) ? data.messages : []
+        setMessages(list)
+      } catch {
+        // ignore polling errors to avoid noisy UI
+      }
+    }, 5000)
+
+    return () => clearInterval(timer)
+  }, [open, visitorToken])
+
+  useEffect(() => {
+    if (!open || !visitorToken) return
+
+    const socket = createLandingVisitorRealtimeClient(visitorToken)
+    if (!socket) return undefined
+
+    const onNewMessage = (payload) => {
+      const list = Array.isArray(payload?.messages) ? payload.messages : []
+      if (!list.length) return
+      setMessages((prev) => {
+        const existing = new Set(prev.map((m) => m.id))
+        const merged = [...prev]
+        list.forEach((m) => {
+          if (!existing.has(m.id)) merged.push(m)
+        })
+        return merged
+      })
+    }
+
+    socket.on('landing-chat:new-message', onNewMessage)
+
+    return () => {
+      socket.off('landing-chat:new-message', onNewMessage)
+      socket.disconnect()
+    }
+  }, [open, visitorToken])
+
+  const submitMessage = async () => {
+    const clean = String(draft || '').trim()
+    if (!clean) return
+    if (isSending) return
+
+    setIsSending(true)
+    setChatError('')
+    try {
+      let token = visitorToken
+      if (!token) {
+        const created = await publicChatFetch('/chat/thread', {
+          method: 'POST',
+          body: {
+            visitorToken: undefined,
+            visitorName: String(displayName || '').trim() || undefined,
+          },
+        })
+        token = String(created?.thread?.visitorToken || '')
+        if (token) {
+          setVisitorToken(token)
+          try {
+            localStorage.setItem(LANDING_CHAT_TOKEN_KEY, token)
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      if (!token) throw new Error('Failed to initialize chat thread')
+
+      const sent = await publicChatFetch(`/chat/thread/${token}/messages`, {
+        method: 'POST',
+        body: {
+          message: clean,
+          visitorName: String(displayName || '').trim() || undefined,
+        },
+      })
+
+      const resolvedToken = String(sent?.thread?.visitorToken || token || '')
+      if (resolvedToken && resolvedToken !== visitorToken) {
+        setVisitorToken(resolvedToken)
+        try {
+          localStorage.setItem(LANDING_CHAT_TOKEN_KEY, resolvedToken)
+        } catch {
+          // ignore
+        }
+
+        if (token && resolvedToken !== token) {
+          setThreadNotice('Previous conversation was closed. A new chat has started.')
+        }
+      }
+
+      setDraft('')
+
+      // Use immediate POST response to avoid surfacing transient token/fetch issues.
+      const newMessages = Array.isArray(sent?.newMessages) ? sent.newMessages : []
+      if (newMessages.length) {
+        setMessages((prev) => {
+          const existing = new Set(prev.map((m) => m.id))
+          const merged = [...prev]
+          newMessages.forEach((m) => {
+            if (!existing.has(m.id)) merged.push(m)
+          })
+          return merged
+        })
+      }
+
+      try {
+        const data = await publicChatFetch(`/chat/thread/${resolvedToken}/messages`)
+        const list = Array.isArray(data?.messages) ? data.messages : []
+        setMessages(list)
+      } catch {
+        // Ignore follow-up fetch errors; realtime/polling will reconcile messages.
+      }
+    } catch (err) {
+      setChatError(err.message || 'Failed to send message')
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  return (
+    <div className={`lp-chat${open ? ' is-open' : ''}`}>
+      {open ? (
+        <button
+          type="button"
+          className="lp-chat-backdrop"
+          onClick={() => setOpen(false)}
+          aria-label="Close chat panel"
+        />
+      ) : null}
+
+      {open && (
+        <div className="lp-chat-panel" role="dialog" aria-label="Landing page chat">
+          <div className="lp-chat-head">
+            <div>
+              <p className="lp-chat-title">Chat Support</p>
+            </div>
+            <button type="button" className="lp-chat-close" onClick={() => setOpen(false)} aria-label="Close chat">x</button>
+          </div>
+
+          <label className="lp-chat-name-wrap">
+            <span>Your name</span>
+            <input
+              className="lp-chat-name"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="Guest"
+            />
+          </label>
+
+          <div className="lp-chat-messages">
+            {threadNotice ? (
+              <article className="lp-chat-msg is-notice">
+                <p>{threadNotice}</p>
+                <time>{formatChatTime(Date.now())}</time>
+              </article>
+            ) : null}
+            {isLoading && messages.length === 0 ? <p className="lp-chat-loading">Loading chat...</p> : null}
+            {!isLoading && messages.length === 0 ? (
+              <article className="lp-chat-msg is-system">
+                <p>{welcomeMessage}</p>
+                <time>{formatChatTime(Date.now())}</time>
+              </article>
+            ) : null}
+            {messages.map((message) => {
+              const sender = message.senderType === 'visitor' ? 'user' : 'system'
+              return (
+                <article key={message.id} className={`lp-chat-msg ${sender === 'user' ? 'is-user' : 'is-system'}`}>
+                  <p>{message.message}</p>
+                  <time>{formatChatTime(message.createdAt)}</time>
+                </article>
+              )
+            })}
+          </div>
+
+          {chatError ? <p className="lp-chat-error">{chatError}</p> : null}
+
+          <div className="lp-chat-compose">
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Type your message..."
+              rows={2}
+            />
+            <button type="button" onClick={submitMessage} disabled={isSending || !String(draft || '').trim()}>
+              {isSending ? 'Sending...' : 'Send'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <button
+        type="button"
+        className="lp-chat-trigger"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-label={open ? 'Close chat support' : 'Open chat support'}
+        title={open ? 'Close chat' : 'Open chat'}
+      >
+        <span className="lp-chat-trigger-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="currentColor" focusable="false">
+            <path d="M4.5 3A2.5 2.5 0 0 0 2 5.5v10A2.5 2.5 0 0 0 4.5 18H6v3a1 1 0 0 0 1.7.7L11.4 18h8.1A2.5 2.5 0 0 0 22 15.5v-10A2.5 2.5 0 0 0 19.5 3h-15z" />
+          </svg>
+        </span>
+      </button>
     </div>
   )
 }
@@ -690,6 +1019,8 @@ export function LandingPage() {
       {modal !== null && (
         <AuthModal prefillService={modal?.name ? modal : null} onClose={() => setModal(null)} />
       )}
+
+      <LandingChatWidget />
     </div>
   )
 }

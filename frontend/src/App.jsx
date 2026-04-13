@@ -30,6 +30,62 @@ const OnlineQuotationRequestsPage = lazyNamed(() => import('./pages/OnlineQuotat
 const SettingsPage = lazyNamed(() => import('./pages/SettingsPage'), 'SettingsPage')
 const SubscriptionsPage = lazyNamed(() => import('./pages/SubscriptionsPage'), 'SubscriptionsPage')
 const PMSPage = lazyNamed(() => import('./pages/PMSPage'), 'PMSPage')
+const LandingChatPage = lazyNamed(() => import('./pages/LandingChatPage'), 'LandingChatPage')
+const MAX_DB_NOTIFICATION_ID = 2147483647
+
+const ADMIN_SEGMENT_BY_KEY = {
+  dashboard: 'dashboard',
+  crm: 'crm',
+  services: 'services',
+  pms: 'pms',
+  'online-quotation': 'online-quotation',
+  quotations: 'quotations',
+  scheduling: 'scheduling',
+  'job-orders': 'job-orders',
+  'landing-chat': 'landing-chat',
+  'jo-approval': 'jo-approval',
+  subscriptions: 'subscriptions',
+  payments: 'payments',
+  sales: 'sales',
+  inventory: 'inventory',
+  admin: 'admin-security',
+  settings: 'configurations',
+}
+
+const ADMIN_KEY_BY_SEGMENT = {
+  dashboard: 'dashboard',
+  crm: 'crm',
+  services: 'services',
+  pms: 'pms',
+  'online-quotation': 'online-quotation',
+  quotations: 'quotations',
+  scheduling: 'scheduling',
+  'job-orders': 'job-orders',
+  'landing-chat': 'landing-chat',
+  'jo-approval': 'jo-approval',
+  subscriptions: 'subscriptions',
+  payments: 'payments',
+  sales: 'sales',
+  inventory: 'inventory',
+  'admin-security': 'admin',
+  admin: 'admin',
+  configuration: 'settings',
+  configurations: 'settings',
+  settings: 'settings',
+}
+
+function adminPathForKey(key) {
+  const segment = ADMIN_SEGMENT_BY_KEY[key] || 'dashboard'
+  return `/admin/${segment}`
+}
+
+function adminKeyFromPath(pathname) {
+  const raw = String(pathname || '').trim().toLowerCase()
+  if (!raw.startsWith('/admin')) return null
+  const segment = raw.replace(/^\/admin\/?/, '').split('/')[0]
+  if (!segment) return 'dashboard'
+  return ADMIN_KEY_BY_SEGMENT[segment] || null
+}
 
 function SessionExpiredOverlay({ message, onResignIn }) {
   return (
@@ -84,9 +140,11 @@ function App() {
   const [fromQuotation, setFromQuotation] = useState(null)
   const [openJobOrderId, setOpenJobOrderId] = useState(null)
   const [notifications, setNotifications] = useState([])
+  const localNotificationSeqRef = useRef(0)
   const notifiedPortalAppointmentIdsRef = useRef(new Set())
   const [onlineLeadCount, setOnlineLeadCount] = useState(0)
   const [adminAllowedModules, setAdminAllowedModules] = useState(null)
+  const syncingFromRouteRef = useRef(false)
 
   // ── Admin notification sound ─────────────────────────────────────────
   // Notes:
@@ -1051,7 +1109,8 @@ function App() {
 
       // Add to notification center for important messages
       if (type === 'success' || type === 'error') {
-        const notifId = Date.now()
+        localNotificationSeqRef.current += 1
+        const notifId = `local-${Date.now()}-${localNotificationSeqRef.current}`
         setNotifications((prev) => [
           {
             id: notifId,
@@ -1257,6 +1316,16 @@ function App() {
         ),
       },
       ...(session.user?.role === 'SuperAdmin' ? [{
+        key: 'landing-chat',
+        group: 'operations',
+        label: 'Landing Chat',
+        icon: (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+        ),
+      }] : []),
+      ...(session.user?.role === 'SuperAdmin' ? [{
         key: 'jo-approval',
         group: 'operations',
         label: 'JO Approval',
@@ -1356,6 +1425,40 @@ function App() {
     }
   }, [activeKey, navItems])
 
+  useEffect(() => {
+    if (!session.token) return
+
+    const applyRoute = () => {
+      const routeKey = adminKeyFromPath(window.location.pathname)
+      if (!routeKey) return
+      const allowed = new Set(navItems.map((item) => item.key))
+      const resolvedKey = allowed.has(routeKey) ? routeKey : 'dashboard'
+      setActiveKey((prev) => {
+        if (prev === resolvedKey) return prev
+        syncingFromRouteRef.current = true
+        return resolvedKey
+      })
+    }
+
+    applyRoute()
+    window.addEventListener('popstate', applyRoute)
+    return () => window.removeEventListener('popstate', applyRoute)
+  }, [session.token, navItems])
+
+  useEffect(() => {
+    if (!session.token) return
+
+    if (syncingFromRouteRef.current) {
+      syncingFromRouteRef.current = false
+      return
+    }
+
+    const targetPath = adminPathForKey(activeKey)
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath)
+    }
+  }, [session.token, activeKey])
+
   const pageMap = {
     dashboard: <DashboardHome token={session.token} onNavigate={setActiveKey} />,
     crm: <CRMPage
@@ -1446,6 +1549,7 @@ function App() {
     'jo-approval': <JoApprovalPage token={session.token} onApprovedJobOrder={(joId) => { setOpenJobOrderId(joId); setActiveKey('job-orders') }} />,
     inventory: <InventoryPage token={session.token} />,
     settings: <SettingsPage token={session.token} user={session.user} />,
+    'landing-chat': <LandingChatPage token={session.token} />,
   }
 
   const handleLogin = async (email, password) => {
@@ -1457,7 +1561,7 @@ function App() {
       localStorage.setItem('masterauto_user', JSON.stringify(result.user))
       setSession({ token: result.token, user: result.user })
       setSessionExpiredNotice(null)
-      window.history.replaceState({}, '', '/admin')
+      window.history.replaceState({}, '', '/admin/dashboard')
     } catch (error) {
       setAuthError(error.message)
       pushToast('error', error.message)
@@ -1500,8 +1604,11 @@ function App() {
       prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n)),
     )
     if (!session.token) return
+    const idAsNumber = Number(notificationId)
+    const isPersistedId = Number.isInteger(idAsNumber) && idAsNumber > 0 && idAsNumber <= MAX_DB_NOTIFICATION_ID
+    if (!isPersistedId) return
     try {
-      const { url, headers } = buildApiUrl(`/notifications/read/${notificationId}`, session.token)
+      const { url, headers } = buildApiUrl(`/notifications/read/${idAsNumber}`, session.token)
       await fetch(url, { method: 'PUT', headers })
     } catch (_) {
       // Silent
@@ -1513,6 +1620,15 @@ function App() {
     if (type === 'subscription-request') {
       setActiveKey('subscriptions')
       window.dispatchEvent(new CustomEvent('ma:subscriptions-view', { detail: { tab: 'requests' } }))
+      return true
+    }
+
+    if (type === 'landing-chat') {
+      const threadId = Number(notification?.details?.thread_id || 0)
+      setActiveKey('landing-chat')
+      if (threadId > 0) {
+        window.dispatchEvent(new CustomEvent('ma:landing-chat-focus-thread', { detail: { threadId } }))
+      }
       return true
     }
 

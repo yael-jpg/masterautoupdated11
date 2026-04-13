@@ -41,6 +41,72 @@ const { normalizeEmail, normalizeMobileDigits, normalizeMobileForStorage } = req
 
 const googleClient = new OAuth2Client(env.googleClientId)
 
+const VEHICLE_SIZE_LABELS = {
+  'small-bike': 'Small Bike',
+  'big-bike': 'Big Bike',
+  'x-small': 'X Small',
+  small: 'Small',
+  medium: 'Medium',
+  large: 'Large',
+  'x-large': 'X Large',
+  'xx-large': 'XX Large',
+}
+
+function normalizeSizeKey(raw) {
+  const key = String(raw || '').trim().toLowerCase().replace(/\s+/g, '-')
+  if (VEHICLE_SIZE_LABELS[key]) return key
+  if (key === 'xs') return 'x-small'
+  if (key === 's') return 'small'
+  if (key === 'm') return 'medium'
+  if (key === 'l') return 'large'
+  if (key === 'xl') return 'x-large'
+  if (key === 'xxl') return 'xx-large'
+  return ''
+}
+
+function expandCustomServiceRows(customService) {
+  const code = String(customService?.code || '').trim().toLowerCase()
+  const name = String(customService?.name || '').trim()
+  const category = String(customService?.group || '').trim() || 'Other Services'
+  const description = String(customService?.description || '').trim()
+  const sizePrices = customService?.sizePrices && typeof customService.sizePrices === 'object'
+    ? customService.sizePrices
+    : {}
+
+  if (!code || !name) return []
+
+  const rows = []
+  for (const [rawKey, rawPrice] of Object.entries(sizePrices)) {
+    const sizeKey = normalizeSizeKey(rawKey)
+    const label = VEHICLE_SIZE_LABELS[sizeKey]
+    const price = Number(rawPrice || 0)
+    if (!sizeKey || !label || !(price > 0)) continue
+    rows.push({
+      id: `custom-${code}-${sizeKey}`,
+      code,
+      name: `${name} - ${label}`,
+      category,
+      base_price: price,
+      description,
+      materials_notes: null,
+    })
+  }
+
+  if (rows.length) return rows
+
+  return [
+    {
+      id: `custom-${code}`,
+      code,
+      name,
+      category,
+      base_price: Number(customService?.base_price || 0),
+      description,
+      materials_notes: null,
+    },
+  ]
+}
+
 const router = express.Router()
 
 let portalHashedColsChecked = false
@@ -1877,15 +1943,7 @@ router.get(
     if (Array.isArray(customSvcs)) {
       customSvcs.forEach((cs) => {
         if (cs.enabled !== false) {
-          services.push({
-            id: `custom-${cs.code}`,
-            code: cs.code,
-            name: cs.name,
-            category: cs.group,
-            base_price: 0, 
-            description: cs.description || '',
-            materials_notes: null,
-          })
+          services.push(...expandCustomServiceRows(cs))
         }
       })
     }
