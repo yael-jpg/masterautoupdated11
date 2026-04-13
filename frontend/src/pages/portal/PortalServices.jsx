@@ -83,6 +83,9 @@ function ServiceGroup({ baseName, variants, description, materialsNotes, onBook 
     (a, b) => SIZE_ORDER.indexOf(a.size ?? '') - SIZE_ORDER.indexOf(b.size ?? ''),
   )
   const hasSizes = sorted.some((v) => v.size)
+  const sizeLabels = hasSizes
+    ? Array.from(new Set(sorted.map((v) => v.size).filter(Boolean)))
+    : []
   const minPrice = Math.min(...sorted.map((v) => Number(v.base_price)))
   const maxPrice = Math.max(...sorted.map((v) => Number(v.base_price)))
   const priceStr =
@@ -115,6 +118,15 @@ function ServiceGroup({ baseName, variants, description, materialsNotes, onBook 
           {description && (
             <div className="portal-svc-group-desc">
               {description}
+            </div>
+          )}
+          {sizeLabels.length > 0 && (
+            <div className="portal-svc-group-size-row" aria-label="Available sizes">
+              {sizeLabels.map((size) => (
+                <span key={size} className="portal-svc-group-size-chip">
+                  {size}
+                </span>
+              ))}
             </div>
           )}
         </div>

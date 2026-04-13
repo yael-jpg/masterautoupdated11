@@ -3397,6 +3397,25 @@
   margin-top: 3px;
 }
 
+.portal-svc-group-size-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.portal-svc-group-size-chip {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(206, 216, 232, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
 .portal-svc-group-right {
   text-align: right;
   flex-shrink: 0;
