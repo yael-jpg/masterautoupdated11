@@ -242,53 +242,118 @@ router.delete(
     const targetId = Number(req.params.id)
     const requesterId = req.user?.id
 
+    if (!Number.isInteger(targetId) || targetId <= 0) {
+      return res.status(400).json({ message: 'Invalid user id.' })
+    }
+
     // Prevent self-deletion
     if (targetId === requesterId) {
       return res.status(400).json({ message: 'You cannot delete your own account.' })
     }
 
-    // Fetch the target user
-    const { rows: targetRows } = await db.query(
-      `SELECT u.id, u.full_name, u.email, r.name AS role
-       FROM users u JOIN roles r ON r.id = u.role_id
-       WHERE u.id = $1`,
-      [targetId],
-    )
-    if (!targetRows.length) {
-      return res.status(404).json({ message: 'User not found.' })
-    }
-    const target = targetRows[0]
+    const quoteIdent = (value) => `"${String(value).replace(/"/g, '""')}"`
 
-    // Prevent deleting the last active SuperAdmin
-    if (target.role === 'SuperAdmin') {
-      const { rows: superAdmins } = await db.query(
-        `SELECT COUNT(*)::int AS cnt FROM users u
-         JOIN roles r ON r.id = u.role_id
-         WHERE r.name = 'SuperAdmin' AND u.is_active = TRUE`,
+    const client = await db.pool.connect()
+    let target
+    try {
+      await client.query('BEGIN')
+
+      // Fetch the target user
+      const { rows: targetRows } = await client.query(
+        `SELECT u.id, u.full_name, u.email, r.name AS role
+         FROM users u JOIN roles r ON r.id = u.role_id
+         WHERE u.id = $1`,
+        [targetId],
       )
-      if (superAdmins[0].cnt <= 1) {
-        return res.status(400).json({ message: 'Cannot delete the last SuperAdmin account.' })
+      if (!targetRows.length) {
+        await client.query('ROLLBACK')
+        return res.status(404).json({ message: 'User not found.' })
       }
-    }
+      target = targetRows[0]
 
-    const archivedEmail = `deleted+${targetId}+${Date.now()}@deleted.local`
-    await db.query(
-      `UPDATE users
-       SET is_active = FALSE,
-           email = CASE
-             WHEN email LIKE 'deleted+%@deleted.local' THEN email
-             ELSE $1
-           END
-       WHERE id = $2`,
-      [archivedEmail, targetId],
-    )
+      // Prevent deleting the last active SuperAdmin
+      if (target.role === 'SuperAdmin') {
+        const { rows: superAdmins } = await client.query(
+          `SELECT COUNT(*)::int AS cnt FROM users u
+           JOIN roles r ON r.id = u.role_id
+           WHERE r.name = 'SuperAdmin' AND u.is_active = TRUE`,
+        )
+        if (superAdmins[0].cnt <= 1) {
+          await client.query('ROLLBACK')
+          return res.status(400).json({ message: 'Cannot delete the last active SuperAdmin account.' })
+        }
+      }
+
+      // Clear nullable foreign-key references to users(id) so hard delete succeeds.
+      const { rows: fkRefs } = await client.query(
+        `SELECT ns.nspname AS schema_name,
+                cls.relname AS table_name,
+                att.attname AS column_name,
+                att.attnotnull AS is_not_null
+         FROM pg_constraint con
+         JOIN pg_class cls ON cls.oid = con.conrelid
+         JOIN pg_namespace ns ON ns.oid = cls.relnamespace
+         JOIN unnest(con.conkey) WITH ORDINALITY AS cols(attnum, ord) ON TRUE
+         JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = cols.attnum
+         WHERE con.contype = 'f'
+           AND con.confrelid = 'users'::regclass
+           AND array_length(con.conkey, 1) = 1`,
+      )
+
+      const blockingRefs = []
+
+      for (const ref of fkRefs) {
+        const schemaName = ref.schema_name
+        const tableName = ref.table_name
+        const columnName = ref.column_name
+
+        const tableSql = `${quoteIdent(schemaName)}.${quoteIdent(tableName)}`
+        const colSql = quoteIdent(columnName)
+
+        const { rows: countRows } = await client.query(
+          `SELECT COUNT(*)::int AS cnt FROM ${tableSql} WHERE ${colSql} = $1`,
+          [targetId],
+        )
+        const refCount = countRows[0]?.cnt || 0
+        if (!refCount) continue
+
+        if (ref.is_not_null) {
+          blockingRefs.push(`${schemaName}.${tableName}.${columnName}`)
+          continue
+        }
+
+        await client.query(
+          `UPDATE ${tableSql} SET ${colSql} = NULL WHERE ${colSql} = $1`,
+          [targetId],
+        )
+      }
+
+      if (blockingRefs.length > 0) {
+        await client.query('ROLLBACK')
+        return res.status(409).json({
+          message: `Cannot delete user because required references exist: ${blockingRefs.join(', ')}`,
+        })
+      }
+
+      await client.query('DELETE FROM users WHERE id = $1', [targetId])
+      await client.query('COMMIT')
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK')
+      } catch {
+        // ignore rollback failures
+      }
+      throw err
+    } finally {
+      client.release()
+    }
 
     await writeAuditLog({
       userId: requesterId,
       action: 'DELETE_USER',
       entity: 'users',
       entityId: targetId,
-      meta: { deletedEmail: target.email, deletedRole: target.role, mode: 'soft' },
+      meta: { deletedEmail: target.email, deletedRole: target.role, mode: 'hard' },
     })
 
     res.status(204).send()
