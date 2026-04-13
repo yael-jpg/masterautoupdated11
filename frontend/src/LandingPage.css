@@ -70,10 +70,10 @@
   align-items: center;
   justify-content: center;
   gap: 0;
-  background: rgba(10,10,9,0.72);
+  background: linear-gradient(180deg, rgba(8,8,8,0.74) 0%, rgba(8,8,8,0.86) 100%);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border-top: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid rgba(255,255,255,0.11);
   padding: 14px 0;
 }
 .lp-hnav-link {
@@ -81,10 +81,10 @@
   border: none;
   cursor: pointer;
   font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 12.5px;
+  font-weight: 600;
   letter-spacing: 0.5px;
-  color: rgba(255,255,255,0.65);
+  color: rgba(255,255,255,0.7);
   padding: 8px 32px;
   transition: color var(--t);
 }
@@ -167,13 +167,13 @@
 }
 .lp-hero-h1 {
   font-family: 'Cormorant Garamond', Georgia, serif;
-  font-size: clamp(38px, 6.1vw, 92px);
+  font-size: clamp(40px, 6.2vw, 94px);
   font-weight: 400;
   line-height: 1.1;
-  letter-spacing: -0.3px;
+  letter-spacing: -0.4px;
   color: var(--white);
   margin-bottom: 40px;
-  text-shadow: 0 14px 44px rgba(0, 0, 0, 0.48);
+  text-shadow: 0 16px 48px rgba(0, 0, 0, 0.54);
 }
 .lp-hero-btns {
   display: flex;
@@ -199,11 +199,11 @@
   font-size: 13.5px;
   font-weight: 600;
   letter-spacing: 0.3px;
-  border-radius: 4px;
+  border-radius: 999px;
   border: none;
   cursor: pointer;
   font-family: inherit;
-  transition: background var(--t), transform var(--t), box-shadow var(--t);
+  transition: background var(--t), transform var(--t), box-shadow var(--t), color var(--t);
 }
 .lp button.lp-btn-w:hover { background: var(--gray-100); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
 .lp button.lp-btn-o {
@@ -218,7 +218,7 @@
   font-size: 14.5px;
   font-weight: 700;
   letter-spacing: 0.5px;
-  border-radius: 4px;
+  border-radius: 999px;
   border: none;
   cursor: pointer;
   font-family: inherit;
@@ -239,7 +239,7 @@
   font-size: 13.5px;
   font-weight: 600;
   letter-spacing: 0.3px;
-  border-radius: 4px;
+  border-radius: 999px;
   border: 1px solid rgba(255,255,255,0.45);
   cursor: pointer;
   font-family: inherit;
@@ -280,7 +280,7 @@
 }
 .lp-sec-head {
   text-align: center;
-  margin-bottom: 56px;
+  margin-bottom: 54px;
 }
 .lp-eyebrow {
   font-size: 11.5px;
@@ -293,17 +293,17 @@
 .lp-eyebrow.light { color: rgba(255,255,255,0.3); }
 .lp-sec-head h2 {
   font-family: 'Cormorant Garamond', Georgia, serif;
-  font-size: clamp(30px, 4vw, 52px);
+  font-size: clamp(32px, 4vw, 54px);
   font-weight: 500;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.55px;
   color: var(--white);
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 .lp-sec-head h2.light { color: var(--white); }
 .lp-rule {
-  width: 44px;
+  width: 56px;
   height: 1px;
-  background: var(--gray-500);
+  background: linear-gradient(90deg, rgba(255,255,255,0.32), rgba(255,255,255,0.08));
   margin: 0 auto;
 }
 .lp-rule.light { background: rgba(255,255,255,0.2); }
@@ -311,9 +311,9 @@
 /* ── Fan Strip Grid ────────────────────────────────────────── */
 .lp-fan-grid {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   height: 580px;
-  border-radius: 6px;
+  border-radius: 10px;
   overflow: hidden;
 }
 
@@ -321,7 +321,7 @@
   flex: 1;
   position: relative;
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: 10px;
   border: 1px solid rgba(255,255,255,0.13);
   cursor: pointer;
   transition: flex 0.60s cubic-bezier(0.22,1,0.36,1);
@@ -538,16 +538,16 @@
 }
 
 .lp-svc-card {
-  border-radius: 4px;
+  border-radius: 12px;
   overflow: hidden;
   background: #0a0a0a;
-  border: 1px solid rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.12);
   transition: transform 0.38s cubic-bezier(0.22,1,0.36,1), box-shadow 0.38s ease, border-color 0.28s ease;
 }
 .lp-svc-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 24px 60px rgba(0,0,0,0.80);
-  border-color: rgba(255,255,255,0.18);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.72);
+  border-color: rgba(255,255,255,0.22);
 }
 
 /* Photo panel */
@@ -590,7 +590,7 @@
   display: inline-block;
   align-self: flex-start;
   padding: 5px 12px;
-  border-radius: 3px;
+  border-radius: 999px;
   background: rgba(0,0,0,0.60);
   border: 1px solid rgba(255,255,255,0.22);
   font-size: 10px;
@@ -631,7 +631,7 @@
   justify-content: center;
   gap: 7px;
   padding: 10px 0;
-  border-radius: 2px;
+  border-radius: 999px;
   border: 1px solid rgba(255,255,255,0.28);
   background: rgba(0,0,0,0.48);
   backdrop-filter: blur(10px);
@@ -653,7 +653,7 @@
   justify-content: center;
   gap: 7px;
   padding: 10px 0;
-  border-radius: 2px;
+  border-radius: 999px;
   border: none;
   background: var(--white);
   font-size: 12px;
@@ -730,7 +730,7 @@
   justify-content: center;
   gap: 9px;
   padding: 11px 0;
-  border-radius: 2px;
+  border-radius: 999px;
   background: var(--white);
   color: var(--black);
   font-size: 13px;
@@ -1735,12 +1735,11 @@
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(780px 280px at 82% -10%, rgba(255,255,255,0.07), rgba(255,255,255,0) 62%),
-    linear-gradient(180deg, #0a0a0a 0%, #070707 100%);
-  border-top: 1px solid rgba(255,255,255,0.1);
-  padding: 68px 0 0;
+    radial-gradient(720px 260px at 82% -8%, rgba(255,255,255,0.06), rgba(255,255,255,0) 64%),
+    linear-gradient(180deg, #0b0b0b 0%, #070707 100%);
+  border-top: 1px solid rgba(255,255,255,0.11);
+  padding: 64px 0 0;
 }
-
 .lp-footer::before {
   content: '';
   position: absolute;
@@ -1748,20 +1747,19 @@
   right: 0;
   top: 0;
   height: 1px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.24), rgba(255,255,255,0.04));
+  background: linear-gradient(90deg, rgba(255,255,255,0.26), rgba(255,255,255,0.06));
   pointer-events: none;
 }
 .lp-footer-in {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(280px, 1.18fr) minmax(0, 2fr);
-  gap: 56px;
+  grid-template-columns: minmax(280px, 1.15fr) minmax(0, 2fr);
+  gap: 52px;
   align-items: start;
-  padding-bottom: 56px;
+  padding-bottom: 54px;
 }
 .lp-footer-brand {
-  flex: 1;
-  min-width: 220px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 13px;
@@ -1778,42 +1776,25 @@
   font-weight: 700;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.54);
+  color: rgba(255,255,255,0.56);
   margin-bottom: 6px;
 }
 .lp-footer-brand p {
-  font-size: 14.5px;
-  color: rgba(255,255,255,0.66);
-  line-height: 1.7;
+  font-size: 14px;
+  color: rgba(255,255,255,0.68);
+  line-height: 1.72;
   max-width: 46ch;
 }
 .lp-footer-cols {
   display: grid;
-  grid-template-columns: 1.1fr 1.1fr 1.45fr 0.95fr 0.95fr;
-  gap: 28px 36px;
+  grid-template-columns: 1.12fr 1.1fr 1.5fr 0.95fr 0.95fr;
+  gap: 24px 34px;
 }
 .lp-fcol {
   display: flex;
   flex-direction: column;
   gap: 11px;
   min-width: 0;
-}
-
-.lp-fcol-services {
-  min-width: 170px;
-}
-
-.lp-fcol-contact {
-  min-width: 220px;
-}
-
-.lp-fcol-location {
-  min-width: 290px;
-}
-
-.lp-fcol-social,
-.lp-fcol-access {
-  min-width: 140px;
 }
 .lp-fcol h4 {
   font-size: 11.5px;
@@ -1826,36 +1807,32 @@
 .lp-fcol a, .lp-fcol button, .lp-fcol span {
   font-size: 15px;
   color: rgba(255,255,255,0.86);
-  line-height: 1.38;
+  line-height: 1.36;
   text-align: left;
   cursor: pointer;
   font-family: inherit;
-  transition: color var(--t), opacity var(--t), transform var(--t);
+  transition: color var(--t), transform var(--t);
 }
+.lp-fcol span { color: rgba(255,255,255,0.58); }
+.lp-fcol a:hover, .lp-fcol button:hover {
+  color: var(--white);
+  transform: translateX(1px);
+}
+.lp-footer .lp-fcol button { padding: 0; }
 
-.lp-fcol-location a,
-.lp-fcol-location span {
+.lp-footer-cols .lp-fcol:nth-child(3) a,
+.lp-footer-cols .lp-fcol:nth-child(3) span {
   max-width: 34ch;
 }
 
-.lp-fcol-contact a {
+.lp-footer-cols .lp-fcol:nth-child(2) a {
   white-space: nowrap;
 }
-.lp-fcol span {
-  color: rgba(255,255,255,0.56);
-}
-.lp-fcol a:hover, .lp-fcol button:hover {
-  color: #ffffff;
-  transform: translateX(1px);
-}
-.lp-footer .lp-fcol button {
-  padding: 0;
-}
+
 .lp-footer-bar {
   border-top: 1px solid rgba(255,255,255,0.1);
   padding: 19px 0;
   font-size: 12.5px;
-  letter-spacing: 0.01em;
   color: rgba(255,255,255,0.42);
 }
 
@@ -2083,14 +2060,10 @@
   .lp-cta { padding: 96px 0; }
 
   /* Footer */
-  .lp-footer-in   { gap: 36px; grid-template-columns: minmax(260px, 1fr) minmax(0, 1.6fr); }
-  .lp-footer-cols { grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 28px; }
-  .lp-fcol-services,
-  .lp-fcol-contact,
-  .lp-fcol-location,
-  .lp-fcol-social,
-  .lp-fcol-access { min-width: 0; }
-  .lp-fcol-location { grid-column: span 2; }
+  .lp-footer-in   { gap: 36px; grid-template-columns: minmax(250px, 1fr) minmax(0, 1.65fr); }
+  .lp-footer-cols { grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 26px; }
+  .lp-footer-cols .lp-fcol:nth-child(3) { grid-column: span 2; }
+  .lp-footer-cols .lp-fcol:nth-child(2) a { white-space: normal; }
 }
 
 /* ── Tablet  ≤ 768px ───────────────────────────────── */
@@ -2137,14 +2110,11 @@
 
   /* Footer */
   .lp-footer      { padding: 48px 0 0; }
-  .lp-footer-in   { grid-template-columns: 1fr; gap: 32px; padding-bottom: 40px; }
+  .lp-footer-in   { grid-template-columns: 1fr; gap: 30px; padding-bottom: 40px; }
   .lp-footer-brand { min-width: unset; }
-  .lp-footer-cols { grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: 24px; }
+  .lp-footer-cols { grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: 22px; }
+  .lp-footer-cols .lp-fcol:nth-child(3) { grid-column: span 2; }
   .lp-fcol        { min-width: 0; }
-  .lp-fcol-location { grid-column: span 2; }
-  .lp-fcol-location a,
-  .lp-fcol-location span { max-width: 100%; }
-  .lp-fcol-contact a { white-space: normal; }
 
   /* Modal */
   .lp-overlay    { padding: 16px; }
@@ -2220,9 +2190,11 @@
   .lp-footer      { padding: 40px 0 0; }
   .lp-footer-in   { gap: 24px; padding-bottom: 28px; }
   .lp-footer-cols { grid-template-columns: 1fr; gap: 18px; }
-  .lp-fcol-location { grid-column: auto; }
+  .lp-footer-cols .lp-fcol:nth-child(3) { grid-column: auto; }
   .lp-fcol        { min-width: unset; }
-  .lp-footer-brand p { font-size: 13px; }
+  .lp-footer-cols .lp-fcol:nth-child(3) a,
+  .lp-footer-cols .lp-fcol:nth-child(3) span { max-width: 100%; }
+  .lp-footer-brand p { font-size: 12.5px; }
   .lp-footer-bar  { font-size: 11.5px; }
 
   /* Modal — bottom sheet */
