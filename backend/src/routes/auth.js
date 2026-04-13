@@ -104,6 +104,7 @@ router.post(
         `SELECT id, email, password_salt, password_verifier, password_verifier_iters
          FROM users
          WHERE LOWER(email) = LOWER($1)
+           AND is_active = TRUE
          LIMIT 1`,
         [email],
       )
@@ -174,6 +175,7 @@ router.post(
        FROM users u
        JOIN roles r ON r.id = u.role_id
        WHERE LOWER(u.email) = LOWER($1)
+         AND u.is_active = TRUE
        LIMIT 1`,
       [email],
     )
@@ -235,7 +237,8 @@ router.post(
                   r.name AS role
            FROM users u
            JOIN roles r ON r.id = u.role_id
-           WHERE u.email = $1`,
+           WHERE u.email = $1
+             AND u.is_active = TRUE`,
           [email],
         )
       } catch {
@@ -247,7 +250,8 @@ router.post(
         `SELECT u.id, u.full_name, u.email, u.password_hash, r.name AS role
          FROM users u
          JOIN roles r ON r.id = u.role_id
-         WHERE u.email = $1`,
+         WHERE u.email = $1
+           AND u.is_active = TRUE`,
         [email],
       )
     }

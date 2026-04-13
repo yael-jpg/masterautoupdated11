@@ -259,26 +259,42 @@ router.delete(
     }
     const target = targetRows[0]
 
-    // Prevent deleting the last SuperAdmin
+    // Prevent deleting the last active SuperAdmin
     if (target.role === 'SuperAdmin') {
       const { rows: superAdmins } = await db.query(
         `SELECT COUNT(*)::int AS cnt FROM users u
          JOIN roles r ON r.id = u.role_id
-         WHERE r.name = 'SuperAdmin'`,
+         WHERE r.name = 'SuperAdmin' AND u.is_active = TRUE`,
       )
       if (superAdmins[0].cnt <= 1) {
         return res.status(400).json({ message: 'Cannot delete the last SuperAdmin account.' })
       }
     }
 
-    await db.query('DELETE FROM users WHERE id = $1', [targetId])
+    let deleteMode = 'hard'
+    try {
+      await db.query('DELETE FROM users WHERE id = $1', [targetId])
+    } catch (err) {
+      // FK-linked users cannot be hard-deleted; deactivate/anonymize instead.
+      if (err?.code !== '23503') throw err
+
+      deleteMode = 'soft'
+      const archivedEmail = `deleted+${targetId}+${Date.now()}@deleted.local`
+      await db.query(
+        `UPDATE users
+         SET is_active = FALSE,
+             email = $1
+         WHERE id = $2`,
+        [archivedEmail, targetId],
+      )
+    }
 
     await writeAuditLog({
       userId: requesterId,
       action: 'DELETE_USER',
       entity: 'users',
       entityId: targetId,
-      meta: { deletedEmail: target.email, deletedRole: target.role },
+      meta: { deletedEmail: target.email, deletedRole: target.role, mode: deleteMode },
     })
 
     res.status(204).send()
