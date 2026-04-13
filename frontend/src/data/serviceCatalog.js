@@ -63,6 +63,19 @@ export const SERVICE_CATALOG = [
     },
   },
   {
+    code: 'ppf-full',
+    name: 'PPF Full Body',
+    group: 'PPF Services',
+    sizePrices: {
+      'x-small': 95000,
+      small: 95000,
+      medium: 95000,
+      large: 95000,
+      'x-large': 95000,
+      'xx-large': 95000,
+    },
+  },
+  {
     code: 'wash-basic',
     name: 'Car Wash Basic',
     group: 'Car Wash Services',
