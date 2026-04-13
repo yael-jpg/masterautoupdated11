@@ -85,11 +85,43 @@ function ServiceGroup({ baseName, variants, description, materialsNotes, onBook 
     (a, b) => SIZE_ORDER.indexOf(a.size ?? '') - SIZE_ORDER.indexOf(b.size ?? ''),
   )
   const hasSizes = sorted.some((v) => v.size)
-  const sizeLabels = hasSizes
-    ? Array.from(new Set(sorted.map((v) => v.size).filter(Boolean)))
-    : DEFAULT_SERVICE_SIZES
-  const minPrice = Math.min(...sorted.map((v) => Number(v.base_price)))
-  const maxPrice = Math.max(...sorted.map((v) => Number(v.base_price)))
+  const baseFallback = Number(sorted[0]?.base_price || 0)
+
+  const sizeCardVariants = (() => {
+    const bySize = new Map()
+    sorted.forEach((v) => {
+      if (v.size) bySize.set(v.size, v)
+    })
+
+    if (bySize.size === 0) {
+      return DEFAULT_SERVICE_SIZES.map((sizeLabel) => ({
+        ...sorted[0],
+        size: sizeLabel,
+        base_price: baseFallback,
+        isFallback: true,
+      }))
+    }
+
+    const merged = []
+    DEFAULT_SERVICE_SIZES.forEach((sizeLabel) => {
+      const found = bySize.get(sizeLabel)
+      if (found) {
+        merged.push({ ...found, isFallback: false })
+      } else {
+        merged.push({
+          ...sorted[0],
+          size: sizeLabel,
+          base_price: baseFallback,
+          isFallback: true,
+        })
+      }
+    })
+    return merged
+  })()
+
+  const sizeLabels = sizeCardVariants.map((v) => v.size).filter(Boolean)
+  const minPrice = Math.min(...sizeCardVariants.map((v) => Number(v.base_price)))
+  const maxPrice = Math.max(...sizeCardVariants.map((v) => Number(v.base_price)))
   const priceStr =
     minPrice === maxPrice
       ? `₱${minPrice.toLocaleString()}`
@@ -161,46 +193,33 @@ function ServiceGroup({ baseName, variants, description, materialsNotes, onBook 
           className="portal-svc-group-body"
           onClick={(e) => e.stopPropagation()}
         >
-          {hasSizes ? (
-            <div className="portal-svc-size-grid">
-              {sorted.map((v) => (
-                <div
-                  key={v.id}
-                  onClick={() => onBook && onBook(String(v.id))}
-                  className="portal-svc-size-card"
-                >
-                  <div className="portal-svc-size-lbl">
-                    {v.size}
-                  </div>
-                  <div className="portal-svc-size-price">
-                    ₱{Number(v.base_price).toLocaleString()}
-                  </div>
-                  {v.default_duration_minutes && (
-                    <div className="portal-svc-size-dur">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                      </svg>
-                      {durLabel(v.default_duration_minutes)}
-                    </div>
-                  )}
+          <div className="portal-svc-size-grid">
+            {sizeCardVariants.map((v, idx) => (
+              <div
+                key={`${v.id}-${v.size}-${idx}`}
+                onClick={() => onBook && onBook(String(v.id))}
+                className="portal-svc-size-card"
+              >
+                <div className="portal-svc-size-lbl">
+                  {v.size}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="portal-svc-single">
-              <div className="portal-svc-single-price">
-                ₱{Number(sorted[0]?.base_price).toLocaleString()}
+                <div className="portal-svc-size-price">
+                  ₱{Number(v.base_price).toLocaleString()}
+                </div>
+                {v.default_duration_minutes && (
+                  <div className="portal-svc-size-dur">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    {durLabel(v.default_duration_minutes)}
+                  </div>
+                )}
+                {v.isFallback && hasSizes && (
+                  <div className="portal-svc-size-dur">Fallback price</div>
+                )}
               </div>
-              {sorted[0]?.default_duration_minutes && (
-                <span className="portal-svc-single-dur">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                  </svg>
-                  {durLabel(sorted[0].default_duration_minutes)}
-                </span>
-              )}
-            </div>
-          )}
+            ))}
+          </div>
 
           {getServiceProcess(baseName)}
 
