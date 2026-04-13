@@ -1789,7 +1789,7 @@
 }
 .lp-footer-cols {
   display: grid;
-  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  grid-template-columns: 1.1fr 1.1fr 1.45fr 0.95fr 0.95fr;
   gap: 28px 36px;
 }
 .lp-fcol {
@@ -1797,6 +1797,23 @@
   flex-direction: column;
   gap: 11px;
   min-width: 0;
+}
+
+.lp-fcol-services {
+  min-width: 170px;
+}
+
+.lp-fcol-contact {
+  min-width: 220px;
+}
+
+.lp-fcol-location {
+  min-width: 290px;
+}
+
+.lp-fcol-social,
+.lp-fcol-access {
+  min-width: 140px;
 }
 .lp-fcol h4 {
   font-size: 11.5px;
@@ -1809,11 +1826,20 @@
 .lp-fcol a, .lp-fcol button, .lp-fcol span {
   font-size: 15px;
   color: rgba(255,255,255,0.86);
-  line-height: 1.35;
+  line-height: 1.38;
   text-align: left;
   cursor: pointer;
   font-family: inherit;
   transition: color var(--t), opacity var(--t), transform var(--t);
+}
+
+.lp-fcol-location a,
+.lp-fcol-location span {
+  max-width: 34ch;
+}
+
+.lp-fcol-contact a {
+  white-space: nowrap;
 }
 .lp-fcol span {
   color: rgba(255,255,255,0.56);
@@ -2058,7 +2084,13 @@
 
   /* Footer */
   .lp-footer-in   { gap: 36px; grid-template-columns: minmax(260px, 1fr) minmax(0, 1.6fr); }
-  .lp-footer-cols { grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 28px; }
+  .lp-footer-cols { grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 28px; }
+  .lp-fcol-services,
+  .lp-fcol-contact,
+  .lp-fcol-location,
+  .lp-fcol-social,
+  .lp-fcol-access { min-width: 0; }
+  .lp-fcol-location { grid-column: span 2; }
 }
 
 /* ── Tablet  ≤ 768px ───────────────────────────────── */
@@ -2109,6 +2141,10 @@
   .lp-footer-brand { min-width: unset; }
   .lp-footer-cols { grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: 24px; }
   .lp-fcol        { min-width: 0; }
+  .lp-fcol-location { grid-column: span 2; }
+  .lp-fcol-location a,
+  .lp-fcol-location span { max-width: 100%; }
+  .lp-fcol-contact a { white-space: normal; }
 
   /* Modal */
   .lp-overlay    { padding: 16px; }
@@ -2184,6 +2220,7 @@
   .lp-footer      { padding: 40px 0 0; }
   .lp-footer-in   { gap: 24px; padding-bottom: 28px; }
   .lp-footer-cols { grid-template-columns: 1fr; gap: 18px; }
+  .lp-fcol-location { grid-column: auto; }
   .lp-fcol        { min-width: unset; }
   .lp-footer-brand p { font-size: 13px; }
   .lp-footer-bar  { font-size: 11.5px; }
