@@ -188,6 +188,26 @@ function safeJsonArray(value, fallback = []) {
   return fallback
 }
 
+function parseMaybeJson(value) {
+  if (value == null) return value
+  if (typeof value !== 'string') return value
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
+function normalizeServiceCode(raw) {
+  return String(raw || '').trim().replace(/^CAT-/i, '').toLowerCase()
+}
+
+function normalizeServiceBaseName(raw) {
+  const text = String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ')
+  const idx = text.lastIndexOf(' - ')
+  return idx > -1 ? text.slice(0, idx).trim() : text
+}
+
 function fillTemplate(template, context = {}) {
   let text = String(template || '')
   Object.entries(context).forEach(([k, v]) => {
@@ -355,11 +375,6 @@ async function nextQuotationNo(client, branchCode = 'BR') {
 router.get(
   '/services',
   asyncHandler(async (_req, res) => {
-    const cached = getPublicCache('public:services')
-    if (cached) {
-      return res.json(cached)
-    }
-
     // 1. Fetch base services from DB
     const { rows: baseRows } = await db.query(
       `SELECT id, code, name, category, base_price, description, materials_notes
@@ -368,8 +383,14 @@ router.get(
     )
 
     // 2. Fetch overrides & custom services from configuration
-    const overrides = await ConfigurationService.get('quotations', 'service_name_overrides')
-    const customSvcs = await ConfigurationService.get('quotations', 'custom_services')
+    const overrides = parseMaybeJson(await ConfigurationService.get('quotations', 'service_name_overrides'))
+    const customSvcs = parseMaybeJson(await ConfigurationService.get('quotations', 'custom_services'))
+    const deletedServiceCodes = parseMaybeJson(await ConfigurationService.get('quotations', 'deleted_service_codes'))
+    const deletedCodeSet = new Set(
+      Array.isArray(deletedServiceCodes)
+        ? deletedServiceCodes.map((c) => normalizeServiceCode(c)).filter(Boolean)
+        : [],
+    )
 
     // 2b. Fetch active package offerings for guest quotation service list
     const [subscriptionPkgRows, pmsPkgRows] = await Promise.all([
@@ -411,13 +432,26 @@ router.get(
       const catCode = String(s.code || '').replace(/^CAT-/i, '').toLowerCase()
       const overName = ovMap[catCode] || ovMap[s.code]
       return overName ? { ...s, name: overName } : s
+    }).filter((s) => {
+      const code = normalizeServiceCode(s.code)
+      const baseName = normalizeServiceBaseName(s.name)
+      if (deletedCodeSet.has(code)) return false
+      if (baseName === 'ppf full body') return false
+      return true
     })
 
     // 4. Merge custom services (if active)
     if (Array.isArray(customSvcs)) {
       customSvcs.forEach((cs) => {
         if (cs.enabled !== false) {
-          services.push(...expandCustomServiceRows(cs))
+          const rows = expandCustomServiceRows(cs).filter((row) => {
+            const code = normalizeServiceCode(row.code)
+            const baseName = normalizeServiceBaseName(row.name)
+            if (deletedCodeSet.has(code)) return false
+            if (baseName === 'ppf full body') return false
+            return true
+          })
+          services.push(...rows)
         }
       })
     }
@@ -464,7 +498,6 @@ router.get(
       return 0
     })
 
-    setPublicCache('public:services', services)
     return res.json(services)
   }),
 )
