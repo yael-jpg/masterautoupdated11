@@ -126,6 +126,21 @@ const CATEGORY_ALIASES = {
 }
 
 const BLOCKED_SERVICE_CODES = new Set(['ppf-full'])
+const BLOCKED_SERVICE_BASE_NAMES = new Set(['ppf full body'])
+
+function normalizeServiceBaseName(raw) {
+  const text = String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ')
+  const idx = text.lastIndexOf(' - ')
+  return idx > -1 ? text.slice(0, idx).trim() : text
+}
+
+function isBlockedService(serviceCode, serviceName) {
+  const code = normalizeServiceCode(serviceCode)
+  if (code && BLOCKED_SERVICE_CODES.has(code)) return true
+
+  const baseName = normalizeServiceBaseName(serviceName)
+  return baseName && BLOCKED_SERVICE_BASE_NAMES.has(baseName)
+}
 
 function normalizeServiceCode(raw) {
   return String(raw || '').trim().replace(/^CAT-/i, '').toLowerCase()
@@ -2028,10 +2043,11 @@ router.get(
 
     baseRows.forEach((s) => {
       const catCode = String(s.code || '').replace(/^CAT-/i, '').toLowerCase()
-      if (BLOCKED_SERVICE_CODES.has(catCode)) return
+      if (isBlockedService(catCode, s.name)) return
 
       const overName = ovMap[catCode] || ovMap[s.code]
       const resolvedName = overName || s.name
+      if (isBlockedService(catCode, resolvedName)) return
       const normalizedCategory = normalizeCategoryName(s.category)
       const code = normalizeServiceCode(s.code)
       const entry = priceMap?.[code]
@@ -2070,14 +2086,14 @@ router.get(
     if (Array.isArray(customSvcs)) {
       customSvcs.forEach((cs) => {
         const customCode = normalizeServiceCode(cs?.code)
-        if (!customCode || BLOCKED_SERVICE_CODES.has(customCode)) return
+        if (!customCode || isBlockedService(customCode, cs?.name)) return
 
         if (cs.enabled !== false) {
           const rows = expandCustomServiceRows(cs).map((row) => ({
             ...row,
             category: normalizeCategoryName(row.category),
           }))
-          services.push(...rows)
+          services.push(...rows.filter((row) => !isBlockedService(row.code, row.name)))
         }
       })
     }
@@ -2085,7 +2101,7 @@ router.get(
     services = services.map((s) => {
       const overPrice = resolveServiceOverridePrice(priceMap, s.code, s.name)
       return overPrice !== null ? { ...s, base_price: overPrice } : s
-    })
+    }).filter((s) => !isBlockedService(s.code, s.name))
 
     // 5. Sort by category (ASC), then name (ASC)
     services.sort((a, b) => {
