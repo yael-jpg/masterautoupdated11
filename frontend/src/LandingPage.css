@@ -1360,36 +1360,86 @@
 /*  WHY CHOOSE US  */
 .lp-why {
   background: var(--black);
-  padding: 96px 0 80px;
+  padding: 88px 0 92px;
   border-top: 1px solid var(--border);
 }
 
 .lp-why-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
 }
 
 .lp-why-item {
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,0.03);
-  border-radius: 6px;
-  padding: 22px 20px;
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: linear-gradient(180deg, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0.02) 100%);
+  border-radius: 12px;
+  padding: 22px 20px 20px;
+  min-height: 190px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+  transition: border-color 220ms ease, transform 220ms ease, box-shadow 220ms ease;
+}
+
+.lp-why-item::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.38), rgba(255,255,255,0.06));
+}
+
+.lp-why-item:hover {
+  border-color: rgba(255,255,255,0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px rgba(0,0,0,0.36);
 }
 
 .lp-why-item h3 {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   color: var(--white);
-  margin-bottom: 10px;
+  margin-bottom: 0;
 }
 
 .lp-why-item p {
-  font-size: 13.5px;
-  color: rgba(255,255,255,0.68);
-  line-height: 1.65;
+  font-size: 15px;
+  color: rgba(255,255,255,0.72);
+  line-height: 1.6;
+}
+
+@media (max-width: 1200px) {
+  .lp-why-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .lp-why {
+    padding: 70px 0 78px;
+  }
+
+  .lp-why-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .lp-why-item {
+    min-height: 0;
+    padding: 18px 16px;
+  }
+
+  .lp-why-item p {
+    font-size: 14px;
+    line-height: 1.58;
+  }
 }
 
 /* ── Tablet (≤900px) — still horizontal, smaller ───────────── */
