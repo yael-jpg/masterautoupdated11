@@ -10,16 +10,42 @@ router.get(
     // Daily & monthly totals from quotations (approved/active records)
     const daily = await db.query(
       `SELECT COALESCE(SUM(total_amount), 0) AS total
-       FROM quotations
-       WHERE created_at::date = CURRENT_DATE
-         AND status NOT IN ('Not Approved', 'Cancelled')`,
+       FROM quotations q
+       WHERE q.created_at::date = CURRENT_DATE
+         AND q.status NOT IN ('Not Approved', 'Cancelled')
+         AND NOT EXISTS (
+           SELECT 1
+           FROM appointments a
+           JOIN sales s ON s.id = a.sale_id
+           WHERE a.quotation_id = q.id
+             AND COALESCE(s.workflow_status, '') = 'Voided'
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM sales s
+           WHERE COALESCE(s.workflow_status, '') = 'Voided'
+             AND UPPER(COALESCE(s.reference_no, '')) = UPPER(COALESCE(q.quotation_no, ''))
+         )`,
     )
 
     const monthly = await db.query(
       `SELECT COALESCE(SUM(total_amount), 0) AS total
-       FROM quotations
-       WHERE date_trunc('month', created_at) = date_trunc('month', CURRENT_DATE)
-         AND status NOT IN ('Not Approved', 'Cancelled')`,
+       FROM quotations q
+       WHERE date_trunc('month', q.created_at) = date_trunc('month', CURRENT_DATE)
+         AND q.status NOT IN ('Not Approved', 'Cancelled')
+         AND NOT EXISTS (
+           SELECT 1
+           FROM appointments a
+           JOIN sales s ON s.id = a.sale_id
+           WHERE a.quotation_id = q.id
+             AND COALESCE(s.workflow_status, '') = 'Voided'
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM sales s
+           WHERE COALESCE(s.workflow_status, '') = 'Voided'
+             AND UPPER(COALESCE(s.reference_no, '')) = UPPER(COALESCE(q.quotation_no, ''))
+         )`,
     )
 
     const byService = await db.query(
@@ -29,18 +55,44 @@ router.get(
        FROM quotations q,
             jsonb_array_elements(q.services) AS svc
         WHERE q.status NOT IN ('Not Approved', 'Cancelled')
+         AND NOT EXISTS (
+           SELECT 1
+           FROM appointments a
+           JOIN sales s ON s.id = a.sale_id
+           WHERE a.quotation_id = q.id
+             AND COALESCE(s.workflow_status, '') = 'Voided'
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM sales s
+           WHERE COALESCE(s.workflow_status, '') = 'Voided'
+             AND UPPER(COALESCE(s.reference_no, '')) = UPPER(COALESCE(q.quotation_no, ''))
+         )
        GROUP BY svc->>'name'
        ORDER BY total DESC
        LIMIT 8`,
     )
 
     const trend = await db.query(
-      `SELECT to_char(created_at, 'Mon DD') AS date, SUM(total_amount) AS total
-       FROM quotations
-       WHERE created_at > CURRENT_DATE - INTERVAL '7 days'
-         AND status NOT IN ('Not Approved', 'Cancelled')
-       GROUP BY to_char(created_at, 'Mon DD'), created_at::date
-       ORDER BY created_at::date ASC`,
+      `SELECT to_char(q.created_at, 'Mon DD') AS date, SUM(q.total_amount) AS total
+       FROM quotations q
+       WHERE q.created_at > CURRENT_DATE - INTERVAL '7 days'
+         AND q.status NOT IN ('Not Approved', 'Cancelled')
+         AND NOT EXISTS (
+           SELECT 1
+           FROM appointments a
+           JOIN sales s ON s.id = a.sale_id
+           WHERE a.quotation_id = q.id
+             AND COALESCE(s.workflow_status, '') = 'Voided'
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM sales s
+           WHERE COALESCE(s.workflow_status, '') = 'Voided'
+             AND UPPER(COALESCE(s.reference_no, '')) = UPPER(COALESCE(q.quotation_no, ''))
+         )
+       GROUP BY to_char(q.created_at, 'Mon DD'), q.created_at::date
+       ORDER BY q.created_at::date ASC`,
     )
 
     let outstanding
@@ -49,7 +101,20 @@ router.get(
         `SELECT COALESCE(SUM(outstanding_balance), 0) AS outstanding
         FROM quotation_payment_summary qps
         JOIN quotations q ON q.id = qps.quotation_id
-        WHERE q.status NOT IN ('Not Approved', 'Cancelled')`,
+        WHERE q.status NOT IN ('Not Approved', 'Cancelled')
+          AND NOT EXISTS (
+            SELECT 1
+            FROM appointments a
+            JOIN sales s ON s.id = a.sale_id
+            WHERE a.quotation_id = q.id
+              AND COALESCE(s.workflow_status, '') = 'Voided'
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM sales s
+            WHERE COALESCE(s.workflow_status, '') = 'Voided'
+              AND UPPER(COALESCE(s.reference_no, '')) = UPPER(COALESCE(q.quotation_no, ''))
+          )`,
       )
     } catch (err) {
       // Backward-compat: some deployments may not have migration 011 applied yet.
@@ -64,7 +129,20 @@ router.get(
            WHERE quotation_id IS NOT NULL
            GROUP BY quotation_id
          ) p ON p.quotation_id = q.id
-         WHERE q.status NOT IN ('Not Approved', 'Cancelled')`,
+         WHERE q.status NOT IN ('Not Approved', 'Cancelled')
+           AND NOT EXISTS (
+             SELECT 1
+             FROM appointments a
+             JOIN sales s ON s.id = a.sale_id
+             WHERE a.quotation_id = q.id
+               AND COALESCE(s.workflow_status, '') = 'Voided'
+           )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM sales s
+             WHERE COALESCE(s.workflow_status, '') = 'Voided'
+               AND UPPER(COALESCE(s.reference_no, '')) = UPPER(COALESCE(q.quotation_no, ''))
+           )`,
       )
     }
 
