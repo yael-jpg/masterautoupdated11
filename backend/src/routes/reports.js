@@ -63,7 +63,7 @@ router.get(
            FROM payments
            WHERE quotation_id IS NOT NULL
            GROUP BY quotation_id
-         ) p ON p.quotation_id = q.id`,
+         ) p ON p.quotation_id = q.id
          WHERE q.status NOT IN ('Not Approved', 'Cancelled')`,
       )
     }
