@@ -458,21 +458,23 @@ router.get(
   '/reports/summary',
   asyncHandler(async (req, res) => {
     const period = String(req.query.period || 'month').toLowerCase()
+    const salesBaseFilter = `COALESCE(s.workflow_status, '') <> 'Voided'`
+    const quotBaseFilter = `COALESCE(q.status, '') NOT IN ('Not Approved', 'Cancelled')`
 
     let salesDateFilter = ''
     let quotDateFilter = ''
     switch (period) {
       case 'day':
-        salesDateFilter = `WHERE DATE(s.created_at) = CURRENT_DATE`
-        quotDateFilter  = `WHERE DATE(q.created_at) = CURRENT_DATE`
+        salesDateFilter = `WHERE ${salesBaseFilter} AND DATE(s.created_at) = CURRENT_DATE`
+        quotDateFilter  = `WHERE ${quotBaseFilter} AND DATE(q.created_at) = CURRENT_DATE`
         break
       case 'week':
-        salesDateFilter = `WHERE s.created_at >= CURRENT_DATE - INTERVAL '7 days'`
-        quotDateFilter  = `WHERE q.created_at >= CURRENT_DATE - INTERVAL '7 days'`
+        salesDateFilter = `WHERE ${salesBaseFilter} AND s.created_at >= CURRENT_DATE - INTERVAL '7 days'`
+        quotDateFilter  = `WHERE ${quotBaseFilter} AND q.created_at >= CURRENT_DATE - INTERVAL '7 days'`
         break
       default:
-        salesDateFilter = `WHERE DATE_TRUNC('month', s.created_at) = DATE_TRUNC('month', CURRENT_DATE)`
-        quotDateFilter  = `WHERE DATE_TRUNC('month', q.created_at) = DATE_TRUNC('month', CURRENT_DATE)`
+        salesDateFilter = `WHERE ${salesBaseFilter} AND DATE_TRUNC('month', s.created_at) = DATE_TRUNC('month', CURRENT_DATE)`
+        quotDateFilter  = `WHERE ${quotBaseFilter} AND DATE_TRUNC('month', q.created_at) = DATE_TRUNC('month', CURRENT_DATE)`
     }
 
     const { rows } = await db.query(
@@ -543,9 +545,12 @@ router.get(
     let values = []
 
     if (dateFrom && dateTo) {
-      salesFilter = `WHERE s.created_at >= $1::date AND s.created_at < ($2::date + INTERVAL '1 day')`
-      quotFilter  = `WHERE q.created_at >= $1::date AND q.created_at < ($2::date + INTERVAL '1 day')`
+      salesFilter = `WHERE COALESCE(s.workflow_status, '') <> 'Voided' AND s.created_at >= $1::date AND s.created_at < ($2::date + INTERVAL '1 day')`
+      quotFilter  = `WHERE COALESCE(q.status, '') NOT IN ('Not Approved', 'Cancelled') AND q.created_at >= $1::date AND q.created_at < ($2::date + INTERVAL '1 day')`
       values = [dateFrom, dateTo]
+    } else {
+      salesFilter = `WHERE COALESCE(s.workflow_status, '') <> 'Voided'`
+      quotFilter  = `WHERE COALESCE(q.status, '') NOT IN ('Not Approved', 'Cancelled')`
     }
 
     const { rows } = await db.query(
@@ -595,9 +600,12 @@ router.get(
     let values = []
 
     if (dateFrom && dateTo) {
-      salesFilter = `WHERE s.created_at >= $1::date AND s.created_at < ($2::date + INTERVAL '1 day')`
-      quotFilter  = `WHERE q.created_at >= $1::date AND q.created_at < ($2::date + INTERVAL '1 day')`
+      salesFilter = `WHERE COALESCE(s.workflow_status, '') <> 'Voided' AND s.created_at >= $1::date AND s.created_at < ($2::date + INTERVAL '1 day')`
+      quotFilter  = `WHERE COALESCE(q.status, '') NOT IN ('Not Approved', 'Cancelled') AND q.created_at >= $1::date AND q.created_at < ($2::date + INTERVAL '1 day')`
       values = [dateFrom, dateTo]
+    } else {
+      salesFilter = `WHERE COALESCE(s.workflow_status, '') <> 'Voided'`
+      quotFilter  = `WHERE COALESCE(q.status, '') NOT IN ('Not Approved', 'Cancelled')`
     }
 
     const { rows } = await db.query(

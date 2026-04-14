@@ -885,6 +885,16 @@ router.post(
         )
       }
 
+      // For refund resolution, mark linked sale/invoice as voided so it is excluded from sales totals.
+      if (action === 'refund' && appt.sale_id) {
+        await client.query(
+          `UPDATE sales
+             SET workflow_status = 'Voided'
+           WHERE id = $1`,
+          [appt.sale_id],
+        )
+      }
+
       // 3. Audit logs
       await client.query(
         `INSERT INTO activity_logs (user_id, action, entity, entity_id, notes, created_at)
@@ -1082,6 +1092,16 @@ router.post(
              SET status = 'Cancelled'
            WHERE id = $1 AND status NOT IN ('Cancelled', 'Completed')`,
           [appt.quotation_id],
+        )
+      }
+
+      // For refund approval, mark linked sale/invoice as voided so it is excluded from sales totals.
+      if (paymentAction === 'refund' && appt.sale_id) {
+        await client.query(
+          `UPDATE sales
+             SET workflow_status = 'Voided'
+           WHERE id = $1`,
+          [appt.sale_id],
         )
       }
 

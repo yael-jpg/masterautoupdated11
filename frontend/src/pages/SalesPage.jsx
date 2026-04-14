@@ -62,11 +62,13 @@ export function SalesPage({ token }) {
         const arr = typeof q.services === 'string' ? JSON.parse(q.services) : (q.services || [])
         allServices = arr.map(s => s.name || s.service_name || s.label || '').filter(Boolean).join(' | ') || '-'
       } catch (_) {}
+      const statusRaw = String(q.status || '')
+      const mappedStatus = statusRaw === 'Cancelled' ? 'Voided' : statusRaw
       return {
         ...q,
         reference_no: q.quotation_no,
         job_order_no: q.job_order_no,
-        workflow_status: q.status,
+        workflow_status: mappedStatus,
         all_services: allServices,
         doc_type: 'Quotation',
         is_locked: false,
@@ -163,26 +165,30 @@ export function SalesPage({ token }) {
       const all      = salesResult.data || []
       const allQuots = quotResult.data  || []
 
+      const includedSales = all.filter((x) => String(x.workflow_status || '') !== 'Voided')
+      const includedQuots = allQuots.filter((x) => !['Cancelled', 'Not Approved'].includes(String(x.status || '')))
+
       // Sales totals (legacy)
-      const salesTotal   = salesResult.pagination?.total || all.length
-      const salesRevenue = all.reduce((s, x) => s + Number(x.total_amount || 0), 0)
-      const salesOut     = all.reduce((s, x) => s + Number(x.outstanding_balance ?? 0), 0)
+      const salesTotal   = includedSales.length
+      const salesRevenue = includedSales.reduce((s, x) => s + Number(x.total_amount || 0), 0)
+      const salesOut     = includedSales.reduce((s, x) => s + Number(x.outstanding_balance ?? 0), 0)
 
       // Quotation totals (new flow)
-      const quotTotal    = quotResult.pagination?.total || allQuots.length
-      const quotRevenue  = allQuots.reduce((s, x) => s + Number(x.total_amount || 0), 0)
-      const quotOut      = allQuots.reduce((s, x) => s + Number(x.outstanding_balance ?? 0), 0)
+      const quotTotal    = includedQuots.length
+      const quotRevenue  = includedQuots.reduce((s, x) => s + Number(x.total_amount || 0), 0)
+      const quotOut      = includedQuots.reduce((s, x) => s + Number(x.outstanding_balance ?? 0), 0)
 
       const total          = salesTotal + quotTotal
       const totalRevenue   = salesRevenue + quotRevenue
       const outstanding    = salesOut + quotOut
-      const unpaidCount    = all.filter(x => (x.payment_status || 'UNPAID') === 'UNPAID').length
-                           + allQuots.filter(x => (x.payment_status || 'UNPAID') === 'UNPAID').length
-      const partialCount   = all.filter(x => (x.payment_status || '') === 'PARTIAL').length
-                           + allQuots.filter(x => (x.payment_status || '') === 'PARTIALLY_PAID').length
-      const paidCount      = all.filter(x => (x.payment_status || '') === 'PAID').length
-                           + allQuots.filter(x => (x.payment_status || '') === 'PAID').length
+      const unpaidCount    = includedSales.filter(x => (x.payment_status || 'UNPAID') === 'UNPAID').length
+               + includedQuots.filter(x => (x.payment_status || 'UNPAID') === 'UNPAID').length
+      const partialCount   = includedSales.filter(x => (x.payment_status || '') === 'PARTIAL').length
+               + includedQuots.filter(x => (x.payment_status || '') === 'PARTIALLY_PAID').length
+      const paidCount      = includedSales.filter(x => (x.payment_status || '') === 'PAID').length
+               + includedQuots.filter(x => (x.payment_status || '') === 'PAID').length
       const voidedCount    = all.filter(x => x.workflow_status === 'Voided').length
+               + allQuots.filter(x => String(x.status || '') === 'Cancelled').length
       setStats({ total, totalRevenue, outstanding, unpaidCount, partialCount, paidCount, voidedCount })
     } catch (_) {}
   }
