@@ -3,8 +3,9 @@ const db = require('../config/db')
 const env = require('../config/env')
 const { asyncHandler } = require('../utils/asyncHandler')
 const { requireRole } = require('../middleware/auth')
+const ConfigurationService = require('../services/configurationService')
 const NotificationService = require('../services/notificationService')
-const { sendSubscriptionConfirmationEmail } = require('../services/mailer')
+const { sendSubscriptionConfirmationEmail, sendSubscriptionReminderEmail } = require('../services/mailer')
 const { emitDataChanged } = require('../realtime/hub')
 
 const router = express.Router()
@@ -13,6 +14,30 @@ let pricingSchemaReady = false
 let recordsSchemaReady = false
 let packageStatusTypeKnown = false
 let packageStatusIsBoolean = false
+let subscriptionEmailConfigReady = false
+
+async function ensureSubscriptionEmailConfigDefaults() {
+  if (subscriptionEmailConfigReady) return
+
+  await ConfigurationService.ensureDefaults([
+    {
+      category: 'subscription_email',
+      key: 'enabled',
+      value: 'true',
+      dataType: 'boolean',
+      description: 'Enable automatic subscription reminder emails.',
+    },
+    {
+      category: 'subscription_email',
+      key: 'subject',
+      value: '',
+      dataType: 'string',
+      description: 'Custom subject for subscription reminder emails. Supports {status}, {plate_number}, {package_name}, {end_date}.',
+    },
+  ]).catch(() => {})
+
+  subscriptionEmailConfigReady = true
+}
 
 async function ensureSubscriptionPricingSchema() {
   if (pricingSchemaReady) return
@@ -72,6 +97,22 @@ async function ensureSubscriptionRecordsSchema() {
 async function syncExpiredSubscriptions() {
   await db.query(
     `UPDATE subscriptions
+     SET status = 'Expiring Soon'
+     WHERE COALESCE(status, 'Active') = 'Active'
+       AND end_date IS NOT NULL
+       AND end_date >= CURRENT_TIMESTAMP
+       AND end_date <= (CURRENT_TIMESTAMP + INTERVAL '5 days')`,
+  )
+
+  await db.query(
+    `UPDATE subscriptions
+     SET status = 'Active'
+     WHERE status = 'Expiring Soon'
+       AND (end_date IS NULL OR end_date > (CURRENT_TIMESTAMP + INTERVAL '5 days'))`,
+  )
+
+  await db.query(
+    `UPDATE subscriptions
      SET status = 'Expired'
      WHERE COALESCE(status, 'Active') IN ('Active', 'Expiring Soon')
        AND end_date IS NOT NULL
@@ -79,35 +120,39 @@ async function syncExpiredSubscriptions() {
   )
 }
 
-async function notificationExists({ role, userId = null, subscriptionId, endDateKey }) {
+async function notificationExists({ role, userId = null, subscriptionId, endDateKey, notificationType }) {
   const { rows } = await db.query(
     `SELECT 1
      FROM notifications
      WHERE role = $1
        AND ((user_id IS NULL AND $2::int IS NULL) OR user_id = $2)
-       AND COALESCE(payload->>'type', '') = 'subscription-expiring-5-days'
-       AND COALESCE(payload->>'subscription_id', '') = $3
-       AND COALESCE(payload->>'end_date', '') = $4
+       AND COALESCE(payload->>'type', '') = $3
+       AND COALESCE(payload->>'subscription_id', '') = $4
+       AND COALESCE(payload->>'end_date', '') = $5
      LIMIT 1`,
-    [role, userId, String(subscriptionId), endDateKey],
+    [role, userId, notificationType, String(subscriptionId), endDateKey],
   )
   return rows.length > 0
 }
 
-async function notifyExpiringSubscriptions({ customerId = null } = {}) {
-  await NotificationService.ensureTable()
-
+async function notifyByWindow({
+  customerId = null,
+  where,
+  notificationType,
+  adminTitle,
+  adminMessage,
+  clientTitle,
+  clientMessage,
+  emailReminderType,
+  subscriptionEmailEnabled,
+  subscriptionEmailSubject,
+}) {
   const params = []
-  const where = [
-    "COALESCE(s.status, 'Active') IN ('Active', 'Expiring Soon')",
-    's.end_date IS NOT NULL',
-    's.end_date >= CURRENT_TIMESTAMP',
-    "s.end_date < (CURRENT_TIMESTAMP + INTERVAL '5 days')",
-  ]
+  const whereParts = Array.isArray(where) ? [...where] : []
 
   if (customerId) {
     params.push(customerId)
-    where.push(`s.customer_id = $${params.length}`)
+    whereParts.push(`s.customer_id = $${params.length}`)
   }
 
   const { rows } = await db.query(
@@ -116,13 +161,14 @@ async function notifyExpiringSubscriptions({ customerId = null } = {}) {
        s.customer_id,
        s.end_date,
        c.full_name AS customer_name,
+       c.email AS customer_email,
        COALESCE(sp.name, s.subscription_name, 'Subscription') AS package_name,
        COALESCE(v.plate_number, 'N/A') AS plate_number
      FROM subscriptions s
      JOIN customers c ON c.id = s.customer_id
      LEFT JOIN vehicles v ON v.id = s.vehicle_id
      LEFT JOIN subscription_packages sp ON sp.id = COALESCE(s.package_id, s.subscription_service_id)
-     WHERE ${where.join(' AND ')}`,
+     WHERE ${whereParts.join(' AND ')}`,
     params,
   )
 
@@ -134,7 +180,7 @@ async function notifyExpiringSubscriptions({ customerId = null } = {}) {
     const endDateKey = endDate ? endDate.toISOString().slice(0, 10) : 'unknown'
 
     const payload = {
-      type: 'subscription-expiring-5-days',
+      type: notificationType,
       subscription_id: row.id,
       customer_id: row.customer_id,
       package_name: row.package_name,
@@ -147,13 +193,14 @@ async function notifyExpiringSubscriptions({ customerId = null } = {}) {
       userId: null,
       subscriptionId: row.id,
       endDateKey,
+      notificationType,
     })
 
     if (!adminExists) {
       await NotificationService.create({
         role: 'admin',
-        title: 'Subscription Expiring Soon',
-        message: `${row.customer_name}'s subscription (${row.package_name}, ${row.plate_number}) expires on ${endDateText}.`,
+        title: adminTitle,
+        message: adminMessage({ row, endDateText }),
         payload,
       }).catch(() => {})
     }
@@ -163,18 +210,78 @@ async function notifyExpiringSubscriptions({ customerId = null } = {}) {
       userId: row.customer_id,
       subscriptionId: row.id,
       endDateKey,
+      notificationType,
     })
 
     if (!clientExists) {
       await NotificationService.create({
         role: 'client',
         userId: row.customer_id,
-        title: 'Subscription Reminder',
-        message: `Your subscription (${row.package_name}, ${row.plate_number}) will expire on ${endDateText}.`,
+        title: clientTitle,
+        message: clientMessage({ row, endDateText }),
         payload,
       }).catch(() => {})
+
+      if (subscriptionEmailEnabled) {
+        await sendSubscriptionReminderEmail({
+          to: row.customer_email,
+          customerName: row.customer_name,
+          packageName: row.package_name,
+          plateNumber: row.plate_number,
+          endDate,
+          reminderType: emailReminderType,
+          ctaUrl: env.portalUrl || undefined,
+          configSubject: subscriptionEmailSubject || undefined,
+        }).catch(() => {})
+      }
     }
   }
+}
+
+async function notifyExpiringSubscriptions({ customerId = null } = {}) {
+  await NotificationService.ensureTable()
+  await ensureSubscriptionEmailConfigDefaults()
+
+  const [cfgEnabled, cfgSubject] = await Promise.all([
+    ConfigurationService.get('subscription_email', 'enabled').catch(() => null),
+    ConfigurationService.get('subscription_email', 'subject').catch(() => null),
+  ])
+  const subscriptionEmailEnabled = String(cfgEnabled).toLowerCase() !== 'false'
+
+  await notifyByWindow({
+    customerId,
+    where: [
+      "COALESCE(s.status, 'Active') IN ('Active', 'Expiring Soon')",
+      's.end_date IS NOT NULL',
+      's.end_date >= CURRENT_TIMESTAMP',
+      "s.end_date <= (CURRENT_TIMESTAMP + INTERVAL '5 days')",
+    ],
+    notificationType: 'subscription-expiring-5-days',
+    adminTitle: 'Subscription Expiring Soon',
+    adminMessage: ({ row, endDateText }) => `${row.customer_name}'s subscription (${row.package_name}, ${row.plate_number}) expires on ${endDateText}.`,
+    clientTitle: 'Subscription Reminder',
+    clientMessage: ({ row, endDateText }) => `Your subscription (${row.package_name}, ${row.plate_number}) will expire on ${endDateText}.`,
+    emailReminderType: 'expiring',
+    subscriptionEmailEnabled,
+    subscriptionEmailSubject: cfgSubject,
+  })
+
+  await notifyByWindow({
+    customerId,
+    where: [
+      "COALESCE(s.status, 'Active') = 'Expired'",
+      's.end_date IS NOT NULL',
+      's.end_date < CURRENT_TIMESTAMP',
+    ],
+    notificationType: 'subscription-expired',
+    adminTitle: 'Subscription Expired',
+    adminMessage: ({ row, endDateText }) => `${row.customer_name}'s subscription (${row.package_name}, ${row.plate_number}) expired on ${endDateText}.`,
+    clientTitle: 'Subscription Expired',
+    clientMessage: ({ row, endDateText }) => `Your subscription (${row.package_name}, ${row.plate_number}) expired on ${endDateText}.`,
+    emailReminderType: 'expired',
+    subscriptionEmailEnabled,
+    subscriptionEmailSubject: cfgSubject,
+  })
 }
 
 function parseRequestPackageId(notes = '') {

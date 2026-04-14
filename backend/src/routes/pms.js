@@ -1,11 +1,45 @@
 const express = require('express')
 const db = require('../config/db')
+const env = require('../config/env')
 const { asyncHandler } = require('../utils/asyncHandler')
 const { requireRole } = require('../middleware/auth')
+const ConfigurationService = require('../services/configurationService')
 const NotificationService = require('../services/notificationService')
+const { sendPmsReminderEmail } = require('../services/mailer')
 const { emitDataChanged } = require('../realtime/hub')
 
 const router = express.Router()
+let pmsEmailConfigReady = false
+
+async function ensurePmsEmailConfigDefaults() {
+  if (pmsEmailConfigReady) return
+
+  await ConfigurationService.ensureDefaults([
+    {
+      category: 'pms_email',
+      key: 'enabled',
+      value: 'true',
+      dataType: 'boolean',
+      description: 'Enable automatic PMS reminder emails.',
+    },
+    {
+      category: 'pms_email',
+      key: 'subject',
+      value: '',
+      dataType: 'string',
+      description: 'Custom subject for PMS reminder emails. Supports {plate_number}, {package_name}, {kilometer_interval}.',
+    },
+    {
+      category: 'pms_email',
+      key: 'greeting',
+      value: '',
+      dataType: 'string',
+      description: 'Custom opening message for PMS reminder emails. Supports {plate_number}, {package_name}, {kilometer_interval}.',
+    },
+  ]).catch(() => {})
+
+  pmsEmailConfigReady = true
+}
 
 const PMS_TIER_LABEL_BY_KM = {
   5000: 'Basic PMS',
@@ -137,6 +171,177 @@ function normalizeStatus(value) {
   return 'Active'
 }
 
+async function pmsReminderExists({ role, userId = null, appointmentId, dueDateKey, reason }) {
+  const { rows } = await db.query(
+    `SELECT 1
+     FROM notifications
+     WHERE role = $1
+       AND ((user_id IS NULL AND $2::int IS NULL) OR user_id = $2)
+       AND COALESCE(payload->>'type', '') = 'pms-service-reminder'
+       AND COALESCE(payload->>'appointment_id', '') = $3
+       AND COALESCE(payload->>'due_date', '') = $4
+       AND COALESCE(payload->>'reason', '') = $5
+     LIMIT 1`,
+    [role, userId, String(appointmentId), dueDateKey, reason],
+  )
+  return rows.length > 0
+}
+
+async function notifyPmsServiceReminders({ customerId = null } = {}) {
+  await NotificationService.ensureTable()
+  await ensurePmsEmailConfigDefaults()
+
+  const [cfgEnabled, cfgSubject, cfgGreeting] = await Promise.all([
+    ConfigurationService.get('pms_email', 'enabled').catch(() => null),
+    ConfigurationService.get('pms_email', 'subject').catch(() => null),
+    ConfigurationService.get('pms_email', 'greeting').catch(() => null),
+  ])
+  const pmsEmailEnabled = String(cfgEnabled).toLowerCase() !== 'false'
+
+  const params = []
+  const where = [
+    "a.notes ILIKE '%[PORTAL PMS AVAIL REQUEST]%'",
+    "LOWER(COALESCE(a.status, '')) = 'completed'",
+  ]
+
+  if (customerId) {
+    params.push(customerId)
+    where.push(`a.customer_id = $${params.length}`)
+  }
+
+  const { rows } = await db.query(
+    `SELECT
+       a.id,
+       a.customer_id,
+       a.vehicle_id,
+       c.full_name AS customer_name,
+      c.email AS customer_email,
+       COALESCE(v.plate_number, 'N/A') AS plate_number,
+       COALESCE(v.odometer, 0) AS vehicle_odometer,
+       COALESCE(
+         sv.name,
+         NULLIF(BTRIM(SUBSTRING(a.notes FROM 'Package:\\s*([^\\n\\r]+)')), ''),
+         'PMS Service'
+       ) AS package_name,
+       COALESCE(pp.kilometer_interval, pp.odometer_interval, pp.mileage_interval, pp.interval_value) AS kilometer_interval,
+       vsr_last.odometer_reading AS last_service_odometer,
+       COALESCE(a.schedule_end, a.schedule_start, a.created_at) AS completed_at
+     FROM appointments a
+     JOIN customers c ON c.id = a.customer_id
+     LEFT JOIN vehicles v ON v.id = a.vehicle_id
+     LEFT JOIN services sv ON sv.id = a.service_id
+     LEFT JOIN LATERAL (
+       SELECT vsr.odometer_reading
+       FROM vehicle_service_records vsr
+       WHERE vsr.vehicle_id = a.vehicle_id
+         AND vsr.odometer_reading IS NOT NULL
+         AND vsr.service_date <= COALESCE(a.schedule_end, a.schedule_start, a.created_at)
+       ORDER BY vsr.service_date DESC
+       LIMIT 1
+     ) vsr_last ON TRUE
+     LEFT JOIN pms_packages pp
+       ON LOWER(BTRIM(pp.name)) = LOWER(BTRIM(COALESCE(sv.name, SUBSTRING(a.notes FROM 'Package:\\s*([^\\n\\r]+)'))))
+      AND COALESCE(pp.is_deleted, false) = false
+     WHERE ${where.join(' AND ')}`,
+    params,
+  )
+
+  for (const row of rows) {
+    const completedAt = row.completed_at ? new Date(row.completed_at) : null
+    if (!completedAt || Number.isNaN(completedAt.getTime())) continue
+
+    const timeDueAt = new Date(completedAt)
+    timeDueAt.setMonth(timeDueAt.getMonth() + 6)
+
+    const kmInterval = Number(row.kilometer_interval)
+    const currentOdometer = Number(row.vehicle_odometer)
+    const lastServiceOdometer = Number(row.last_service_odometer)
+
+    const dueByTime = timeDueAt <= new Date()
+    const dueByMileage = Number.isFinite(kmInterval) && kmInterval > 0 && Number.isFinite(currentOdometer)
+      && (
+        (Number.isFinite(lastServiceOdometer) && (currentOdometer - lastServiceOdometer) >= kmInterval)
+        || (!Number.isFinite(lastServiceOdometer) && currentOdometer >= kmInterval)
+      )
+
+    if (!dueByTime && !dueByMileage) continue
+
+    const reason = dueByMileage ? 'km_or_time' : 'time'
+    const dueDateKey = timeDueAt.toISOString().slice(0, 10)
+    const dueDateText = timeDueAt.toLocaleDateString('en-PH')
+
+    const mileageLine = dueByMileage && Number.isFinite(kmInterval) && kmInterval > 0
+      ? ` Vehicle mileage is ${currentOdometer.toLocaleString('en-US')} km (target ${kmInterval.toLocaleString('en-US')} km${Number.isFinite(lastServiceOdometer) ? ` since last reading ${lastServiceOdometer.toLocaleString('en-US')} km` : ''}).`
+      : ''
+
+    const payload = {
+      type: 'pms-service-reminder',
+      appointment_id: row.id,
+      customer_id: row.customer_id,
+      vehicle_id: row.vehicle_id,
+      package_name: row.package_name,
+      plate_number: row.plate_number,
+      due_date: dueDateKey,
+      reason,
+      kilometer_interval: Number.isFinite(kmInterval) && kmInterval > 0 ? kmInterval : null,
+      last_service_odometer: Number.isFinite(lastServiceOdometer) ? lastServiceOdometer : null,
+      current_odometer: Number.isFinite(currentOdometer) ? currentOdometer : null,
+    }
+
+    const adminExists = await pmsReminderExists({
+      role: 'admin',
+      userId: null,
+      appointmentId: row.id,
+      dueDateKey,
+      reason,
+    })
+
+    if (!adminExists) {
+      await NotificationService.create({
+        role: 'admin',
+        title: 'PMS Service Reminder',
+        message: `${row.customer_name}'s vehicle (${row.plate_number}) is due for PMS follow-up after 6 months (due ${dueDateText}).${mileageLine}`,
+        payload,
+      }).catch(() => {})
+    }
+
+    const clientExists = await pmsReminderExists({
+      role: 'client',
+      userId: row.customer_id,
+      appointmentId: row.id,
+      dueDateKey,
+      reason,
+    })
+
+    if (!clientExists) {
+      await NotificationService.create({
+        role: 'client',
+        userId: row.customer_id,
+        title: 'PMS Reminder',
+        message: `Your vehicle (${row.plate_number}) is due for your next PMS service. Your last PMS reached the 6-month interval on ${dueDateText}.${mileageLine}`,
+        payload,
+      }).catch(() => {})
+
+      if (pmsEmailEnabled) {
+        await sendPmsReminderEmail({
+          to: row.customer_email,
+          customerName: row.customer_name,
+          packageName: row.package_name,
+          plateNumber: row.plate_number,
+          dueDate: timeDueAt,
+          reason,
+          kilometerInterval: Number.isFinite(kmInterval) && kmInterval > 0 ? kmInterval : null,
+          currentOdometer: Number.isFinite(currentOdometer) ? currentOdometer : null,
+          lastServiceOdometer: Number.isFinite(lastServiceOdometer) ? lastServiceOdometer : null,
+          ctaUrl: env.portalUrl || undefined,
+          configSubject: cfgSubject || undefined,
+          configGreeting: cfgGreeting || undefined,
+        }).catch(() => {})
+      }
+    }
+  }
+}
+
 router.get(
   '/requests',
   requireRole('SuperAdmin', 'Admin'),
@@ -256,6 +461,8 @@ router.get(
   '/tracking',
   requireRole('SuperAdmin', 'Admin'),
   asyncHandler(async (req, res) => {
+    await notifyPmsServiceReminders()
+
     const { rows } = await db.query(
       `SELECT
          a.id,

@@ -28,17 +28,6 @@ async function fetchMainApi(path) {
   return res.json().catch(() => ([]))
 }
 
-function formatServices(services) {
-  if (!Array.isArray(services) || services.length === 0) return 'No inclusions listed'
-  const names = services
-    .map((item) => {
-      if (item && typeof item === 'object') return String(item.name || '').trim()
-      return String(item || '').trim()
-    })
-    .filter(Boolean)
-  return names.length ? names.join(', ') : 'No inclusions listed'
-}
-
 export function PortalSubscriptions({ customer, onNavigate }) {
   const [subscriptions, setSubscriptions] = useState([])
   const [packages, setPackages] = useState([])
@@ -167,7 +156,6 @@ export function PortalSubscriptions({ customer, onNavigate }) {
         annual: asNumber(pkg?.price_by_frequency?.annual),
       },
       priceLabel: fmt(pkg?.price_by_frequency?.monthly ?? pkg?.price),
-      servicesLabel: formatServices(pkg.services),
     }))
   }, [packages])
 
@@ -300,13 +288,6 @@ export function PortalSubscriptions({ customer, onNavigate }) {
             {packageCards.map((pkg) => {
               const selectedFrequency = getSelectedFrequency(pkg)
               const selectedPrice = asNumber(pkg.frequencyPrices[selectedFrequency])
-              const serviceNames = Array.isArray(pkg.services)
-                ? pkg.services
-                    .map((s) => (s && typeof s === 'object' ? String(s.name || '').trim() : String(s || '').trim()))
-                    .filter(Boolean)
-                : []
-              const previewServices = serviceNames.slice(0, 3)
-              const moreServicesCount = Math.max(serviceNames.length - previewServices.length, 0)
 
               return (
                 <div
@@ -337,24 +318,6 @@ export function PortalSubscriptions({ customer, onNavigate }) {
                         <option value="annual">Annual</option>
                       </select>
                     </label>
-                  </div>
-
-                  <div className="portal-subs-services-box">
-                    <div className="portal-subs-services-title">
-                      Included Services {serviceNames.length > 0 ? `(${serviceNames.length})` : ''}
-                    </div>
-                    {previewServices.length > 0 ? (
-                      <ul className="portal-subs-services-list">
-                        {previewServices.map((name, idx) => (
-                          <li key={`${pkg.id}-svc-${idx}`} className="portal-subs-services-item">{name}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="portal-subs-services-empty">No inclusions listed.</div>
-                    )}
-                    {moreServicesCount > 0 && (
-                      <div className="portal-subs-services-more">+{moreServicesCount} more services</div>
-                    )}
                   </div>
 
                   <div className="portal-subs-price-row">

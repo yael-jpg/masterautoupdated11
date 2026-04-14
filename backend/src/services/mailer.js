@@ -18,7 +18,9 @@ const {
   buildPaymentReceiptEmail,
   buildJobStatusUpdateEmail,
   buildSubscriptionConfirmationEmail,
+  buildSubscriptionReminderEmail,
   buildPmsBookingConfirmationEmail,
+  buildPmsReminderEmail,
 } = require('./emailTemplates')
 
 function isLocalSmtpHost(host) {
@@ -1130,6 +1132,84 @@ async function sendPmsBookingConfirmationEmail({
   return { skipped: false }
 }
 
+async function sendPmsReminderEmail({
+  to,
+  customerName,
+  packageName,
+  plateNumber,
+  dueDate,
+  reason,
+  kilometerInterval,
+  currentOdometer,
+  lastServiceOdometer,
+  ctaUrl,
+  configSubject,
+  configGreeting,
+}) {
+  if (!to || !isEmailConfigured()) return { skipped: true }
+
+  const { subject, html, text } = buildPmsReminderEmail({
+    customerName,
+    packageName,
+    plateNumber,
+    dueDate,
+    reason,
+    kilometerInterval,
+    currentOdometer,
+    lastServiceOdometer,
+    ctaUrl,
+    configSubject,
+    configGreeting,
+  })
+
+  await sendEmail({
+    from: env.smtpFrom,
+    to,
+    replyTo: env.smtpReplyTo || undefined,
+    subject,
+    html,
+    text,
+    attachments: withDefaultAttachments(),
+  })
+
+  return { skipped: false }
+}
+
+async function sendSubscriptionReminderEmail({
+  to,
+  customerName,
+  packageName,
+  plateNumber,
+  endDate,
+  reminderType,
+  ctaUrl,
+  configSubject,
+}) {
+  if (!to || !isEmailConfigured()) return { skipped: true }
+
+  const { subject, html, text } = buildSubscriptionReminderEmail({
+    customerName,
+    packageName,
+    plateNumber,
+    endDate,
+    reminderType,
+    ctaUrl,
+    configSubject,
+  })
+
+  await sendEmail({
+    from: env.smtpFrom,
+    to,
+    replyTo: env.smtpReplyTo || undefined,
+    subject,
+    html,
+    text,
+    attachments: withDefaultAttachments(),
+  })
+
+  return { skipped: false }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -1153,7 +1233,9 @@ module.exports = {
   sendPaymentReceiptEmail,
   sendJobStatusUpdateEmail,
   sendSubscriptionConfirmationEmail,
+  sendSubscriptionReminderEmail,
   sendPmsBookingConfirmationEmail,
+  sendPmsReminderEmail,
   // Generic send helper for campaign / custom emails
   sendRawEmail: async function ({ to, subject, html, text, from, attachments }) {
     if (!to || !isEmailConfigured()) return { skipped: true }

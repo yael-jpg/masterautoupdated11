@@ -2,6 +2,44 @@ const db = require('../config/db');
 
 class ConfigurationService {
   /**
+   * Ensure default settings exist (insert-if-missing, no overwrite)
+   */
+  static async ensureDefaults(defaultEntries = [], userId = null) {
+    try {
+      if (!Array.isArray(defaultEntries) || defaultEntries.length === 0) {
+        return { success: true, inserted: 0 };
+      }
+
+      let inserted = 0;
+      for (const entry of defaultEntries) {
+        const category = String(entry?.category || '').trim();
+        const key = String(entry?.key || '').trim();
+        if (!category || !key) continue;
+
+        const rawValue = entry?.value;
+        const isObject = typeof rawValue === 'object' && rawValue !== null;
+        const value = isObject ? JSON.stringify(rawValue) : String(rawValue ?? '');
+        const dataType = entry?.dataType || (isObject ? 'json' : null);
+        const description = entry?.description || null;
+
+        const result = await db.query(
+          `INSERT INTO configuration_settings (category, "key", value, data_type, description, updated_by, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())
+           ON CONFLICT (category, "key") DO NOTHING
+           RETURNING category`,
+          [category, key, value, dataType, description, userId]
+        );
+
+        if (result.rowCount > 0) inserted += 1;
+      }
+
+      return { success: true, inserted };
+    } catch (error) {
+      throw new Error(`Failed to ensure default configuration: ${error.message}`);
+    }
+  }
+
+  /**
    * Get all configuration settings
    */
   static async getAllSettings() {
@@ -244,6 +282,15 @@ class ConfigurationService {
         'payment': {
           'minimum_down_payment_percentage': '30',
           'payment_due_days': '30'
+        },
+        'pms_email': {
+          'enabled': 'true',
+          'subject': '',
+          'greeting': ''
+        },
+        'subscription_email': {
+          'enabled': 'true',
+          'subject': ''
         }
       };
       

@@ -1907,6 +1907,76 @@ function buildSubscriptionConfirmationEmail({
   }
 }
 
+function buildSubscriptionReminderEmail({
+  customerName,
+  packageName,
+  plateNumber,
+  endDate,
+  reminderType = 'expiring',
+  ctaUrl,
+  configSubject,
+}) {
+  const safeType = String(reminderType || 'expiring').toLowerCase() === 'expired' ? 'expired' : 'expiring'
+  const endDateLabel = endDate ? formatDate(endDate) : 'soon'
+  const statusLabel = safeType === 'expired' ? 'Expired' : 'Expiring Soon'
+  const defaultSubject = safeType === 'expired'
+    ? `Subscription Expired${plateNumber ? ` — ${plateNumber}` : ''} | ${BRAND_NAME}`
+    : `Subscription Expiring Soon${plateNumber ? ` — ${plateNumber}` : ''} | ${BRAND_NAME}`
+
+  const subjectText = configSubject
+    ? String(configSubject)
+        .replace('{package_name}', packageName || 'Subscription')
+        .replace('{plate_number}', plateNumber || '')
+        .replace('{end_date}', endDateLabel)
+        .replace('{status}', statusLabel)
+    : defaultSubject
+
+  const bodyText = safeType === 'expired'
+    ? 'Your subscription has already expired. Please renew to continue enjoying your package benefits.'
+    : 'Your subscription is near expiry. Please renew before the end date to avoid interruption.'
+
+  const html = wrapLayout(`
+    <div class="header">
+      <img class="header-logo" src="cid:masterauto_logo" alt="${BRAND_NAME}" />
+      <h1>Subscription Reminder</h1>
+      <p>${escapeHtml(statusLabel)}</p>
+    </div>
+    <div class="body">
+      <p>Hi <strong>${escapeHtml(customerName || 'Client')}</strong>,</p>
+      <p>${escapeHtml(bodyText)}</p>
+      <table class="info-table">
+        <thead><tr><th colspan="2">Subscription Details</th></tr></thead>
+        <tbody>
+          ${buildSimpleDetailsRows([
+            { label: 'Package', value: packageName || 'Subscription' },
+            { label: 'Vehicle Plate', value: plateNumber || null },
+            { label: 'End Date', value: endDateLabel },
+            { label: 'Status', value: statusLabel },
+          ])}
+        </tbody>
+      </table>
+      ${buildCtaButton({ label: 'View Subscription', url: ctaUrl })}
+      <p style="margin-top:20px;"><em>— The ${BRAND_NAME} Team</em></p>
+    </div>
+  `)
+
+  const text = [
+    `Hi ${customerName || 'Client'},`,
+    bodyText,
+    packageName ? `Package: ${packageName}` : null,
+    plateNumber ? `Vehicle Plate: ${plateNumber}` : null,
+    `End Date: ${endDateLabel}`,
+    `Status: ${statusLabel}`,
+    ctaUrl ? `Portal: ${ctaUrl}` : null,
+  ].filter(Boolean).join('\n')
+
+  return {
+    subject: subjectText,
+    html,
+    text,
+  }
+}
+
 function buildPmsBookingConfirmationEmail({
   customerName,
   packageName,
@@ -1963,6 +2033,79 @@ function buildPmsBookingConfirmationEmail({
   }
 }
 
+function buildPmsReminderEmail({
+  customerName,
+  packageName,
+  plateNumber,
+  dueDate,
+  reason,
+  kilometerInterval,
+  currentOdometer,
+  lastServiceOdometer,
+  ctaUrl,
+  configSubject,
+  configGreeting,
+}) {
+  const intervalKm = Number(kilometerInterval)
+  const intervalKmLabel = Number.isFinite(intervalKm) && intervalKm > 0
+    ? intervalKm.toLocaleString('en-US')
+    : 'the required'
+
+  const defaultGreeting = `This is an reminder from the Master Auto PMS Service that if your vehicle kilometer interval hit (${intervalKmLabel} KM, because we have a basic to premium) you can proceed to the next PMS Service.`
+  const greetingText = configGreeting
+    ? String(configGreeting)
+        .replace('{kilometer_interval}', intervalKmLabel)
+        .replace('{package_name}', packageName || 'PMS Service')
+        .replace('{plate_number}', plateNumber || '')
+    : defaultGreeting
+
+  const subjectText = configSubject
+    ? String(configSubject)
+        .replace('{plate_number}', plateNumber || '')
+        .replace('{package_name}', packageName || 'PMS Service')
+        .replace('{kilometer_interval}', intervalKmLabel)
+    : `PMS Reminder${plateNumber ? ` — ${plateNumber}` : ''} | ${BRAND_NAME}`
+
+  const html = wrapLayout(`
+    <div class="header">
+      <img class="header-logo" src="cid:masterauto_logo" alt="${BRAND_NAME}" />
+      <h1>PMS Reminder</h1>
+      <p>Your next preventive maintenance service is due</p>
+    </div>
+    <div class="body">
+      <p>Hi <strong>${escapeHtml(customerName || 'Client')}</strong>,</p>
+      <p>${escapeHtml(greetingText)}</p>
+
+      <table class="info-table">
+        <thead><tr><th colspan="2">PMS Reminder Details</th></tr></thead>
+        <tbody>
+          ${buildSimpleDetailsRows([
+            { label: 'Package Availed', value: packageName || 'PMS Service' },
+            { label: 'Vehicle Plate', value: plateNumber || null },
+          ])}
+        </tbody>
+      </table>
+
+      ${buildCtaButton({ label: 'Book PMS Schedule', url: ctaUrl })}
+      <p style="margin-top:20px;"><em>— The ${BRAND_NAME} Team</em></p>
+    </div>
+  `)
+
+  const text = [
+    `Hi ${customerName || 'Client'},`,
+    greetingText,
+    packageName ? `Package: ${packageName}` : null,
+    plateNumber ? `Vehicle Plate: ${plateNumber}` : null,
+    ctaUrl ? `Book PMS Schedule: ${ctaUrl}` : null,
+  ].filter(Boolean).join('\n')
+
+  return {
+    subject: subjectText,
+    html,
+    text,
+  }
+}
+
 module.exports = {
   wrapLayout,
   buildServiceConfirmationEmail,
@@ -1986,6 +2129,8 @@ module.exports = {
   buildCampaignEmail,
   buildJobStatusUpdateEmail,
   buildSubscriptionConfirmationEmail,
+  buildSubscriptionReminderEmail,
   buildPmsBookingConfirmationEmail,
+  buildPmsReminderEmail,
 }
 
