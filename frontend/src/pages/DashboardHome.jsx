@@ -124,7 +124,7 @@ export function DashboardHome({ token, onNavigate }) {
         label: 'Top Services',
         value: report ? `${report.byServiceType.length}` : '—',
         trend: 'Tracked categories',
-        onClick: () => onNavigate && onNavigate('admin'),
+        onClick: () => onNavigate && onNavigate('sales'),
       },
     ],
     [report, onNavigate],
