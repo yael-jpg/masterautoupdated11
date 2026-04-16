@@ -16,6 +16,65 @@ let packageStatusTypeKnown = false
 let packageStatusIsBoolean = false
 let subscriptionEmailConfigReady = false
 
+async function hasLegacySubscriptionServicesTable(clientOrDb = db) {
+  const { rows } = await clientOrDb.query(`SELECT to_regclass('public.subscription_services') AS table_name`)
+  return Boolean(rows?.[0]?.table_name)
+}
+
+function quoteIdent(name) {
+  return `"${String(name || '').replace(/"/g, '""')}"`
+}
+
+async function ensureSubscriptionPackageForeignKey(clientOrDb = db) {
+  const { rows: fkRows } = await clientOrDb.query(
+    `SELECT tc.constraint_name, ccu.table_name AS referenced_table
+     FROM information_schema.table_constraints tc
+     JOIN information_schema.key_column_usage kcu
+       ON tc.constraint_name = kcu.constraint_name
+      AND tc.table_schema = kcu.table_schema
+     JOIN information_schema.constraint_column_usage ccu
+       ON ccu.constraint_name = tc.constraint_name
+      AND ccu.table_schema = tc.table_schema
+     WHERE tc.table_schema = 'public'
+       AND tc.table_name = 'subscriptions'
+       AND tc.constraint_type = 'FOREIGN KEY'
+       AND kcu.column_name = 'package_id'`,
+  )
+
+  for (const fk of fkRows) {
+    if (fk.referenced_table !== 'subscription_packages') {
+      await clientOrDb.query(`ALTER TABLE subscriptions DROP CONSTRAINT IF EXISTS ${quoteIdent(fk.constraint_name)}`)
+    }
+  }
+
+  const { rows: existsRows } = await clientOrDb.query(
+    `SELECT 1
+     FROM information_schema.table_constraints tc
+     JOIN information_schema.key_column_usage kcu
+       ON tc.constraint_name = kcu.constraint_name
+      AND tc.table_schema = kcu.table_schema
+     JOIN information_schema.constraint_column_usage ccu
+       ON ccu.constraint_name = tc.constraint_name
+      AND ccu.table_schema = tc.table_schema
+     WHERE tc.table_schema = 'public'
+       AND tc.table_name = 'subscriptions'
+       AND tc.constraint_type = 'FOREIGN KEY'
+       AND kcu.column_name = 'package_id'
+       AND ccu.table_name = 'subscription_packages'
+     LIMIT 1`,
+  )
+
+  if (!existsRows.length) {
+    await clientOrDb.query(
+      `ALTER TABLE subscriptions
+       ADD CONSTRAINT subscriptions_package_id_subscription_packages_fkey
+       FOREIGN KEY (package_id) REFERENCES subscription_packages(id)
+       ON DELETE RESTRICT
+       NOT VALID`,
+    )
+  }
+}
+
 async function ensureSubscriptionEmailConfigDefaults() {
   if (subscriptionEmailConfigReady) return
 
@@ -61,6 +120,7 @@ async function ensureSubscriptionPricingSchema() {
 async function ensureSubscriptionRecordsSchema() {
   if (recordsSchemaReady) return
 
+  await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS subscription_type TEXT')
   await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS subscription_service_id INT')
   await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS package_id INT')
   await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS subscription_name TEXT')
@@ -69,17 +129,21 @@ async function ensureSubscriptionRecordsSchema() {
   await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS frequency VARCHAR(20)')
   await db.query('ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
 
-  await db.query(
-    `UPDATE subscriptions s
-     SET subscription_service_id = s.package_id
-     WHERE s.subscription_service_id IS NULL
-       AND s.package_id IS NOT NULL
-       AND EXISTS (
-         SELECT 1
-         FROM subscription_services ss
-         WHERE ss.id = s.package_id
-       )`,
-  )
+  await ensureSubscriptionPackageForeignKey(db)
+
+  if (await hasLegacySubscriptionServicesTable(db)) {
+    await db.query(
+      `UPDATE subscriptions s
+       SET subscription_service_id = s.package_id
+       WHERE s.subscription_service_id IS NULL
+         AND s.package_id IS NOT NULL
+         AND EXISTS (
+           SELECT 1
+           FROM subscription_services ss
+           WHERE ss.id = s.package_id
+         )`,
+    )
+  }
   await db.query('UPDATE subscriptions SET package_id = subscription_service_id WHERE package_id IS NULL AND subscription_service_id IS NOT NULL')
   await db.query(
     `UPDATE subscriptions s
@@ -629,14 +693,17 @@ router.post(
 
       // Legacy schema may enforce FK on subscription_service_id to subscription_services.
       // Prefer package_id for portal package approvals and only set service_id when it exists.
-      const { rows: legacyServiceRows } = await client.query(
-        `SELECT id
-         FROM subscription_services
-         WHERE id = $1
-         LIMIT 1`,
-        [packageId],
-      )
-      const legacyServiceId = legacyServiceRows[0]?.id || null
+      let legacyServiceId = null
+      if (await hasLegacySubscriptionServicesTable(client)) {
+        const { rows: legacyServiceRows } = await client.query(
+          `SELECT id
+           FROM subscription_services
+           WHERE id = $1
+           LIMIT 1`,
+          [packageId],
+        )
+        legacyServiceId = legacyServiceRows[0]?.id || null
+      }
 
       const { rows: createdRows } = await client.query(
         `INSERT INTO subscriptions (

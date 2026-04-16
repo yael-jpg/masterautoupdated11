@@ -45,6 +45,7 @@ export function PortalSubscriptions({ customer, onNavigate }) {
   const [detailsLoading, setDetailsLoading] = useState(false)
   const [detailsError, setDetailsError] = useState('')
   const [busyCancelId, setBusyCancelId] = useState(null)
+  const [cancelTarget, setCancelTarget] = useState(null)
 
   const getDisplayStatus = (sub) => {
     const raw = String(sub?.status || '').trim()
@@ -177,9 +178,12 @@ export function PortalSubscriptions({ customer, onNavigate }) {
   }
 
   const handleCancelSubscription = async (sub) => {
-    const subName = sub?.package_name || 'this subscription'
-    const ok = window.confirm(`Cancel ${subName}? This action cannot be undone.`)
-    if (!ok) return
+    setCancelTarget(sub || null)
+  }
+
+  const confirmCancelSubscription = async () => {
+    const sub = cancelTarget
+    if (!sub?.id) return
 
     try {
       setBusyCancelId(sub.id)
@@ -198,6 +202,7 @@ export function PortalSubscriptions({ customer, onNavigate }) {
       }
 
       setRequestMessage('Subscription cancelled successfully.')
+      setCancelTarget(null)
     } catch (err) {
       setRequestMessage(err?.message || 'Failed to cancel subscription.')
     } finally {
@@ -436,6 +441,46 @@ export function PortalSubscriptions({ customer, onNavigate }) {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {cancelTarget && (
+        <div className="portal-subs-modal-overlay" onClick={() => setCancelTarget(null)}>
+          <div className="portal-subs-modal portal-subs-cancel-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="portal-subs-modal-head">
+              <h3 className="portal-subs-modal-title">Cancel Subscription</h3>
+              <button
+                type="button"
+                className="portal-subs-modal-close"
+                onClick={() => setCancelTarget(null)}
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="portal-subs-modal-content">
+              <p className="portal-subs-cancel-text">
+                Cancel <strong>{cancelTarget.package_name || 'this subscription'}</strong>? This action cannot be undone.
+              </p>
+              <div className="portal-subs-cancel-actions">
+                <button
+                  type="button"
+                  className="portal-subs-view-btn"
+                  onClick={() => setCancelTarget(null)}
+                >
+                  Keep Subscription
+                </button>
+                <button
+                  type="button"
+                  className="portal-subs-cancel-btn portal-subs-cancel-confirm-btn"
+                  disabled={busyCancelId === cancelTarget.id}
+                  onClick={confirmCancelSubscription}
+                >
+                  {busyCancelId === cancelTarget.id ? 'Cancelling...' : 'Confirm Cancel'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

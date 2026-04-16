@@ -428,6 +428,89 @@
   transition: width 220ms ease;
 }
 
+.portal-subs-cancel-modal {
+  width: min(500px, 100%);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #0a0a0a;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.55);
+}
+
+.portal-subs-cancel-modal .portal-subs-modal-head {
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.portal-subs-cancel-modal .portal-subs-modal-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.portal-subs-cancel-modal .portal-subs-modal-close {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #111111;
+  color: #d4d4d4;
+  min-height: 34px;
+  padding: 6px 14px;
+}
+
+.portal-subs-cancel-modal .portal-subs-modal-close:hover {
+  background: #191919;
+  color: #ffffff;
+}
+
+.portal-subs-cancel-modal .portal-subs-modal-content {
+  padding: 20px 18px 18px;
+  gap: 14px;
+}
+
+.portal-subs-cancel-text {
+  margin: 0;
+  color: #c7c7c7;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.portal-subs-cancel-text strong {
+  color: #ffffff;
+}
+
+.portal-subs-cancel-actions {
+  margin-top: 4px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.portal-subs-cancel-modal .portal-subs-view-btn,
+.portal-subs-cancel-modal .portal-subs-cancel-btn {
+  min-height: 40px;
+  border-radius: 10px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #131313;
+  color: #f3f3f3;
+}
+
+.portal-subs-cancel-modal .portal-subs-view-btn:hover,
+.portal-subs-cancel-modal .portal-subs-cancel-btn:hover {
+  background: #1a1a1a;
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.portal-subs-cancel-confirm-btn {
+  background: #f3f3f3;
+  color: #111111;
+  border-color: #f3f3f3;
+}
+
+.portal-subs-cancel-confirm-btn:hover {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+}
+
 @media (max-width: 768px) {
   .portal-subs-page {
     padding: 14px;

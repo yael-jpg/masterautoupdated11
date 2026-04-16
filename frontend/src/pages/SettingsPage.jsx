@@ -319,6 +319,7 @@ const TABS = [
   { key: 'booking_email',   label: 'Booking Email',     icon: '📨' },
   { key: 'pms_email',       label: 'PMS Email',         icon: '🛎️' },
   { key: 'subscription_email', label: 'Subscription Email', icon: '📬' },
+  { key: 'promo',           label: 'Promo Codes',       icon: '🎁' },
   { key: 'landing_chat',    label: 'Landing Chat AI',   icon: '🤖' },
   { key: 'payment',         label: 'Payments',          icon: '💳' },
   { key: 'sales',           label: 'Sales',             icon: '📊' },
@@ -350,6 +351,7 @@ const CATEGORY_LABELS = {
   landing_chat:     'Landing Chat AI Settings',
   roles:            'User Roles & Permissions',
   system:           'System Settings',
+  promo:            'Promo Code Configuration',
   email:            'Email Blasting',
 }
 
@@ -374,6 +376,7 @@ const CATEGORY_DESCRIPTIONS = {
   landing_chat:     'Configure automatic chat replies and ML-style intent behavior for landing-page chat.',
   roles:            'Define user roles and access permissions across the system.',
   system:           'Manage audit logging, retention policies, and view read-only system metadata.',
+  promo:            'Control promo code behavior, discount limits, and email blast restrictions for promotional offers.',
   email:            'Create and manage bulk email campaigns for CRM audiences.',
 }
 
@@ -598,6 +601,96 @@ const FIELD_SCHEMA = {
       fields: [
         { key: 'enable_sales_targets',  label: 'Enable Sales Targets',   type: 'toggle' },
         { key: 'sales_target_amount',   label: 'Monthly Target Amount',  type: 'number', min: 0, step: 1000 },
+      ],
+    },
+  ],
+  promo: [
+    {
+      section: 'Promo Code System',
+      desc: 'Control how promo codes work across email campaigns and quotations.',
+      fields: [
+        { key: 'enable_promo_codes', label: 'Enable Promo Codes', type: 'toggle', desc: 'Master on/off switch for all promo code functionality.' },
+      ],
+    },
+    {
+      section: 'Discount Control',
+      desc: 'Configure allowed discount types and maximum discount limits.',
+      fields: [
+        { key: 'allow_percentage_discount',   label: 'Allow Percentage Discounts (e.g., 20% off)', type: 'toggle', desc: 'When enabled, promo codes can offer percentage-based discounts.' },
+        { key: 'allow_fixed_discount',        label: 'Allow Fixed Amount Discounts (e.g., ₱500 off)', type: 'toggle', desc: 'When enabled, promo codes can offer flat amount discounts.' },
+        { key: 'max_discount_percentage',     label: 'Maximum Discount Percentage', type: 'number', min: 0, max: 100, step: 1, desc: 'Prevents any promo code from exceeding this discount percentage.' },
+      ],
+    },
+    {
+      section: 'Usage & Expiration',
+      desc: 'Set defaults for code expiration and usage limits.',
+      fields: [
+        { key: 'max_uses_per_code',       label: 'Default Maximum Uses Per Code', type: 'number', min: 0, step: 1, desc: 'Default limit for new codes (0 = unlimited). Can be overridden per code.' },
+        { key: 'default_expiration_days', label: 'Default Expiration Period (days)', type: 'number', min: 1, step: 1, desc: 'New codes will expire this many days after creation by default.' },
+        { key: 'auto_disable_expired',    label: 'Automatically Disable Expired Codes', type: 'toggle', desc: 'When enabled, expired codes are automatically deactivated.' },
+      ],
+    },
+    {
+      section: 'Minimum Purchase Requirement',
+      desc: 'Optionally require a minimum purchase amount to use promo codes.',
+      fields: [
+        { key: 'require_minimum_purchase',  label: 'Require Minimum Purchase', type: 'toggle', desc: 'When enabled, promo codes only apply to orders meeting the threshold.' },
+        { key: 'minimum_purchase_amount',   label: 'Minimum Purchase Amount', type: 'number', min: 0, step: 100, desc: 'Customers must spend at least this amount to apply any promo code.' },
+      ],
+    },
+    {
+      section: 'Email Campaign & Stacking',
+      desc: 'Control how codes are distributed and combined on quotations.',
+      fields: [
+        { key: 'restrict_to_email_blast', label: 'Restrict Codes to Email Campaigns Only', type: 'toggle', desc: 'When enabled, only promo codes linked to email campaigns are valid (recommended for tracking).' },
+        { key: 'allow_stacking_promos',   label: 'Allow Multiple Codes Per Quotation', type: 'toggle', desc: 'When enabled, customers can stack multiple promo codes on a single quotation.' },
+      ],
+    },
+    {
+      section: 'Tracking & Audit',
+      desc: 'Enable logging and monitoring of promo code usage.',
+      fields: [
+        { key: 'enable_usage_tracking', label: 'Enable Usage Tracking', type: 'toggle', desc: 'When enabled, all promo code usage is logged in the system for compliance and analytics.' },
+      ],
+    },
+    {
+      section: 'Promo Code Email Message',
+      desc: 'Customize the message sent when promo codes are included in email campaigns.',
+      fields: [
+        {
+          key: 'promo_enabled',
+          label: 'Include Promo Message in Emails',
+          type: 'toggle',
+          desc: 'When enabled, the custom promo message below will be included in email campaigns that link to promo codes.',
+        },
+        {
+          key: 'promo_subject',
+          label: 'Email Subject Line',
+          type: 'text',
+          placeholder: 'e.g. Exclusive Offer — {percent}% Off Your Next Service',
+          desc: 'Subject line for emails featuring this promo. Supports {percent}, {amount}, {code}.',
+        },
+        {
+          key: 'promo_greeting',
+          label: 'Greeting / Intro Message',
+          type: 'textarea',
+          placeholder: 'e.g. Hey {customer_name}! We have an exclusive offer just for you. Use code {code} for {percent}% off your next service.',
+          desc: 'Opening message highlighting the promo offer. Supports {customer_name}, {code}, {percent}, {amount}.',
+        },
+        {
+          key: 'promo_reminders',
+          label: 'Important Reminders (one per line)',
+          type: 'textarea',
+          placeholder: 'This offer is valid for {days} days only.\nMinimum purchase of ₱{min_purchase} required.\nPromo code cannot be combined with other offers.',
+          desc: 'Additional terms and conditions. Each line becomes a bullet point. Supports {days}, {min_purchase}, {code}.',
+        },
+        {
+          key: 'promo_closing',
+          label: 'Closing Message',
+          type: 'textarea',
+          placeholder: 'e.g. Don\'t miss out! Claim your discount today and give your vehicle the care it deserves.',
+          desc: 'Final call-to-action message before signature.',
+        },
       ],
     },
   ],
@@ -869,6 +962,20 @@ const FIELD_SCHEMA = {
           placeholder: 'e.g. This is to remind you that your vehicle plate no. {plate_number}, availed package {package_name} is due for your next preventive maintenance service.',
           desc: 'Supports placeholders: {plate_number}, {package_name}, {kilometer_interval}.',
         },
+        {
+          key: 'reminders',
+          label: 'Important Reminders (one per line)',
+          type: 'textarea',
+          placeholder: 'Delaying your PMS may affect warranty coverage.\nYour last service was at {last_service_date}.\nBook early to avoid long wait times.',
+          desc: 'Additional maintenance tips and reminders. Each line becomes a bullet point.',
+        },
+        {
+          key: 'closing',
+          label: 'Closing Message',
+          type: 'textarea',
+          placeholder: 'e.g. Book your PMS appointment today to keep your vehicle in top condition.',
+          desc: 'Final message encouraging the customer to book their service appointment.',
+        },
       ],
     },
   ],
@@ -887,8 +994,29 @@ const FIELD_SCHEMA = {
           key: 'subject',
           label: 'Email Subject',
           type: 'text',
-          placeholder: 'e.g. Subscription {status} — {plate_number}',
-          desc: 'Supports placeholders: {status}, {plate_number}, {package_name}, {end_date}. Leave blank to use default subjects.',
+          placeholder: 'e.g. Your {package_name} Subscription is {status} — {plate_number}',
+          desc: 'Supports placeholders: {status}, {plate_number}, {package_name}, {end_date}, {days_left}. Leave blank to use default subjects.',
+        },
+        {
+          key: 'greeting',
+          label: 'Greeting / Intro Message',
+          type: 'textarea',
+          placeholder: 'e.g. Dear {customer_name}, your {package_name} subscription for plate {plate_number} is expiring soon. Renew now to maintain continuous coverage and benefits.',
+          desc: 'Opening message about subscription status. Supports {customer_name}, {package_name}, {plate_number}, {status}, {days_left}.',
+        },
+        {
+          key: 'reminders',
+          label: 'Important Reminders (one per line)',
+          type: 'textarea',
+          placeholder: 'Your subscription expires on {end_date}.\nRenewal takes less than 5 minutes.\nAll benefits and coverage will cease after expiration.\nEarly renewal is available anytime.',
+          desc: 'Key points about subscription renewal. Each line becomes a bullet point. Supports {end_date}, {days_left}, {package_name}.',
+        },
+        {
+          key: 'closing',
+          label: 'Closing Message',
+          type: 'textarea',
+          placeholder: 'e.g. Renew your subscription today and continue enjoying priority service and exclusive benefits.',
+          desc: 'Final call-to-action message encouraging renewal.',
         },
       ],
     },

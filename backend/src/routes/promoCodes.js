@@ -6,6 +6,7 @@ const db = require('../config/db')
 const { asyncHandler } = require('../utils/asyncHandler')
 const { writeAuditLog } = require('../utils/auditLog')
 const { validateRequest } = require('../middleware/validateRequest')
+const ConfigurationService = require('../services/configurationService')
 
 // Pre-load logo buffer for CID inline attachment (works in Gmail, Outlook, etc.)
 let LOGO_BUFFER = null
@@ -27,6 +28,40 @@ const getPromoCodeRow = async (code) => {
   )
   return rows[0] || null
 }
+
+// ── Helper: check if promo codes are enabled in config ─────────────────────
+const isPromoCodesEnabled = async () => {
+  const enabled = await ConfigurationService.isFeatureEnabled('promo.enable_promo_codes')
+  return enabled
+}
+
+// ── Helper: validate discount value against config ────────────────────────
+const validateDiscountAgainstConfig = async (discountType, discountValue) => {
+  if (!await isPromoCodesEnabled()) {
+    return { valid: false, error: 'Promo codes are disabled in system configuration' }
+  }
+
+  const maxPercentage = await ConfigurationService.get('promo', 'max_discount_percentage')
+  const allowPercentage = await ConfigurationService.get('promo', 'allow_percentage_discount')
+  const allowFixed = await ConfigurationService.get('promo', 'allow_fixed_discount')
+
+  if (discountType === 'percent') {
+    if (allowPercentage !== 'true' && allowPercentage !== true) {
+      return { valid: false, error: 'Percentage-based discounts are not allowed in configuration' }
+    }
+    const maxPercent = parseInt(maxPercentage) || 50
+    if (parseFloat(discountValue) > maxPercent) {
+      return { valid: false, error: `Discount percentage cannot exceed ${maxPercent}% (max configured)` }
+    }
+  } else if (discountType === 'fixed') {
+    if (allowFixed !== 'true' && allowFixed !== true) {
+      return { valid: false, error: 'Fixed amount discounts are not allowed in configuration' }
+    }
+  }
+
+  return { valid: true }
+}
+
 
 // ── GET /promo-codes ─────────────────────────────────────────────────────────
 
@@ -60,6 +95,11 @@ router.get(
 router.get(
   '/validate/:code',
   asyncHandler(async (req, res) => {
+    // Check if promo codes are enabled
+    if (!await isPromoCodesEnabled()) {
+      return res.status(403).json({ valid: false, message: 'Promo codes are currently disabled.' })
+    }
+
     const row = await getPromoCodeRow(req.params.code)
 
     if (!row) {
@@ -106,6 +146,17 @@ router.post(
       expires_at,
       max_uses,
     } = req.body
+
+    // Check if promo codes are enabled
+    if (!await isPromoCodesEnabled()) {
+      return res.status(403).json({ error: 'Promo codes are disabled in system configuration' })
+    }
+
+    // Validate discount against configuration
+    const validation = await validateDiscountAgainstConfig(discount_type, discount_value)
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error })
+    }
 
     const { rows } = await db.query(
       `INSERT INTO promo_codes

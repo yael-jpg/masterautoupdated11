@@ -267,11 +267,6 @@ const TEMPLATES = {
     body: 'Hello {{customer_name}},\n\nWe value your business at Master Auto and want to treat you to something special. Use promo code <strong>{{promo_code}}</strong> on your next visit to enjoy a discount on our quality services!\n\nBest regards,\nMasterAuto Team',
     cta_label: 'Book Service Now',
   },
-  REMINDER: {
-    subject: '🔧 Maintenance Reminder for your {{vehicle}}',
-    body: 'Hi {{customer_name}},\n\nIt is almost time for your vehicle\'s scheduled maintenance. Regular check-ups for your <strong>{{vehicle}}</strong> are key to keeping it safe and reliable for years to come.\n\nBest regards,\nMasterAuto Team',
-    cta_label: 'Schedule a Check-up',
-  },
   PMS_REMINDER: {
     subject: '🔧 PMS Reminder for your {{vehicle}}',
     body: 'Hi {{customer_name}},\n\nThis is your Preventive Maintenance Service reminder for <strong>{{vehicle}}</strong>. Keeping your PMS schedule updated helps keep your vehicle safe, reliable, and fuel-efficient.\n\nBest regards,\nMasterAuto Team',
@@ -288,10 +283,6 @@ const TEMPLATES = {
     cta_label: 'See Our Services',
   }
 }
-
-const PMS_REMINDER_LINE = 'PMS Service Reminder: Every 6 months or when your vehicle reaches the next kilometer interval (whichever comes first).'
-const SUBSCRIPTION_REMINDER_LINE = 'Subscription Reminder: Your subscription expires in 5 days. Renew early to avoid service interruption.'
-const DEFAULT_REMINDER_LINES = `${PMS_REMINDER_LINE}\n${SUBSCRIPTION_REMINDER_LINE}`
 
 function formatVehicleLabel(vehicle) {
   if (!vehicle || typeof vehicle !== 'object') return ''
@@ -312,6 +303,13 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
   const [mode, setMode] = useState('simple') // 'simple' | 'advanced'
   const [uploading, setUploading] = useState(false)
   const [previewRecipient, setPreviewRecipient] = useState({ customerName: 'Valued Client', vehicleName: 'Your Vehicle' })
+  const [existingPromoCodes, setExistingPromoCodes] = useState([])
+  const [loadingPromoCodes, setLoadingPromoCodes] = useState(false)
+  const [templateConfig, setTemplateConfig] = useState({
+    promo: {},
+    pms_email: {},
+    subscription_email: {},
+  })
 
   const getImageUrl = (url) => {
     if (!url) return ''
@@ -351,7 +349,6 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
   }
   
   // Structured fields for Simple Mode
-  const [reminders, setReminders] = useState('')
   const [closing, setClosing] = useState('')
   
   const [usePromo, setUsePromo]           = useState(false)
@@ -361,19 +358,27 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
   const [promoExpiry, setPromoExpiry]     = useState('')
   const [promoDesc, setPromoDesc]         = useState('')
   
-  const remindersRef = useRef(null)
   const closingRef = useRef(null)
   const advancedRef = useRef(null)
-  
-  const [lastRef, setLastRef] = useState('closing') // 'reminders' | 'closing'
 
   const normalizeTokenSpacing = useCallback((value) => {
     if (!value) return ''
-    const token = '(?:customer_name|vehicle|promo_code|discount_value)'
+    const token = '(?:customer_name|vehicle|promo_code|discount_value|package_name|status)'
     let out = String(value)
     out = out.replace(new RegExp(`([^\\s>\\(\\{\\[\\n])(\\{\\{\\s*${token}\\s*\\}\\})`, 'gi'), '$1 $2')
     out = out.replace(new RegExp(`(\\{\\{\\s*${token}\\s*\\}\\})([^\\s<\\)\\}\\],.!?:;\\n])`, 'gi'), '$1 $2')
     return out
+  }, [])
+
+  const configValueToCampaignToken = useCallback((value) => {
+    if (!value) return ''
+    return String(value)
+      .replace(/\{\s*customer_name\s*\}/gi, '{{customer_name}}')
+      .replace(/\{\s*code\s*\}/gi, '{{promo_code}}')
+      .replace(/\{\s*(percent|amount|discount_value)\s*\}/gi, '{{discount_value}}')
+      .replace(/\{\s*(plate_number|vehicle)\s*\}/gi, '{{vehicle}}')
+      .replace(/\{\s*package_name\s*\}/gi, '{{package_name}}')
+      .replace(/\{\s*status\s*\}/gi, '{{status}}')
   }, [])
 
   useEffect(() => {
@@ -391,14 +396,61 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
   }, [token])
 
   useEffect(() => {
+    async function loadTemplateConfig() {
+      try {
+        const [promoArr, pmsArr, subscriptionArr] = await Promise.all([
+          apiGet('/config/category/promo', token),
+          apiGet('/config/category/pms_email', token),
+          apiGet('/config/category/subscription_email', token),
+        ])
+
+        const toMap = (arr) => {
+          const map = {}
+          for (const item of (Array.isArray(arr) ? arr : [])) {
+            map[item.key] = item.value
+          }
+          return map
+        }
+
+        setTemplateConfig({
+          promo: toMap(promoArr),
+          pms_email: toMap(pmsArr),
+          subscription_email: toMap(subscriptionArr),
+        })
+      } catch {
+        // Keep fallback templates if config fetch fails
+      }
+    }
+
+    loadTemplateConfig()
+  }, [token])
+
+  // Load existing promo codes from database
+  useEffect(() => {
+    async function loadPromoCodes() {
+      setLoadingPromoCodes(true)
+      try {
+        const res = await apiGet('/promo-codes', token, { limit: 100 })
+        const codes = Array.isArray(res.data) ? res.data : []
+        setExistingPromoCodes(codes.filter(c => c.is_active))
+      } catch (e) {
+        // Silently fail if promo codes endpoint unavailable
+      } finally {
+        setLoadingPromoCodes(false)
+      }
+    }
+    loadPromoCodes()
+  }, [token])
+
+  useEffect(() => {
     const fresh = { ...initial }
     setModel(fresh)
     
-    // Attempt to split content back to message/reminders for simple mode
+    // Attempt to split content back to message for simple mode
     if (fresh.content) {
       if (!fresh.content.includes('<table') && !fresh.content.includes('<div')) {
         setMode('simple')
-        // Basic split logic if we can detect the delimiter we use below
+        // Strip legacy reminders section if present
         if (fresh.content.includes('⚠️ Important Reminders:')) {
           const parts = fresh.content.split('<strong>⚠️ Important Reminders:</strong><ul>')
           const messagePart = (parts[0] || '')
@@ -407,11 +459,6 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
             .trim()
           const sub = parts[1] || ''
           const subParts = sub.split('</ul>')
-          const listHtml = subParts[0] || ''
-          const listEntries = listHtml.match(/<li>(.*?)<\/li>/gi)
-          if (listEntries) {
-            setReminders(listEntries.map(li => li.replace(/<\/?li>/gi, '').trim()).join('\n'))
-          }
           const closingPart = (subParts[1] || '').replace(/<br\s*\/?>/gi, '\n').trim()
           setClosing([messagePart, closingPart].filter(Boolean).join('\n\n'))
         } else {
@@ -424,13 +471,6 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
       }
     }
   }, [initial])
-
-  useEffect(() => {
-    if (mode !== 'simple') return
-    if (model?.id) return
-    if (String(reminders || '').trim()) return
-    setReminders(DEFAULT_REMINDER_LINES)
-  }, [mode, model?.id, reminders])
 
   useEffect(() => {
     let stopped = false
@@ -480,16 +520,10 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
   useEffect(() => {
     if (mode === 'simple') {
       const messageHtml = (closing || '').trim().replace(/\n/g, '<br/>')
-      let remindersHtml = ''
-      if (reminders && reminders.trim()) {
-        const items = reminders.split('\n').map(l => l.trim()).filter(l => l.length > 0)
-        remindersHtml = `<br/><br/><strong>⚠️ Important Reminders:</strong><br/><ul style="margin: 10px 0; padding-left: 20px;">${items.map(i => `<li>${i}</li>`).join('')}</ul>`
-      }
-      
-      const compiled = `${messageHtml}${remindersHtml}`
+      const compiled = `${messageHtml}`
       setModel(p => ({ ...p, content: compiled }))
     }
-  }, [reminders, closing, mode])
+  }, [closing, mode])
 
   useEffect(() => {
     let mounted = true
@@ -511,27 +545,38 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
   function applyTemplate(tId) {
     const t = TEMPLATES[tId]
     if (!t) return
-    change('subject', t.subject)
-    change('cta_label', t.cta_label)
-    setClosing(t.body)
-    if (tId === 'REMINDER') {
-      setReminders(DEFAULT_REMINDER_LINES)
+    let nextSubject = t.subject
+    let nextClosing = t.body
+
+    if (tId === 'PROMO') {
+      const promoCfg = templateConfig.promo || {}
+      const greeting = configValueToCampaignToken(promoCfg.promo_greeting)
+      const closing = configValueToCampaignToken(promoCfg.promo_closing)
+      nextSubject = configValueToCampaignToken(promoCfg.promo_subject) || t.subject
+      nextClosing = [greeting, closing].filter(Boolean).join('\n\n') || t.body
     } else if (tId === 'PMS_REMINDER') {
-      setReminders(PMS_REMINDER_LINE)
+      const pmsCfg = templateConfig.pms_email || {}
+      const greeting = configValueToCampaignToken(pmsCfg.greeting)
+      const closing = configValueToCampaignToken(pmsCfg.closing)
+      nextSubject = configValueToCampaignToken(pmsCfg.subject) || t.subject
+      nextClosing = [greeting, closing].filter(Boolean).join('\n\n') || t.body
     } else if (tId === 'SUBSCRIPTION_REMINDER') {
-      setReminders(SUBSCRIPTION_REMINDER_LINE)
-    } else {
-      setReminders('')
+      const subscriptionCfg = templateConfig.subscription_email || {}
+      const greeting = configValueToCampaignToken(subscriptionCfg.greeting)
+      const closing = configValueToCampaignToken(subscriptionCfg.closing)
+      nextSubject = configValueToCampaignToken(subscriptionCfg.subject) || t.subject
+      nextClosing = [greeting, closing].filter(Boolean).join('\n\n') || t.body
     }
-    setClosing('Thank you for choosing MasterAuto!')
+
+    change('subject', nextSubject)
+    change('cta_label', t.cta_label)
+    setClosing(nextClosing)
     setMode('simple')
     if (tId === 'PROMO') setUsePromo(true)
   }
 
   function getActiveState() {
     if (mode === 'advanced') return { ref: advancedRef.current, val: model.content || '', set: (v) => change('content', v) }
-    if (lastRef === 'reminders') return { ref: remindersRef.current, val: reminders || '', set: setReminders }
-    if (lastRef === 'closing') return { ref: closingRef.current, val: closing || '', set: setClosing }
     return { ref: closingRef.current, val: closing || '', set: setClosing }
   }
 
@@ -607,17 +652,8 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
   async function save() {
     if (!model.subject) return pushToast('error', 'Subject is required')
     if (!model.content) return pushToast('error', 'Content is required')
-
-    if (mode === 'simple' && !model.id && !String(reminders || '').trim()) {
-      setReminders(DEFAULT_REMINDER_LINES)
-    }
     
     const toSave = { ...model, content: normalizeTokenSpacing(model.content || '') }
-
-    if (mode === 'simple' && !model.id && !String(toSave.content || '').includes('PMS Service Reminder:')) {
-      const compiled = `${String(toSave.content || '').trim()}<br/><br/><strong>⚠️ Important Reminders:</strong><br/><ul style="margin: 10px 0; padding-left: 20px;"><li>${PMS_REMINDER_LINE}</li><li>${SUBSCRIPTION_REMINDER_LINE}</li></ul>`
-      toSave.content = normalizeTokenSpacing(compiled)
-    }
 
     if (!toSave.name) toSave.name = `Campaign - ${new Date().toLocaleString()}`
 
@@ -638,6 +674,10 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
       .replace(/\{\{customer_name\}\}/gi, `<strong>${previewRecipient.customerName || 'Valued Client'}</strong>`)
       .replace(/\{\{vehicle\}\}/gi, `<strong>${previewRecipient.vehicleName || 'Your Vehicle'}</strong>`)
       .replace(/\{\{discount_value\}\}/gi, `<strong>${promoDiscType === 'percent' ? `${promoDiscVal}%` : `₱${promoDiscVal}`}</strong>`)
+      .replace(/\{\{package_name\}\}/gi, '<strong>Premium Package</strong>')
+      .replace(/\{\{status\}\}/gi, '<strong>Active</strong>')
+      .replace(/\{package_name\}/gi, '<strong>Premium Package</strong>')
+      .replace(/\{status\}/gi, '<strong>Active</strong>')
 
     const promoHtml = `<span style="background:#fefce8; padding:2px 6px; border:1px dashed #facc15; border-radius:4px; font-weight:700;">${usePromo ? promoCode : 'PROMO2026'}</span>`
     html = html.replace(/\{\{promo_code\}\}/gi, promoHtml)
@@ -658,7 +698,6 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
           <div className="campaign-editor-templates" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <span style={{ fontSize: 12, color: '#94a3b8' }}>Load Template:</span>
             <button className="btn-tag" onClick={() => applyTemplate('PROMO')}>Offer</button>
-            <button className="btn-tag" onClick={() => applyTemplate('REMINDER')}>Reminder</button>
             <button className="btn-tag" onClick={() => applyTemplate('PMS_REMINDER')}>PMS Reminder</button>
             <button className="btn-tag" onClick={() => applyTemplate('SUBSCRIPTION_REMINDER')}>Subscription</button>
             <button className="btn-tag" onClick={() => applyTemplate('THANK_YOU')}>Thanks</button>
@@ -692,6 +731,33 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
               <label>Campaign Name / Category</label>
               <input className="campaign-input" value={model.name || ''} onChange={(e) => change('name', e.target.value)} placeholder="e.g. Summer Special 2026" />
             </div>
+
+            <div className="campaign-field" style={{ marginTop: 16, marginBottom: 16 }}>
+              <label style={{ fontSize: 13, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.05em' }}>PROMO CODE (Optional)</label>
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, marginBottom: 8 }}>
+                Select an existing promo code to auto-fill subject and message from configuration.
+              </div>
+              <select 
+                className="campaign-select" 
+                value={promoCode} 
+                onChange={(e) => {
+                  setPromoCode(e.target.value);
+                  const selected = existingPromoCodes.find(c => c.code === e.target.value);
+                  if (selected && selected.discount_type === 'percent') {
+                    change('subject', `Get ${selected.discount_value}% Off - Use Code ${selected.code}`)
+                  }
+                }}
+                disabled={loadingPromoCodes}
+              >
+                <option value="">-- No Promo Code --</option>
+                {existingPromoCodes.map(code => (
+                  <option key={code.id} value={code.code}>
+                    {code.code} - {code.discount_type === 'percent' ? code.discount_value + '%' : '₱' + code.discount_value} off
+                  </option>
+                ))}
+              </select>
+              {loadingPromoCodes && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>Loading promo codes...</div>}
+            </div>
             
             <div style={{ marginTop: 20 }}>
               <div className="campaign-editor-toolbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -704,6 +770,8 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
                   <span style={{ fontSize: 11, color: '#64748b' }}>Insert:</span>
                   <button className="btn-tag" onClick={() => insertVar('{{customer_name}}')}>Name</button>
                   <button className="btn-tag" onClick={() => insertVar('{{vehicle}}')}>Vehicle</button>
+                  <button className="btn-tag" onClick={() => insertVar('{{package_name}}')}>Package</button>
+                  <button className="btn-tag" onClick={() => insertVar('{{status}}')}>Status</button>
                   <button className="btn-tag" onClick={() => insertVar('{{discount_value}}')}>Value</button>
                 </div>
               </div>
@@ -744,41 +812,12 @@ function CampaignEditor({ token, campaign: initial, onCancel, onSave, isBlast })
             {mode === 'simple' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                 <div className="campaign-field">
-                  <label style={{ fontSize: 13, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.05em' }}>IMPORTANT REMINDERS (ONE PER LINE)</label>
-                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, marginBottom: 8 }}>Each line becomes a bullet point in the "⚠️ Important Reminders" section.</div>
-                  <div style={{
-                    background: 'rgba(74, 222, 128, 0.08)',
-                    border: '1px solid rgba(74, 222, 128, 0.35)',
-                    borderRadius: 8,
-                    padding: '10px 12px',
-                    marginBottom: 10,
-                    color: '#bbf7d0',
-                    fontSize: 12,
-                    lineHeight: 1.55,
-                  }}>
-                    <div style={{ fontWeight: 700, color: '#86efac', marginBottom: 6 }}>Always Included Default Reminders</div>
-                    <div>• {PMS_REMINDER_LINE}</div>
-                    <div>• {SUBSCRIPTION_REMINDER_LINE}</div>
-                  </div>
-                  <textarea 
-                    ref={remindersRef}
-                    className="campaign-textarea" 
-                    value={reminders} 
-                    onFocus={() => setLastRef('reminders')}
-                    onChange={(e) => setReminders(e.target.value)} 
-                    placeholder="e.g. Please arrive on time..." 
-                    rows={6} 
-                  />
-                </div>
-
-                <div className="campaign-field">
                   <label style={{ fontSize: 13, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.05em' }}>MESSAGE</label>
-                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, marginBottom: 8 }}>Main email content shown before reminders.</div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, marginBottom: 8 }}>Main email content for the blast.</div>
                   <textarea 
                     ref={closingRef}
                     className="campaign-textarea" 
                     value={closing} 
-                    onFocus={() => setLastRef('closing')}
                     onChange={(e) => setClosing(e.target.value)} 
                     placeholder="e.g. Thank you for trusting MasterAuto!" 
                     rows={3} 

@@ -197,6 +197,16 @@ router.post(
         .replace(/\{\{\s*expiry_date\s*\}\}/gi, p.expiry_date || '')
     }
 
+    function replaceRecipientFields(text, recipient) {
+      const packageName = recipient?.package_name || 'Subscription'
+      const subscriptionStatus = recipient?.subscription_status || 'Active'
+      return String(text || '')
+        .replace(/\{\{\s*package_name\s*\}\}/gi, packageName)
+        .replace(/\{\{\s*status\s*\}\}/gi, subscriptionStatus)
+        .replace(/\{\s*package_name\s*\}/gi, packageName)
+        .replace(/\{\s*status\s*\}/gi, subscriptionStatus)
+    }
+
     let campaignContent = replacePlaceholders(rawContent, promotion)
     // If a promotion was provided but the content doesn't mention it, append a promotional block
     if (promotion) {
@@ -252,9 +262,21 @@ router.post(
       const sentResults = { sent: 0, failed: 0, skipped: 0, firstError: null }
       const recipientRows = (await db.query(
         `SELECT cr.id, cr.email, c.full_name AS customer_name,
-                (${VEHICLE_LABEL_SQL}) AS vehicle_name
+                (${VEHICLE_LABEL_SQL}) AS vehicle_name,
+                COALESCE(ls.package_name, 'Subscription') AS package_name,
+                COALESCE(ls.subscription_status, 'Active') AS subscription_status
          FROM campaign_recipients cr
          LEFT JOIN customers c ON c.id = cr.customer_id
+         LEFT JOIN LATERAL (
+           SELECT
+             COALESCE(sp.name, s.subscription_name, 'Subscription') AS package_name,
+             COALESCE(s.status, 'Active') AS subscription_status
+           FROM subscriptions s
+           LEFT JOIN subscription_packages sp ON sp.id = COALESCE(s.package_id, s.subscription_service_id)
+           WHERE s.customer_id = c.id
+           ORDER BY COALESCE(s.updated_at, s.created_at) DESC, s.id DESC
+           LIMIT 1
+         ) ls ON TRUE
          WHERE cr.campaign_id = $1`,
         [campaign.id],
       )).rows
@@ -270,6 +292,12 @@ router.post(
           let personalHtml = replacePlaceholders(campaignContent || '', promotion)
             .replace(/\{\{\s*customer_name\s*\}\}/gi, personalName)
             .replace(/\{\{\s*vehicle\s*\}\}/gi, vehicleName)
+          personalHtml = replaceRecipientFields(personalHtml, c)
+
+          const personalSubject = replaceRecipientFields(
+            String(campaignSubject || '').replace(/\{\{\s*customer_name\s*\}\}/gi, personalName).replace(/\{\{\s*vehicle\s*\}\}/gi, vehicleName),
+            c,
+          )
           
           const personalText = personalHtml.replace(/<[^>]+>/g, '')
           const displayName = blastSenderName || 'MasterAuto'
@@ -277,7 +305,7 @@ router.post(
           
           const sendRes = await mailer.sendCampaignEmail({
             to: c.email,
-            subject: campaignSubject,
+            subject: personalSubject,
             content: personalHtml,
             ctaLabel: campaign.cta_label,
             ctaUrl: req.body.cta_url || campaign.cta_url || '#',
@@ -314,9 +342,21 @@ router.post(
             const delayMs = throttleDelayMs || 1000
             const recs = await db.query(
               `SELECT cr.id, cr.email, c.full_name AS customer_name,
-                      (${VEHICLE_LABEL_SQL}) AS vehicle_name
+                      (${VEHICLE_LABEL_SQL}) AS vehicle_name,
+                      COALESCE(ls.package_name, 'Subscription') AS package_name,
+                      COALESCE(ls.subscription_status, 'Active') AS subscription_status
                FROM campaign_recipients cr
                LEFT JOIN customers c ON c.id = cr.customer_id
+               LEFT JOIN LATERAL (
+                 SELECT
+                   COALESCE(sp.name, s.subscription_name, 'Subscription') AS package_name,
+                   COALESCE(s.status, 'Active') AS subscription_status
+                 FROM subscriptions s
+                 LEFT JOIN subscription_packages sp ON sp.id = COALESCE(s.package_id, s.subscription_service_id)
+                 WHERE s.customer_id = c.id
+                 ORDER BY COALESCE(s.updated_at, s.created_at) DESC, s.id DESC
+                 LIMIT 1
+               ) ls ON TRUE
                WHERE cr.campaign_id = $1 AND cr.status = 'queued'`,
               [campaign.id]
             )
@@ -332,10 +372,16 @@ router.post(
                 let personalHtml = replacePlaceholders(campaignContent || '', promotion)
                   .replace(/\{\{\s*customer_name\s*\}\}/gi, personalName)
                   .replace(/\{\{\s*vehicle\s*\}\}/gi, vehicleName)
+                personalHtml = replaceRecipientFields(personalHtml, r)
+
+                const personalSubject = replaceRecipientFields(
+                  String(campaignSubject || '').replace(/\{\{\s*customer_name\s*\}\}/gi, personalName).replace(/\{\{\s*vehicle\s*\}\}/gi, vehicleName),
+                  r,
+                )
 
                 const res = await mailer.sendCampaignEmail({
                   to: r.email,
-                  subject: campaignSubject,
+                  subject: personalSubject,
                   content: personalHtml,
                   ctaLabel: campaign.cta_label,
                   ctaUrl: campaign.cta_url || '#',

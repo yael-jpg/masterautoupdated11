@@ -283,14 +283,38 @@ class ConfigurationService {
           'minimum_down_payment_percentage': '30',
           'payment_due_days': '30'
         },
+        'promo': {
+          'enable_promo_codes': 'true',
+          'max_discount_percentage': '50',
+          'max_uses_per_code': '100',
+          'default_expiration_days': '30',
+          'allow_fixed_discount': 'true',
+          'allow_percentage_discount': 'true',
+          'require_minimum_purchase': 'false',
+          'minimum_purchase_amount': '100',
+          'allow_stacking_promos': 'false',
+          'restrict_to_email_blast': 'true',
+          'auto_disable_expired': 'true',
+          'enable_usage_tracking': 'true',
+          'promo_enabled': 'true',
+          'promo_subject': 'Exclusive Offer — {percent}% Off Your Next Service',
+          'promo_greeting': 'Hey {customer_name}! We have an exclusive offer just for you. Use code {code} for {percent}% off your next service.',
+          'promo_reminders': 'This offer is valid for {days} days only.\nMinimum purchase of ₱{min_purchase} required.\nPromo code cannot be combined with other offers.',
+          'promo_closing': 'Don\'t miss out! Claim your discount today and give your vehicle the care it deserves.'
+        },
         'pms_email': {
           'enabled': 'true',
-          'subject': '',
-          'greeting': ''
+          'subject': 'PMS Reminder for {plate_number}',
+          'greeting': 'This is to remind you that your vehicle plate no. {plate_number}, availed package {package_name} is due for your next preventive maintenance service.',
+          'reminders': 'Delaying your PMS may affect warranty coverage.\nYour last service was at {last_service_date}.\nBook early to avoid long wait times.',
+          'closing': 'Book your PMS appointment today to keep your vehicle in top condition.'
         },
         'subscription_email': {
           'enabled': 'true',
-          'subject': ''
+          'subject': 'Your {package_name} Subscription is {status} — {plate_number}',
+          'greeting': 'Dear {customer_name}, your {package_name} subscription for plate {plate_number} is {status}. Renew now to maintain continuous coverage and benefits.',
+          'reminders': 'Your subscription expires on {end_date}.\nRenewal takes less than 5 minutes.\nAll benefits and coverage will cease after expiration.\nEarly renewal is available anytime.',
+          'closing': 'Renew your subscription today and continue enjoying priority service and exclusive benefits.'
         }
       };
       

@@ -3,6 +3,9 @@ const PG_ERROR_MESSAGES = {
   // Foreign key violation
   '23503': (err) => {
     const constraint = err.constraint || ''
+    if (constraint.includes('subscriptions_package_id')) {
+      return { status: 409, message: 'Subscription package reference is invalid. Please refresh packages and try again.' }
+    }
     if (constraint === 'job_orders_quotation_id_fkey') {
       return { status: 409, message: 'This quotation cannot be modified or deleted because it has a linked Job Order. Remove the Job Order first.' }
     }
